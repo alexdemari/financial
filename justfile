@@ -2,6 +2,8 @@
 # Install: cargo install just
 # Usage: just <command>
 
+export PYTHONPATH := "src"
+
 # Set shell for Windows compatibility
 set shell := ["cmd", "/c"]
 
@@ -18,13 +20,13 @@ setup:
 install:
     uv sync --dev
 
-# Run all tests
+# Run tests
 test:
     uv run pytest
 
-# Run tests with coverage
-test-coverage:
-    uv run pytest --cov=src/trading_system --cov-report=html --cov-report=term-missing
+test-cov:
+    uv run pytest --cov=src/stock_data_manager --cov-report=html
+    @echo "Relatório de cobertura: htmlcov/index.html"
 
 # Run specific test file
 test-file FILE:
@@ -33,15 +35,19 @@ test-file FILE:
 # Lint code
 lint:
     uv run ruff check src tests
-    uv run mypy src
+
+lint-fix:
+    uv run ruff check --fix src tests
 
 # Format code
 format:
     uv run ruff format src tests
-    uv run ruff check --fix src tests
+
+type-check:
+    uv run mypy src tests
 
 # Check code quality
-check: format lint test
+check: format lint type-check test
 
 # Clean cache files
 clean:
@@ -54,25 +60,17 @@ clean:
     @if exist "htmlcov" rmdir /s /q htmlcov
     @if exist ".pytest_cache" rmdir /s /q .pytest_cache
 
-# Run example
-run-example FILE="data/raw/sample_stocks.csv":
-    uv run python -m src.trading_system.main --file {{FILE}}
-
-# Start development server/CLI
-dev:
-    uv run python -m src.trading_system.cli.commands
+clean-data:
+    rm -rf data/stocks/*.csv
+    rm -rf logs/*.log
 
 # Build Docker image
 docker-build:
-    docker build -t trading-system .
+    docker build -t stock_data_manager .
 
 # Run with Docker
 docker-run:
-    docker run -v ${PWD}/data:/app/data trading-system
-
-# Generate documentation
-docs:
-    uv run mkdocs serve
+    docker run -v ${PWD}/data:/app/data stock_data_manager
 
 # Update dependencies
 update:
@@ -85,3 +83,27 @@ audit:
 # Pre-commit hooks
 pre-commit:
     uv run pre-commit run --all-files
+
+# Baixa dados de uma ação específica
+download symbol dir="data/stocks":
+    uv run python -m src.stock_data_manager.main -s {{symbol}} -d {{dir}}
+
+# Baixa dados de múltiplas ações (símbolos separados por espaço)
+download-many symbols dir="data/stocks":
+    uv run python -m src.stock_data_manager.main -s {{symbols}} -d {{dir}}
+
+# Baixa símbolos de um arquivo
+download-file file dir="data/stocks":
+    uv run python -m src.stock_data_manager.main -f {{file}} -d {{dir}}
+
+# Download completo (força re-download)
+download-full file:
+    uv run python -m src.stock_data_manager.main -f {{file}} --full
+
+# Baixa dados de ações brasileiras (predefinidas)
+download-br:
+    uv run python -m src.stock_data_manager.main -s PETR4.SA VALE3.SA BBDC4.SA ITUB4.SA ABEV3.SA
+
+# Baixa dados de ações americanas (predefinidas)
+download-us:
+    uv run python -m src.stock_data_manager.main -s AAPL MSFT GOOGL AMZN META
