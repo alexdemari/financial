@@ -107,3 +107,6 @@ download-br:
 # Baixa dados de ações americanas (predefinidas)
 download-us:
     uv run python -m src.stock_data_manager.main -s AAPL MSFT GOOGL AMZN META
+
+analyzer:
+    uv run python -m src.stock_analyzer.main
