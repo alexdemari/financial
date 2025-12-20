@@ -1,37 +1,95 @@
-import pandas as pd
-import pandas_ta as ta
+"""
+Analisador de dados de ações (refatorado).
+Responsabilidade única: Orquestrar análise de dados.
+"""
+import logging
+from typing import Optional
 
-from stock_analyzer.backtest import RSIBacktesting, SMABacktesting
+import pandas as pd
+
+from stock_analyzer.signals import SignalGenerator, SignalResult
+from stock_analyzer.config import IndicatorConfig
 from stock_data_manager.factories.manager_factory import StockDataManagerFactory
 
+logger = logging.getLogger(__name__)
+
+
 class StockDataAnalyzer:
-    def __init__(self):
-        self._rsi_backtesting = RSIBacktesting()
-        self._sma_crossing = SMABacktesting()
+    """
+    Orquestrador de análise.
+    Delega cálculos para especialistas.
+    """
 
-    def rsi_backtest(self, df: pd.DataFrame):
-        return self._rsi_backtesting.backtest(df)
+    def __init__(self, config: IndicatorConfig = None):
+        self.config = config or IndicatorConfig()
+        self.signal_generator = SignalGenerator(self.config)
+        logger.info(f"StockDataAnalyzer inicializado com config: {self.config}")
 
-    def retrieve_data(self, symbol: str) -> pd.DataFrame:
-        sdm = StockDataManagerFactory().create_with_update_strategy()
-        df = sdm.download_and_save(symbol)
-        df.dropna(inplace=True)
-        return df
+    def generate_signal(
+        self,
+        symbol: str,
+        df: pd.DataFrame
+    ) -> Optional[SignalResult]:
+        """
+        Gera sinal para o candle atual.
 
-    def sma_crossing_backtest(self, df: pd.DataFrame, short=20, long=50) -> pd.DataFrame:
-        return self._sma_crossing.backtest(df, short=short, long=long)
+        Args:
+            symbol: Ticker
+            df: DataFrame com dados OHLC
 
-    def check_asset(self, df: pd.DataFrame, symbol: str) -> bool:
-        df["RSI"] = ta.rsi(df["Close"], length=14)
-        df["MM20"] = df["Close"].rolling(window=20).mean()
-        df["VolMedia10"] = df["Volume"].rolling(window=10).mean()
-        last_rsi = df["RSI"].dropna().iloc[-1]
-        last_close = df["Close"].iloc[-1]
-        mm20 = df["MM20"].iloc[-1]
-        vol = df["Volume"].iloc[-1]
-        vol_m10 = df["VolMedia10"].iloc[-1]
+        Returns:
+            SignalResult ou None se inválido
+        """
+        return self.signal_generator.generate_current_signal(symbol, df)
 
-        if last_rsi < 30 and last_close > mm20 and vol > vol_m10:
-            return True
-        else:
-            return False
+    def generate_historical_signals(
+        self,
+        symbol: str,
+        df: pd.DataFrame
+    ) -> pd.DataFrame:
+        """
+        Gera histórico completo de sinais.
+
+        Args:
+            symbol: Ticker
+            df: DataFrame com dados OHLC
+
+        Returns:
+            DataFrame com sinais históricos
+        """
+        return self.signal_generator.generate_historical_signals(symbol, df)
+
+    @staticmethod
+    def retrieve_data(
+        symbol: str,
+        data_dir: str,
+        interval: str = '1d'
+    ) -> pd.DataFrame:
+        """
+        Recupera dados mais recentes.
+
+        Args:
+            symbol: Ticker
+            interval: '1d', '1w', '1m'
+
+        Returns:
+            DataFrame com dados limpos
+        """
+        try:
+            sdm = StockDataManagerFactory().create_with_update_strategy(
+                data_dir=f"{data_dir}\{interval.upper()}"
+            )
+
+            df = sdm.download_and_save(symbol, interval=interval)
+
+            if df.empty:
+                logger.warning(f"{symbol}: Nenhum dado recuperado")
+                return df
+
+            df.dropna(inplace=True)
+            logger.info(f"{symbol}: {len(df)} linhas recuperadas")
+            return df
+
+        except Exception as e:
+            logger.error(f"Erro ao recuperar dados para {symbol}: {e}", exc_info=True)
+            raise

@@ -8,6 +8,9 @@ import pandas as pd
 
 from stock_data_manager.factories.manager_factory import StockDataManagerFactory
 
+BASE_PATH = Path(__file__).parent.parent.resolve()
+PROJECT_ROOT = BASE_PATH.parent
+
 
 class SymbolsLoader:
     """Carrega símbolos de diferentes fontes"""
@@ -93,6 +96,9 @@ Exemplos de uso:
   # Baixar de arquivo
   %(prog)s -f symbols.txt
 
+  # Baixar todos os tickers do arquivo data.json da TradingView
+  %(prog)s -a data/data.json -i 1d
+
   # Especificar diretório de saída
   %(prog)s -s PETR4.SA VALE3.SA -d ./meus_dados
 
@@ -125,15 +131,29 @@ Formato do arquivo de símbolos:
             metavar="FILE",
             help="Arquivo contendo lista de símbolos (txt ou csv)",
         )
+        symbols_group.add_argument(
+            "-a",
+            "--all-tickers",
+            type=str,
+            metavar="JSON_FILE",
+            help="Baixar dados para todos os tickers do arquivo data.json da TradingView",
+        )
 
         # Diretório de saída
         parser.add_argument(
             "-d",
             "--data-dir",
             type=str,
-            default="data/stocks",
             metavar="DIR",
-            help="Diretório onde os arquivos CSV serão salvos (padrão: data/stocks)",
+            help="Diretório onde os arquivos CSV serão salvos (padrão: data/1D)",
+        )
+
+        parser.add_argument(
+            "-i",
+            "--interval",
+            type=str,
+            default="1d",
+            help="Intervalo de tempo dos dados (padrão: 1d). Opções: 1d, 1h, 1w, 1m",
         )
 
         # Opções adicionais
@@ -182,6 +202,13 @@ Formato do arquivo de símbolos:
             if args.symbols:
                 symbols = args.symbols
                 print(f"📊 Símbolos da linha de comando: {', '.join(symbols)}")
+            elif args.all_tickers:
+                from stock_data_manager.implementations.trading_view_tickers_reader import TradingViewTickerExtractor
+                
+                ticker_extractor = TradingViewTickerExtractor(args.all_tickers)
+                tickers_df = ticker_extractor.extract_tickers()
+                symbols = tickers_df["symbol"].tolist()
+                print(f"📁 Carregados {len(symbols)} símbolos do arquivo TradingView: {args.all_tickers}")
             else:
                 symbols = SymbolsLoader.from_file(args.file)
                 print(f"📁 Carregados {len(symbols)} símbolos de {args.file}")
@@ -190,23 +217,23 @@ Formato do arquivo de símbolos:
                 print("❌ Nenhum símbolo para processar!")
                 return 1
 
-            # Cria o gerenciador
-            print(f"📂 Diretório de dados: {args.data_dir}")
+            data_output_dir = f"{PROJECT_ROOT}/data/stocks/{args.interval.upper()}"
 
+            # Cria o gerenciador
             if args.strategy == "update":
                 manager = StockDataManagerFactory.create_with_update_strategy(
-                    args.data_dir
+                    data_output_dir
                 )
             else:
-                manager = StockDataManagerFactory.create_default(args.data_dir)
+                manager = StockDataManagerFactory.create_default(data_output_dir)
 
             # Baixa os dados
             print(
                 f"\n{'🔄 Modo: Download completo' if args.full else '⚡ Modo: Incremental'}"
             )
             print(f"📈 Processando {len(symbols)} ativo(s)...\n")
-
-            results = manager.download_multiple(symbols, force_full=args.full)
+            
+            results = manager.download_multiple(symbols, force_full=args.full, interval=args.interval)
 
             # Exibe resumo
             print("\n" + "=" * 60)

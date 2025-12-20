@@ -85,28 +85,62 @@ pre-commit:
     uv run pre-commit run --all-files
 
 # Baixa dados de uma ação específica
-download symbol dir="data/stocks":
-    uv run python -m src.stock_data_manager.main -s {{symbol}} -d {{dir}}
+download symbol interval="1d":
+    uv run python -m src.stock_data_manager.main -s {{symbol}} -i {{interval}}
 
 # Baixa dados de múltiplas ações (símbolos separados por espaço)
-download-many symbols dir="data/stocks":
-    uv run python -m src.stock_data_manager.main -s {{symbols}} -d {{dir}}
+download-many symbols interval="1d":
+    uv run python -m src.stock_data_manager.main -s {{symbols}} -i {{interval}}
 
 # Baixa símbolos de um arquivo
-download-file file dir="data/stocks":
-    uv run python -m src.stock_data_manager.main -f {{file}} -d {{dir}}
+download-file file interval="1d":
+    uv run python -m src.stock_data_manager.main -f {{file}} -i {{interval}}
 
 # Download completo (força re-download)
-download-full file:
-    uv run python -m src.stock_data_manager.main -f {{file}} --full
+download-full file interval="1d":
+    uv run python -m src.stock_data_manager.main -f {{file}} --full -i {{interval}}
 
 # Baixa dados de ações brasileiras (predefinidas)
-download-br:
-    uv run python -m src.stock_data_manager.main -s PETR4.SA VALE3.SA BBDC4.SA ITUB4.SA ABEV3.SA
+download-br interval="1d":
+    uv run python -m src.stock_data_manager.main -s PETR4.SA VALE3.SA BBDC4.SA ITUB4.SA ABEV3.SA -i {{interval}}
 
 # Baixa dados de ações americanas (predefinidas)
-download-us:
-    uv run python -m src.stock_data_manager.main -s AAPL MSFT GOOGL AMZN META
+download-us interval="1d":
+    uv run python -m src.stock_data_manager.main -s AAPL MSFT GOOGL AMZN META -i {{interval}}
 
-analyzer:
-    uv run python -m src.stock_analyzer.main
+download-all-us interval="1d" base_dir=justfile_directory():
+    uv run python -m src.stock_data_manager.main -a {{base_dir}}\data\us_symbols.json -i {{interval}}
+
+analyzer symbol="AAPL":
+    uv run python -m src.stock_analyzer.main -s {{symbol}}
+
+ibkr-option-chain symbol expiration max_strikes="10" option-type="BOTH" strike-step="5":
+    uv run python -m src.ibkr.main --symbol {{symbol}} --expiration {{expiration}} --max-strikes {{max_strikes}} --option-type {{option-type}} --strike-step {{strike-step}}
+
+options-analyzer: 
+    uv run python -m src.stock_analyzer.options_analyzer
+
+options-tech-scanner data_dir=justfile_directory() mode="core":
+    uv run python -m src.options_tech_scanner.main --data-dir {{data_dir}} --mode {{mode}} --scan
+
+options-tech-scanner-backtest data_dir=justfile_directory():
+    uv run python -m src.options_tech_scanner.main --data-dir {{data_dir}} --backtest
+
+options-tech-scanner-backtest-relaxed data_dir=justfile_directory():
+    uv run python -m src.options_tech_scanner.main --data-dir data\stocks\1D --backtest --mode relaxed
+
+options-tech-scanner-backtest-45 data_dir=justfile_directory():
+    uv run python -m src.options_tech_scanner.main --data-dir {{data_dir}} --backtest --lookahead 45
+
+options-tech-scanner-full data_dir=justfile_directory():
+    uv run python -m src.options_tech_scanner.main --data-dir {{data_dir}} --scan --backtest
+
+options-tech-scanner-bench:
+    uv run python -m src.options_tech_scanner.main --data-dir data\stocks\1D --backtest
+    uv run python -m src.options_tech_scanner.main --data-dir data\stocks\1D --backtest
+
+clean-cache:
+    del .\\cache\\joblib\\*
+
+profile-backtest:
+    uv run python -m src.options_tech_scanner.profile_backtest

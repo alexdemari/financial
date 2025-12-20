@@ -109,7 +109,7 @@ cd stock-data-manager
 just setup
 
 # Ou manualmente
-mkdir -p data/stocks logs
+mkdir -p data/1D logs
 ```
 
 #### 3. Instale as Dependências
@@ -226,10 +226,10 @@ uv run python -m stock_data_manager -f symbols.txt
 uv run python -m stock_data_manager -s AAPL -d ./meus_dados
 
 # Diretório absoluto
-uv run python -m stock_data_manager -s AAPL -d /home/user/stocks
+uv run python -m stock_data_manager -s AAPL -d /home/user/1D
 
 # Com arquivo
-uv run python -m stock_data_manager -f symbols.txt -d ~/Documents/stocks
+uv run python -m stock_data_manager -f symbols.txt -d ~/Documents/1D
 ```
 
 #### Opções Avançadas
@@ -299,7 +299,7 @@ EOF
 just download-file symbols.txt
 
 # 4. Verificar arquivos
-ls -lh data/stocks/
+ls -lh data/1D/
 ```
 
 ### Exemplo 2: Atualização Diária Automatizada
@@ -365,7 +365,7 @@ VALE3.SA,Vale,Materials
 
 **Executar:**
 ```bash
-uv run python -m stock_data_manager -f stocks.csv -d ./data/setores
+uv run python -m stock_data_manager -f 1D.csv -d ./data/setores
 ```
 
 ### Exemplo 5: Agendamento com Cron

@@ -13,28 +13,32 @@ from stock_data_manager.models.stock_config import StockConfig
 
 
 class StockDataManager:
+    YEARS_TO_DOWNLOAD = 10
+
     def __init__(
         self,
         reader: IDataReader,
         writer: IDataWriter,
         downloader: IDataDownloader,
         merge_strategy: IMergeStrategy,
-        data_dir: str = "data/stocks",
+        data_dir: str = "data/stocks/1D",
+        year_to_download: int = YEARS_TO_DOWNLOAD,
     ):
         self.reader = reader
         self.writer = writer
         self.downloader = downloader
         self.merge_strategy = merge_strategy
         self.data_dir = Path(data_dir)
+        self.years_to_download = year_to_download
         self.logger = logging.getLogger(self.__class__.__name__)
-
+        self.logger.info(f"Data directory: {self.data_dir}")
     def _get_filepath(self, symbol: str) -> Path:
         return self.data_dir / f"{symbol}.csv"
 
     def _calculate_start_date(self, existing_data: Optional[pd.DataFrame]) -> str:
         if existing_data is None or existing_data.empty:
             # Se não há dados, baixa dos últimos 10 anos
-            start = datetime.now() - timedelta(days=10 * 365)
+            start = datetime.now() - timedelta(days=self.years_to_download * 365)
             return start.strftime("%Y-%m-%d")
 
         # Pega o último dia disponível e adiciona 1 dia
@@ -42,11 +46,11 @@ class StockDataManager:
         next_date = last_date + timedelta(days=1)
         return next_date.strftime("%Y-%m-%d")
 
-    def download_and_save(self, symbol: str, force_full: bool = False) -> pd.DataFrame:
+    def download_and_save(self, symbol: str, force_full: bool = False, interval: str = '1d') -> pd.DataFrame:
         filepath = self._get_filepath(symbol)
 
         existing_data = None if force_full else self.reader.read(filepath)
-
+        
         start_date = self._calculate_start_date(existing_data)
 
         if not force_full and existing_data is not None:
@@ -57,7 +61,7 @@ class StockDataManager:
                 self.logger.info(f"{symbol} já está atualizado até {last_date}")
                 return existing_data
 
-        config = StockConfig(symbol=symbol, start_date=start_date)
+        config = StockConfig(symbol=symbol, start_date=start_date, interval=interval)
         new_data = self.downloader.download(config)
 
         if new_data.empty:
@@ -74,13 +78,13 @@ class StockDataManager:
 
         return final_data
 
-    def download_multiple(self, symbols: List[str], force_full: bool = False) -> dict:
+    def download_multiple(self, symbols: List[str], force_full: bool = False, interval: str = "1d") -> dict:
         results = {}
 
         for symbol in symbols:
             try:
                 self.logger.info(f"Processando {symbol}...")
-                results[symbol] = self.download_and_save(symbol, force_full)
+                results[symbol] = self.download_and_save(symbol, force_full, interval)
             except Exception as e:
                 self.logger.error(f"Erro ao processar {symbol}: {e}")
                 results[symbol] = None

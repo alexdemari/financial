@@ -8,7 +8,7 @@ from stock_data_manager.strategies.update_merge import UpdateMergeStrategy
 
 class StockDataManagerFactory:
     @staticmethod
-    def create_default(data_dir: str = "data/stocks") -> StockDataManager:
+    def create_default(data_dir: str = "data/1D") -> StockDataManager:
         return StockDataManager(
             reader=CSVReader(),
             writer=CSVWriter(),
@@ -18,7 +18,7 @@ class StockDataManagerFactory:
         )
 
     @staticmethod
-    def create_with_update_strategy(data_dir: str = "data/stocks") -> StockDataManager:
+    def create_with_update_strategy(data_dir: str = "data/stocks/1D") -> StockDataManager:
         return StockDataManager(
             reader=CSVReader(),
             writer=CSVWriter(),
