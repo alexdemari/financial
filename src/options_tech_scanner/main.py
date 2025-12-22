@@ -14,9 +14,15 @@ from options_tech_scanner.backtest import run_backtest_mode
 # SCAN DE CONTEXTO + TIMING
 # =========================
 
-def scan_directory(data_dir: str, mode: str = "core") -> None:
+def scan_directory(data_dir: str, mode: str = "core", verbose: bool = False) -> None:
     results = []
     near_results = []
+    stage_universe = []
+    stage_context = []
+    stage_regime = []
+    stage_timing = []
+    stage_strategy = []
+
 
     for file in os.listdir(data_dir):
         if not file.lower().endswith(".csv"):
@@ -30,11 +36,13 @@ def scan_directory(data_dir: str, mode: str = "core") -> None:
         if len(df) < 300:
             continue
 
+        stage_universe.append(symbol)
+        
         # =========================
         # CONTEXT SCANNER
         # =========================
         context = compute_context(df)
-
+        
         # Filtros estruturais mínimos
         if context["hv30"] is not None and context["hv30"] < 30:
             continue
@@ -45,6 +53,8 @@ def scan_directory(data_dir: str, mode: str = "core") -> None:
         if context["fvg"] and context["fvg"]["type"] == "BEARISH":
             continue
 
+        stage_context.append(symbol)
+        
         # =========================
         # TIMING SCANNER
         # =========================
@@ -58,6 +68,11 @@ def scan_directory(data_dir: str, mode: str = "core") -> None:
         sma200 = sma(close, 200)
         bullish = (close.iloc[-1] > sma200.iloc[-1]) and (sma200.diff(20).iloc[-1] > 0)
 
+        if not bullish:
+            continue
+        
+        stage_regime.append(symbol)
+
         atr_val = atr_series.iloc[-1]
         support = support_series.iloc[-1]
 
@@ -68,6 +83,8 @@ def scan_directory(data_dir: str, mode: str = "core") -> None:
         if atr_val == 0 or pd.isna(atr_val) or pd.isna(support):
             continue
 
+        stage_timing.append(symbol)
+        
         dist_atr = (close.iloc[-1] - support) / atr_val
         rsi_val = rsi_series.iloc[-1]
 
@@ -80,6 +97,7 @@ def scan_directory(data_dir: str, mode: str = "core") -> None:
         )
 
         if strategy:
+            stage_strategy.append(symbol)
             results.append({
                 "symbol": symbol,
                 "strategy": strategy,
@@ -96,22 +114,18 @@ def scan_directory(data_dir: str, mode: str = "core") -> None:
                     "hv30": round(context["hv30"], 2)
                 })
 
-    print("\n📊 SETUPS ENCONTRADOS:")
-    if results:
-        df = pd.DataFrame(results)
-        df["score"] = df.apply(compute_final_score, axis=1)
+    if verbose:
+        print("\n🔍 ETAPAS DO SCAN:")
+        print(f"Universo inicial: {len(stage_universe)} ativos")
+        print(f"Após contexto:    {len(stage_context)}")
+        print(f"Após regime:      {len(stage_regime)}")
+        print(f"Após timing:      {len(stage_timing)}")
+        print(f"Setups finais:    {len(stage_strategy)}")
 
-        df = df.sort_values("score", ascending=False)
-
-        print("\n🏆 RANKING FINAL DE SETUPS:")
-        print(df.to_string(index=False))
-    else:
-        print("⚠️ Nenhum setup válido hoje.")
-
-    if near_results:
-        print("\n🟡 PRÓXIMOS DE SETUP:")
-        print(pd.DataFrame(near_results).sort_values("dist_atr").head(10).to_string(index=False))
-
+        print("\n📌 Ativos por etapa:")
+        print("Contexto OK:", stage_context[:20])
+        print("Regime OK:", stage_regime[:20])
+        print("Timing OK:", stage_timing[:20])
 
 def compute_final_score(row):
     """
@@ -153,12 +167,17 @@ if __name__ == "__main__":
     parser.add_argument("--backtest", action="store_true", help="Executar backtest")
     parser.add_argument("--mode", choices=["core", "relaxed"], default="core")
     parser.add_argument("--lookahead", type=int, default=30)
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Imprime ativos por etapa do filtro"
+    )
 
     args = parser.parse_args()
 
     if args.scan:
         print(f"\n🔍 SCAN ({args.mode.upper()})")
-        scan_directory(args.data_dir, mode=args.mode)
+        scan_directory(args.data_dir, mode=args.mode, verbose=args.verbose)
 
     if args.backtest:
         print(f"\n📈 BACKTEST ({args.mode.upper()})")

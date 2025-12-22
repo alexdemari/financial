@@ -118,26 +118,22 @@ ibkr-option-chain symbol expiration max_strikes="10" option-type="BOTH" strike-s
     uv run python -m src.ibkr.main --symbol {{symbol}} --expiration {{expiration}} --max-strikes {{max_strikes}} --option-type {{option-type}} --strike-step {{strike-step}}
 
 options-analyzer: 
-    uv run python -m src.stock_analyzer.options_analyzer
+    uv run python -m src.options_tech_scanner.options_analyzer
 
 options-tech-scanner data_dir=justfile_directory() mode="core":
-    uv run python -m src.options_tech_scanner.main --data-dir {{data_dir}} --mode {{mode}} --scan
+    uv run python -m src.options_tech_scanner.main --data-dir {{data_dir}} --mode {{mode}} --scan --verbose
 
 options-tech-scanner-backtest data_dir=justfile_directory():
     uv run python -m src.options_tech_scanner.main --data-dir {{data_dir}} --backtest
 
 options-tech-scanner-backtest-relaxed data_dir=justfile_directory():
-    uv run python -m src.options_tech_scanner.main --data-dir data\stocks\1D --backtest --mode relaxed
+    uv run python -m src.options_tech_scanner.main --data-dir {{data_dir}} --backtest --mode relaxed
 
 options-tech-scanner-backtest-45 data_dir=justfile_directory():
     uv run python -m src.options_tech_scanner.main --data-dir {{data_dir}} --backtest --lookahead 45
 
 options-tech-scanner-full data_dir=justfile_directory():
     uv run python -m src.options_tech_scanner.main --data-dir {{data_dir}} --scan --backtest
-
-options-tech-scanner-bench:
-    uv run python -m src.options_tech_scanner.main --data-dir data\stocks\1D --backtest
-    uv run python -m src.options_tech_scanner.main --data-dir data\stocks\1D --backtest
 
 clean-cache:
     del .\\cache\\joblib\\*
