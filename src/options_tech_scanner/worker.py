@@ -1,5 +1,3 @@
-import os
-
 from options_tech_scanner.loader import load_csv
 from options_tech_scanner.setups import classify_put_strategy
 from options_tech_scanner.scorer import score_setup
@@ -22,7 +20,7 @@ def process_symbol_scan(args):
         setup["score"] = score_setup(setup)
         return setup
 
-    except Exception as e:
+    except Exception:
         return None
 
 

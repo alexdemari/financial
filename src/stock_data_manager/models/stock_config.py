@@ -14,4 +14,6 @@ class StockConfig:
 
     def __post_init__(self):
         if self.end_date is None:
-            self.end_date = (datetime.now() + relativedelta.relativedelta(days=1)).strftime("%Y-%m-%d")
+            self.end_date = (
+                datetime.now() + relativedelta.relativedelta(days=1)
+            ).strftime("%Y-%m-%d")

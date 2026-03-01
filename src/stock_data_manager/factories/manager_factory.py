@@ -18,7 +18,9 @@ class StockDataManagerFactory:
         )
 
     @staticmethod
-    def create_with_update_strategy(data_dir: str = "data/stocks/1D") -> StockDataManager:
+    def create_with_update_strategy(
+        data_dir: str = "data/stocks/1D",
+    ) -> StockDataManager:
         return StockDataManager(
             reader=CSVReader(),
             writer=CSVWriter(),

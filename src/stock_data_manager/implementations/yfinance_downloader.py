@@ -8,6 +8,7 @@ from stock_data_manager.models.stock_config import StockConfig
 
 class YFinanceDownloader(IDataDownloader):
     """Responsável apenas por baixar dados do Yahoo Finance"""
+
     INTERVAL_MAP = {"1d": "1D", "1w": "1wk", "1m": "1mo"}
 
     def __init__(self):
@@ -22,7 +23,9 @@ class YFinanceDownloader(IDataDownloader):
             ticker = yf.Ticker(config.symbol)
 
             df = ticker.history(
-                start=config.start_date, end=config.end_date, interval=self.INTERVAL_MAP[config.interval]
+                start=config.start_date,
+                end=config.end_date,
+                interval=self.INTERVAL_MAP[config.interval],
             )
 
             if df.empty:

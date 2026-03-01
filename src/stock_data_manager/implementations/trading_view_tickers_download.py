@@ -8,17 +8,38 @@ class TradingViewDownloader:
     DOWNLOAD_URL = "https://scanner.tradingview.com/america/scan"
     REQUEST_DATA = {
         "columns": [
-            "name", "description", "logoid", "update_mode", "type", "typespecs", "close", "pricescale", "minmov",
-            "fractional", "minmove2", "currency", "change", "volume", "relative_volume_10d_calc", "market_cap_basic",
-            "fundamental_currency_code", "price_earnings_ttm", "earnings_per_share_diluted_ttm",
-            "earnings_per_share_diluted_yoy_growth_ttm", "dividends_yield_current", "sector.tr", "market", "sector",
-            "AnalystRating", "AnalystRating.tr"
+            "name",
+            "description",
+            "logoid",
+            "update_mode",
+            "type",
+            "typespecs",
+            "close",
+            "pricescale",
+            "minmov",
+            "fractional",
+            "minmove2",
+            "currency",
+            "change",
+            "volume",
+            "relative_volume_10d_calc",
+            "market_cap_basic",
+            "fundamental_currency_code",
+            "price_earnings_ttm",
+            "earnings_per_share_diluted_ttm",
+            "earnings_per_share_diluted_yoy_growth_ttm",
+            "dividends_yield_current",
+            "sector.tr",
+            "market",
+            "sector",
+            "AnalystRating",
+            "AnalystRating.tr",
         ],
         "ignore_unknown_fields": False,
         "options": {"lang": "en"},
         "range": [0, 100000],
         "sort": {"sortBy": "name", "sortOrder": "asc", "nullsFirst": False},
-        "preset": "all_stocks"
+        "preset": "all_stocks",
     }
 
     def __init__(self, download_url: str = DOWNLOAD_URL, request_payload: dict = None):

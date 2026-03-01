@@ -51,17 +51,11 @@ def fair_value_gap(high: pd.Series, low: pd.Series) -> dict | None:
 
     # FVG de alta
     if l1 > h2:
-        return {
-            "type": "BULLISH",
-            "zone": (h2, l1)
-        }
+        return {"type": "BULLISH", "zone": (h2, l1)}
 
     # FVG de baixa
     if h1 < l0:
-        return {
-            "type": "BEARISH",
-            "zone": (h1, l0)
-        }
+        return {"type": "BEARISH", "zone": (h1, l0)}
 
     return None
 

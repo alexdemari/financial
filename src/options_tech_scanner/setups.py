@@ -4,7 +4,7 @@ def classify_put_strategy(
     rsi_val: float,
     dist_atr: float,
     vol_ratio: float,
-    mode: str = "core"
+    mode: str = "core",
 ) -> str | None:
     if mode == "core":
         min_dist = 0.8
@@ -27,11 +27,7 @@ def classify_put_strategy(
     # =========================
     # BULL PUT SPREAD
     # =========================
-    if (
-        min_dist <= dist_atr < 1.2
-        and vol_ratio < 1.5
-        and 40 <= rsi_val <= 65
-    ):
+    if min_dist <= dist_atr < 1.2 and vol_ratio < 1.5 and 40 <= rsi_val <= 65:
         return "BULL_PUT_SPREAD"
 
     return None

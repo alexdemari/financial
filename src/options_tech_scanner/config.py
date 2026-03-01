@@ -1,4 +1,4 @@
-LOOKBACK_LONG = 200    # tendência primária
+LOOKBACK_LONG = 200  # tendência primária
 LOOKBACK_MID = 50
 LOOKBACK_SHORT = 20
 

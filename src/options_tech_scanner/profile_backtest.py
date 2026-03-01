@@ -5,10 +5,7 @@ from options_tech_scanner.backtest import run_backtest
 
 
 def main():
-    run_backtest(
-        data_dir="data",
-        lookahead=30
-    )
+    run_backtest(data_dir="data", lookahead=30)
 
 
 if __name__ == "__main__":

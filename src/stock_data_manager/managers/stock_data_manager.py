@@ -32,6 +32,7 @@ class StockDataManager:
         self.years_to_download = year_to_download
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.info(f"Data directory: {self.data_dir}")
+
     def _get_filepath(self, symbol: str) -> Path:
         return self.data_dir / f"{symbol}.csv"
 
@@ -46,11 +47,13 @@ class StockDataManager:
         next_date = last_date + timedelta(days=1)
         return next_date.strftime("%Y-%m-%d")
 
-    def download_and_save(self, symbol: str, force_full: bool = False, interval: str = '1d') -> pd.DataFrame:
+    def download_and_save(
+        self, symbol: str, force_full: bool = False, interval: str = "1d"
+    ) -> pd.DataFrame:
         filepath = self._get_filepath(symbol)
 
         existing_data = None if force_full else self.reader.read(filepath)
-        
+
         start_date = self._calculate_start_date(existing_data)
 
         if not force_full and existing_data is not None:
@@ -78,7 +81,9 @@ class StockDataManager:
 
         return final_data
 
-    def download_multiple(self, symbols: List[str], force_full: bool = False, interval: str = "1d") -> dict:
+    def download_multiple(
+        self, symbols: List[str], force_full: bool = False, interval: str = "1d"
+    ) -> dict:
         results = {}
 
         for symbol in symbols:

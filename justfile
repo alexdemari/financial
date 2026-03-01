@@ -1,11 +1,6 @@
-# Justfile - Cross-platform task runner
-# Install: cargo install just
-# Usage: just <command>
+# Justfile - Cross-platform task runner (WSL/Linux first)
 
 export PYTHONPATH := "src"
-
-# Set shell for Windows compatibility
-set shell := ["cmd", "/c"]
 
 # Default recipe
 default:
@@ -49,16 +44,12 @@ type-check:
 # Check code quality
 check: format lint type-check test
 
-# Clean cache files
+# Clean cache files (Linux compatible)
 clean:
-    @echo "Cleaning cache files..."
-    @if exist "__pycache__" rmdir /s /q __pycache__
-    @for /d /r . %%d in (__pycache__) do @if exist "%%d" rmdir /s /q "%%d"
-    @if exist "build" rmdir /s /q build
-    @if exist "dist" rmdir /s /q dist
-    @if exist ".coverage" del .coverage
-    @if exist "htmlcov" rmdir /s /q htmlcov
-    @if exist ".pytest_cache" rmdir /s /q .pytest_cache
+    rm -rf __pycache__
+    find . -type d -name "__pycache__" -exec rm -rf {} +
+    rm -rf build dist htmlcov .pytest_cache
+    rm -f .coverage
 
 clean-data:
     rm -rf data/stocks/*.csv
@@ -66,11 +57,11 @@ clean-data:
 
 # Build Docker image
 docker-build:
-    docker build -t stock_data_manager .
+    podman build -t stock_data_manager .
 
 # Run with Docker
 docker-run:
-    docker run -v ${PWD}/data:/app/data stock_data_manager
+    podman run -v ${PWD}/data:/app/data stock_data_manager
 
 # Update dependencies
 update:
@@ -84,32 +75,27 @@ audit:
 pre-commit:
     uv run pre-commit run --all-files
 
-# Baixa dados de uma ação específica
+# Download commands
 download symbol interval="1d":
     uv run python -m src.stock_data_manager.main -s {{symbol}} -i {{interval}}
 
-# Baixa dados de múltiplas ações (símbolos separados por espaço)
 download-many symbols interval="1d":
     uv run python -m src.stock_data_manager.main -s {{symbols}} -i {{interval}}
 
-# Baixa símbolos de um arquivo
-download-file file interval="1d":
+download-from-file file interval="1d":
     uv run python -m src.stock_data_manager.main -f {{file}} -i {{interval}}
 
-# Download completo (força re-download)
-download-full file interval="1d":
+download--from-file-full file interval="1d":
     uv run python -m src.stock_data_manager.main -f {{file}} --full -i {{interval}}
 
-# Baixa dados de ações brasileiras (predefinidas)
 download-br interval="1d":
     uv run python -m src.stock_data_manager.main -s PETR4.SA VALE3.SA BBDC4.SA ITUB4.SA ABEV3.SA -i {{interval}}
 
-# Baixa dados de ações americanas (predefinidas)
 download-us interval="1d":
     uv run python -m src.stock_data_manager.main -s AAPL MSFT GOOGL AMZN META -i {{interval}}
 
 download-all-us interval="1d" base_dir=justfile_directory():
-    uv run python -m src.stock_data_manager.main -a {{base_dir}}\data\us_symbols.json -i {{interval}}
+    uv run python -m src.stock_data_manager.main -a {{base_dir}}/data/us_symbols.json -i {{interval}}
 
 analyzer symbol="AAPL":
     uv run python -m src.stock_analyzer.main -s {{symbol}}
@@ -117,7 +103,7 @@ analyzer symbol="AAPL":
 ibkr-option-chain symbol expiration max_strikes="10" option-type="BOTH" strike-step="5":
     uv run python -m src.ibkr.main --symbol {{symbol}} --expiration {{expiration}} --max-strikes {{max_strikes}} --option-type {{option-type}} --strike-step {{strike-step}}
 
-options-analyzer: 
+options-analyzer:
     uv run python -m src.options_tech_scanner.options_analyzer
 
 options-tech-scanner data_dir=justfile_directory() mode="core":
@@ -136,7 +122,7 @@ options-tech-scanner-full data_dir=justfile_directory():
     uv run python -m src.options_tech_scanner.main --data-dir {{data_dir}} --scan --backtest
 
 clean-cache:
-    del .\\cache\\joblib\\*
+    rm -rf ./cache/joblib/*
 
 profile-backtest:
     uv run python -m src.options_tech_scanner.profile_backtest

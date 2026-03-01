@@ -11,7 +11,7 @@ def detect_setups(
     df: pd.DataFrame,
     lookahead: int = 30,
     support_lookback: int = 60,
-    mode: str = "core"
+    mode: str = "core",
 ) -> List[Dict]:
     """
     Backtest técnico eficiente (O(N)) para CSP e Bull Put Spread.
@@ -54,7 +54,6 @@ def detect_setups(
     # =========================
 
     for i in range(min_bars, len(df) - lookahead):
-
         atr_val = atr_series.iloc[i]
         support = support_series.iloc[i]
 
@@ -68,7 +67,7 @@ def detect_setups(
             rsi_val=rsi_series.iloc[i],
             dist_atr=dist_atr,
             vol_ratio=vol_ratio_series.iloc[i],
-            mode=mode
+            mode=mode,
         )
 
         if strategy is None:

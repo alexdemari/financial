@@ -2,7 +2,6 @@ from pathlib import Path
 from time import sleep
 from typing import List
 
-from src.stock_data_manager.cli import PROJECT_ROOT
 from stock_analyzer.analyzer import StockDataAnalyzer
 from stock_analyzer.config import IndicatorConfig
 from stock_data_manager.implementations.trading_view_tickers_download import (
@@ -12,8 +11,7 @@ from stock_data_manager.implementations.trading_view_tickers_reader import (
     TradingViewTickerExtractor,
 )
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent
-DATA_DIR = f"{PROJECT_ROOT}\\data\\stocks"
+DATA_DIR = f"{Path(__file__).parent.parent.parent}\\data\\stocks"
 
 
 def update_tickers_list(tickers_file: str):
@@ -21,7 +19,9 @@ def update_tickers_list(tickers_file: str):
     tv_downloader.download(output_file=tickers_file)
 
 
-def update_tickers_data(tickers_file: str, symbols: List[str] = None, sleep_time: float = 0.05):
+def update_tickers_data(
+    tickers_file: str, symbols: List[str] = None, sleep_time: float = 0.05
+):
     tv_ticker_extrator = TradingViewTickerExtractor(tickers_file)
     tickers = tv_ticker_extrator.extract_tickers()
 
@@ -36,7 +36,9 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Stock Data Analyzer")
-    parser.add_argument("-s", "--symbol", type=str, required=True, help="Stock symbol to analyze")
+    parser.add_argument(
+        "-s", "--symbol", type=str, required=True, help="Stock symbol to analyze"
+    )
     args = parser.parse_args()
 
     config = IndicatorConfig(rsi_period=14, sma_period=50)
@@ -53,4 +55,3 @@ if __name__ == "__main__":
     # Histórico
     historical = analyzer.generate_historical_signals(symbol, df)
     print(historical)
-

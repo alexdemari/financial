@@ -2,6 +2,7 @@
 Analisador de dados de ações (refatorado).
 Responsabilidade única: Orquestrar análise de dados.
 """
+
 import logging
 from typing import Optional
 
@@ -25,11 +26,7 @@ class StockDataAnalyzer:
         self.signal_generator = SignalGenerator(self.config)
         logger.info(f"StockDataAnalyzer inicializado com config: {self.config}")
 
-    def generate_signal(
-        self,
-        symbol: str,
-        df: pd.DataFrame
-    ) -> Optional[SignalResult]:
+    def generate_signal(self, symbol: str, df: pd.DataFrame) -> Optional[SignalResult]:
         """
         Gera sinal para o candle atual.
 
@@ -43,9 +40,7 @@ class StockDataAnalyzer:
         return self.signal_generator.generate_current_signal(symbol, df)
 
     def generate_historical_signals(
-        self,
-        symbol: str,
-        df: pd.DataFrame
+        self, symbol: str, df: pd.DataFrame
     ) -> pd.DataFrame:
         """
         Gera histórico completo de sinais.
@@ -60,11 +55,7 @@ class StockDataAnalyzer:
         return self.signal_generator.generate_historical_signals(symbol, df)
 
     @staticmethod
-    def retrieve_data(
-        symbol: str,
-        data_dir: str,
-        interval: str = '1d'
-    ) -> pd.DataFrame:
+    def retrieve_data(symbol: str, data_dir: str, interval: str = "1d") -> pd.DataFrame:
         """
         Recupera dados mais recentes.
 

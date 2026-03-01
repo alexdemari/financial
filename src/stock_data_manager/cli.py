@@ -46,7 +46,7 @@ class SymbolsLoader:
                 # Se não encontrou coluna, usa a primeira
                 if not symbols and len(df.columns) > 0:
                     symbols = df.iloc[:, 0].dropna().str.strip().tolist()
-            except:
+            except Exception:
                 pass
 
         # Se não conseguiu ler como CSV ou não é CSV, lê como texto
@@ -203,12 +203,16 @@ Formato do arquivo de símbolos:
                 symbols = args.symbols
                 print(f"📊 Símbolos da linha de comando: {', '.join(symbols)}")
             elif args.all_tickers:
-                from stock_data_manager.implementations.trading_view_tickers_reader import TradingViewTickerExtractor
-                
+                from stock_data_manager.implementations.trading_view_tickers_reader import (
+                    TradingViewTickerExtractor,
+                )
+
                 ticker_extractor = TradingViewTickerExtractor(args.all_tickers)
                 tickers_df = ticker_extractor.extract_tickers()
                 symbols = tickers_df["symbol"].tolist()
-                print(f"📁 Carregados {len(symbols)} símbolos do arquivo TradingView: {args.all_tickers}")
+                print(
+                    f"📁 Carregados {len(symbols)} símbolos do arquivo TradingView: {args.all_tickers}"
+                )
             else:
                 symbols = SymbolsLoader.from_file(args.file)
                 print(f"📁 Carregados {len(symbols)} símbolos de {args.file}")
@@ -232,8 +236,10 @@ Formato do arquivo de símbolos:
                 f"\n{'🔄 Modo: Download completo' if args.full else '⚡ Modo: Incremental'}"
             )
             print(f"📈 Processando {len(symbols)} ativo(s)...\n")
-            
-            results = manager.download_multiple(symbols, force_full=args.full, interval=args.interval)
+
+            results = manager.download_multiple(
+                symbols, force_full=args.full, interval=args.interval
+            )
 
             # Exibe resumo
             print("\n" + "=" * 60)

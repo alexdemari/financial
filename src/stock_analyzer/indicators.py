@@ -1,6 +1,7 @@
 """
 Cálculo de indicadores técnicos (separação de responsabilidades).
 """
+
 import logging
 import pandas as pd
 import pandas_ta as ta
@@ -12,10 +13,7 @@ class IndicatorCalculator:
     """Responsável apenas por calcular indicadores."""
 
     @staticmethod
-    def calculate_rsi(
-        series: pd.Series,
-        period: int = 14
-    ) -> pd.Series:
+    def calculate_rsi(series: pd.Series, period: int = 14) -> pd.Series:
         """Calcula RSI."""
         if series.empty or len(series) < period:
             logger.warning(f"Série insuficiente para RSI(período={period})")
@@ -24,10 +22,7 @@ class IndicatorCalculator:
         return ta.rsi(series, length=period)
 
     @staticmethod
-    def calculate_sma(
-        series: pd.Series,
-        period: int = 50
-    ) -> pd.Series:
+    def calculate_sma(series: pd.Series, period: int = 50) -> pd.Series:
         """Calcula SMA."""
         if series.empty or len(series) < period:
             logger.warning(f"Série insuficiente para SMA(período={period})")
@@ -37,10 +32,7 @@ class IndicatorCalculator:
 
     @staticmethod
     def calculate_cci(
-        high: pd.Series,
-        low: pd.Series,
-        close: pd.Series,
-        period: int = 14
+        high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14
     ) -> pd.Series:
         """Calcula CCI."""
         if any(s.empty for s in [high, low, close]) or len(close) < period:

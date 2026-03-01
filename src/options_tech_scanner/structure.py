@@ -11,12 +11,7 @@ def recent_swing_low(df: pd.DataFrame, lookback: int = 60) -> float:
     return lows.loc[idx]
 
 
-def distance_to_support_from_series(
-    price: float,
-    support: float,
-    atr: float
-) -> float:
+def distance_to_support_from_series(price: float, support: float, atr: float) -> float:
     if atr == 0 or np.isnan(atr):
         return np.nan
     return (price - support) / atr
-

@@ -14,6 +14,7 @@ from options_tech_scanner.backtest import run_backtest_mode
 # SCAN DE CONTEXTO + TIMING
 # =========================
 
+
 def scan_directory(data_dir: str, mode: str = "core", verbose: bool = False) -> None:
     results = []
     near_results = []
@@ -22,7 +23,6 @@ def scan_directory(data_dir: str, mode: str = "core", verbose: bool = False) -> 
     stage_regime = []
     stage_timing = []
     stage_strategy = []
-
 
     for file in os.listdir(data_dir):
         if not file.lower().endswith(".csv"):
@@ -37,12 +37,12 @@ def scan_directory(data_dir: str, mode: str = "core", verbose: bool = False) -> 
             continue
 
         stage_universe.append(symbol)
-        
+
         # =========================
         # CONTEXT SCANNER
         # =========================
         context = compute_context(df)
-        
+
         # Filtros estruturais mínimos
         if context["hv30"] is not None and context["hv30"] < 30:
             continue
@@ -54,7 +54,7 @@ def scan_directory(data_dir: str, mode: str = "core", verbose: bool = False) -> 
             continue
 
         stage_context.append(symbol)
-        
+
         # =========================
         # TIMING SCANNER
         # =========================
@@ -70,7 +70,7 @@ def scan_directory(data_dir: str, mode: str = "core", verbose: bool = False) -> 
 
         if not bullish:
             continue
-        
+
         stage_regime.append(symbol)
 
         atr_val = atr_series.iloc[-1]
@@ -84,7 +84,7 @@ def scan_directory(data_dir: str, mode: str = "core", verbose: bool = False) -> 
             continue
 
         stage_timing.append(symbol)
-        
+
         dist_atr = (close.iloc[-1] - support) / atr_val
         rsi_val = rsi_series.iloc[-1]
 
@@ -93,26 +93,30 @@ def scan_directory(data_dir: str, mode: str = "core", verbose: bool = False) -> 
             rsi_val=rsi_val,
             dist_atr=dist_atr,
             vol_ratio=1.0,  # proxy simples no scan
-            mode=mode
+            mode=mode,
         )
 
         if strategy:
             stage_strategy.append(symbol)
-            results.append({
-                "symbol": symbol,
-                "strategy": strategy,
-                "rsi": round(rsi_val, 2),
-                "dist_atr": round(dist_atr, 2),
-                "hv30": round(context["hv30"], 2)
-            })
-        else:
-            if bullish and dist_atr < 0.8:
-                near_results.append({
+            results.append(
+                {
                     "symbol": symbol,
+                    "strategy": strategy,
                     "rsi": round(rsi_val, 2),
                     "dist_atr": round(dist_atr, 2),
-                    "hv30": round(context["hv30"], 2)
-                })
+                    "hv30": round(context["hv30"], 2),
+                }
+            )
+        else:
+            if bullish and dist_atr < 0.8:
+                near_results.append(
+                    {
+                        "symbol": symbol,
+                        "rsi": round(rsi_val, 2),
+                        "dist_atr": round(dist_atr, 2),
+                        "hv30": round(context["hv30"], 2),
+                    }
+                )
 
     if verbose:
         print("\n🔍 ETAPAS DO SCAN:")
@@ -126,6 +130,8 @@ def scan_directory(data_dir: str, mode: str = "core", verbose: bool = False) -> 
         print("Contexto OK:", stage_context[:20])
         print("Regime OK:", stage_regime[:20])
         print("Timing OK:", stage_timing[:20])
+        print("Setups:", stage_strategy[:20])
+
 
 def compute_final_score(row):
     """
@@ -145,12 +151,7 @@ def compute_final_score(row):
     # --- bônus por estratégia ---
     strat_bonus = 0.1 if row["strategy"] == "BULL_PUT_SPREAD" else 0.0
 
-    score = (
-        0.4 * dist_score +
-        0.3 * rsi_score +
-        0.3 * hv_score +
-        strat_bonus
-    )
+    score = 0.4 * dist_score + 0.3 * rsi_score + 0.3 * hv_score + strat_bonus
 
     return round(score * 100, 2)
 
@@ -162,15 +163,15 @@ def compute_final_score(row):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("Options Tech Scanner")
 
-    parser.add_argument("--data-dir", type=str, required=True, help="Diretório dos CSVs")
+    parser.add_argument(
+        "--data-dir", type=str, required=True, help="Diretório dos CSVs"
+    )
     parser.add_argument("--scan", action="store_true", help="Executar scan diário")
     parser.add_argument("--backtest", action="store_true", help="Executar backtest")
     parser.add_argument("--mode", choices=["core", "relaxed"], default="core")
     parser.add_argument("--lookahead", type=int, default=30)
     parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Imprime ativos por etapa do filtro"
+        "--verbose", action="store_true", help="Imprime ativos por etapa do filtro"
     )
 
     args = parser.parse_args()
@@ -182,9 +183,7 @@ if __name__ == "__main__":
     if args.backtest:
         print(f"\n📈 BACKTEST ({args.mode.upper()})")
         events = run_backtest_mode(
-            data_dir=args.data_dir,
-            lookahead=args.lookahead,
-            mode=args.mode
+            data_dir=args.data_dir, lookahead=args.lookahead, mode=args.mode
         )
 
         from options_tech_scanner.metrics import summary_by_strategy
