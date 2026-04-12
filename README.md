@@ -7,7 +7,6 @@ Current modules include:
 - `stock_data_manager`
 - `stock_analyzer`
 - `options_tech_scanner`
-- `ibkr`
 
 ## Documentation
 

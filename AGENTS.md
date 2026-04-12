@@ -9,7 +9,6 @@ Current main modules:
 - `stock_data_manager`
 - `stock_analyzer`
 - `options_tech_scanner`
-- `ibkr`
 
 `stock_data_manager` is currently a synchronous, batch-oriented module using:
 
