@@ -19,6 +19,9 @@ install:
 test:
     uv run pytest
 
+test-stock-data-manager:
+    .venv/bin/python -m pytest tests/stock_data_manager -q
+
 test-cov:
     uv run pytest --cov=src/stock_data_manager --cov-report=html
     @echo "Relatório de cobertura: htmlcov/index.html"
