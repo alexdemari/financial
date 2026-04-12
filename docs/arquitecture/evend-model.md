@@ -1,55 +1,47 @@
-# Event Model - Stock Data Manager
+# Event Model — Stock Data Manager
 
 ## Current State
 
-`stock_data_manager` does not currently implement an event-driven architecture.
+The system does NOT implement an event-driven architecture.
 
 Execution is:
 
-- Synchronous.
-- CLI-driven or programmatically invoked.
-- Sequential for multiple symbols.
-- In-process only.
+- Synchronous
+- Command-driven
+- Sequential
 
-There is no event bus, Redis integration, queue, worker process, or durable event log in the current module.
+---
 
-## Current Workflow Signals
+## Implicit Events (Conceptual Only)
 
-The implementation has workflow steps that could become events in the future, but they are currently plain method calls and log messages.
+Although not implemented, the workflow implicitly contains the following steps:
 
-Current logical steps:
+- Data requested
+- Data downloaded
+- Data merged
+- Data persisted
 
-- A download is requested by the CLI or a Python caller.
-- Existing local data is read from CSV.
-- A download range is calculated.
-- Data is requested from `yfinance`.
-- Existing and new rows are merged.
-- The final DataFrame is written to CSV.
-- Per-symbol success or failure is reported by the CLI.
+These are NOT exposed as explicit events.
 
-These are not event contracts.
+---
 
-## Current Limitations
+## Limitations
 
-Because there is no implemented event model:
+- No event contracts between components
+- No asynchronous processing
+- No decoupling between modules
+- No support for reactive workflows
 
-- Components are not coordinated asynchronously.
-- There are no published or consumed event types.
-- There is no event replay.
-- There is no subscriber model.
-- There is no durable queue for failed work.
-- Failures are logged and represented in return values, not emitted as events.
+---
 
-## Future Direction
+## Future Direction (Preview Only)
 
-Event-driven processing is a possible future evolution only.
+A future evolution may introduce an event-driven model.
 
-If introduced later, event handling should wrap the existing `StockDataManager` workflow instead of replacing the reader, writer, downloader, and merge strategy abstractions immediately.
+Potential events:
 
-Potential future event names could include:
+- stock.data.requested
+- stock.data.updated
+- stock.data.failed
 
-- `stock.data.requested`
-- `stock.data.updated`
-- `stock.data.failed`
-
-These events are not implemented today.
+This is NOT part of the current implementation.

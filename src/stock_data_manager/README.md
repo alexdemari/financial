@@ -143,11 +143,11 @@ Current downloader interval mapping:
 }
 ```
 
-Note: the CLI help currently mentions `1h`, but `YFinanceDownloader` does not map `1h` yet.
+The CLI validates the interval against this supported set.
 
-### Output Directory Caveat
+### Output Directory
 
-The CLI accepts `--data-dir`, but the current CLI flow derives the active output directory from the project path and selected interval:
+By default, the CLI writes files under:
 
 ```text
 data/stocks/{INTERVAL}
@@ -159,7 +159,11 @@ For example:
 data/stocks/1D/AAPL.csv
 ```
 
-Programmatic usage can still pass a custom `data_dir` to `StockDataManagerFactory`.
+Use `--data-dir` to override the output directory:
+
+```bash
+uv run python -m src.stock_data_manager.main -s AAPL -d ./custom-data
+```
 
 ## Just Commands
 
@@ -177,7 +181,7 @@ Use `just --list` from the repository root to see the available commands.
 ## Programmatic Usage
 
 ```python
-from stock_data_manager.factories.manager_factory import StockDataManagerFactory
+from stock_data_manager.factories import StockDataManagerFactory
 
 manager = StockDataManagerFactory.create_default(
     data_dir="data/stocks/1D",
@@ -192,7 +196,7 @@ results = manager.download_multiple(["MSFT", "GOOGL"], interval="1d")
 Use the update merge strategy:
 
 ```python
-from stock_data_manager.factories.manager_factory import StockDataManagerFactory
+from stock_data_manager.factories import StockDataManagerFactory
 
 manager = StockDataManagerFactory.create_with_update_strategy(
     data_dir="data/stocks/1D",
@@ -231,4 +235,3 @@ Possible extensions:
 - Failed downloads are logged but not retried automatically.
 - Data freshness depends on manual execution or external scheduling.
 - `yfinance` is not a guaranteed real-time market data source.
-- The CLI `--data-dir` option is currently not used as the active output directory.

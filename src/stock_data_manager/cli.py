@@ -7,9 +7,12 @@ from typing import List
 import pandas as pd
 
 from stock_data_manager.factories.manager_factory import StockDataManagerFactory
+from stock_data_manager.implementations.yfinance_downloader import YFinanceDownloader
 
 BASE_PATH = Path(__file__).parent.parent.resolve()
 PROJECT_ROOT = BASE_PATH.parent
+DEFAULT_INTERVAL = "1d"
+SUPPORTED_INTERVALS = tuple(YFinanceDownloader.INTERVAL_MAP.keys())
 
 
 class SymbolsLoader:
@@ -145,15 +148,22 @@ Formato do arquivo de símbolos:
             "--data-dir",
             type=str,
             metavar="DIR",
-            help="Diretório onde os arquivos CSV serão salvos (padrão: data/1D)",
+            help=(
+                "Diretório onde os arquivos CSV serão salvos "
+                "(padrão: data/stocks/<interval>)"
+            ),
         )
 
         parser.add_argument(
             "-i",
             "--interval",
             type=str,
-            default="1d",
-            help="Intervalo de tempo dos dados (padrão: 1d). Opções: 1d, 1h, 1w, 1m",
+            default=DEFAULT_INTERVAL,
+            choices=SUPPORTED_INTERVALS,
+            help=(
+                "Intervalo de tempo dos dados "
+                f"(padrão: {DEFAULT_INTERVAL}). Opções: {', '.join(SUPPORTED_INTERVALS)}"
+            ),
         )
 
         # Opções adicionais
@@ -221,7 +231,11 @@ Formato do arquivo de símbolos:
                 print("❌ Nenhum símbolo para processar!")
                 return 1
 
-            data_output_dir = f"{PROJECT_ROOT}/data/stocks/{args.interval.upper()}"
+            data_output_dir = (
+                args.data_dir
+                if args.data_dir
+                else f"{PROJECT_ROOT}/data/stocks/{args.interval.upper()}"
+            )
 
             # Cria o gerenciador
             if args.strategy == "update":

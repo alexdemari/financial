@@ -11,7 +11,6 @@ The current `stock_data_manager` module is a synchronous, CLI-driven, CSV-backed
 The following improvements fit the current architecture without changing the execution model:
 
 - Add validation for supported intervals before calling `YFinanceDownloader`.
-- Make the CLI `--data-dir` option control the actual output directory.
 - Add retry logic for transient provider failures.
 - Add tests for incremental date calculation.
 - Add tests for append and update merge behavior.

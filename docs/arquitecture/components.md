@@ -22,8 +22,6 @@
 - Force full flag
 - Output directory
 
-Note: the current CLI parses an output directory argument, but the active output path is derived from the project path and selected interval.
-
 ---
 
 ### Outputs
