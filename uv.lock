@@ -245,7 +245,6 @@ dependencies = [
     { name = "nest-asyncio" },
     { name = "pandas" },
     { name = "pandas-ta" },
-    { name = "pre-commit" },
     { name = "ta" },
     { name = "tabulate" },
     { name = "tqdm" },
@@ -255,6 +254,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "mypy" },
+    { name = "pre-commit" },
     { name = "pytest" },
     { name = "ruff" },
 ]
@@ -268,7 +268,6 @@ requires-dist = [
     { name = "nest-asyncio", specifier = ">=1.6.0" },
     { name = "pandas", specifier = ">=2.3.3" },
     { name = "pandas-ta", specifier = ">=0.4.71b0" },
-    { name = "pre-commit", specifier = ">=4.5.1" },
     { name = "ta", specifier = ">=0.11.0" },
     { name = "tabulate", specifier = ">=0.9.0" },
     { name = "tqdm", specifier = ">=4.67.1" },
@@ -278,6 +277,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "mypy", specifier = ">=1.18.2" },
+    { name = "pre-commit", specifier = ">=4.5.1" },
     { name = "pytest", specifier = ">=8.4.2" },
     { name = "ruff", specifier = ">=0.13.3" },
 ]

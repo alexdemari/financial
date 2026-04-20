@@ -58,28 +58,22 @@ uv sync --dev
 
 Run commands from the repository root.
 
-With the current project layout, use one of these forms:
+With the current project layout, set `PYTHONPATH=src` and run the package module:
 
 ```bash
-uv run python -m src.stock_data_manager.main -s AAPL MSFT
-```
-
-or set `PYTHONPATH=src` and run:
-
-```bash
-uv run python -m stock_data_manager.main -s AAPL MSFT
+PYTHONPATH=src uv run python -m stock_data_manager.main -s AAPL MSFT
 ```
 
 ### Download Specific Symbols
 
 ```bash
-uv run python -m src.stock_data_manager.main -s AAPL MSFT GOOGL
+PYTHONPATH=src uv run python -m stock_data_manager.main -s AAPL MSFT GOOGL
 ```
 
 Brazilian tickers must include the Yahoo Finance suffix:
 
 ```bash
-uv run python -m src.stock_data_manager.main -s PETR4.SA VALE3.SA
+PYTHONPATH=src uv run python -m stock_data_manager.main -s PETR4.SA VALE3.SA
 ```
 
 ### Download From A File
@@ -96,7 +90,7 @@ PETR4.SA
 Command:
 
 ```bash
-uv run python -m src.stock_data_manager.main -f symbols.txt
+PYTHONPATH=src uv run python -m stock_data_manager.main -f symbols.txt
 ```
 
 CSV files are also supported. The loader looks for common columns such as `symbol`, `ticker`, `Symbol`, or `Ticker`. If none is found, it uses the first column.
@@ -104,13 +98,13 @@ CSV files are also supported. The loader looks for common columns such as `symbo
 ### Download TradingView Tickers
 
 ```bash
-uv run python -m src.stock_data_manager.main -a data/data.json -i 1d
+PYTHONPATH=src uv run python -m stock_data_manager.main -a data/data.json -i 1d
 ```
 
 ### Force A Full Refresh
 
 ```bash
-uv run python -m src.stock_data_manager.main -s AAPL --full
+PYTHONPATH=src uv run python -m stock_data_manager.main -s AAPL --full
 ```
 
 ### Select Merge Strategy
@@ -118,19 +112,19 @@ uv run python -m src.stock_data_manager.main -s AAPL --full
 Default append strategy:
 
 ```bash
-uv run python -m src.stock_data_manager.main -s AAPL --strategy append
+PYTHONPATH=src uv run python -m stock_data_manager.main -s AAPL --strategy append
 ```
 
 Update strategy:
 
 ```bash
-uv run python -m src.stock_data_manager.main -s AAPL --strategy update
+PYTHONPATH=src uv run python -m stock_data_manager.main -s AAPL --strategy update
 ```
 
 ### Select Interval
 
 ```bash
-uv run python -m src.stock_data_manager.main -s AAPL -i 1d
+PYTHONPATH=src uv run python -m stock_data_manager.main -s AAPL -i 1d
 ```
 
 Current downloader interval mapping:
@@ -162,7 +156,7 @@ data/stocks/1D/AAPL.csv
 Use `--data-dir` to override the output directory:
 
 ```bash
-uv run python -m src.stock_data_manager.main -s AAPL -d ./custom-data
+PYTHONPATH=src uv run python -m stock_data_manager.main -s AAPL -d ./custom-data
 ```
 
 ## Just Commands
@@ -225,7 +219,7 @@ Possible extensions:
 - Add another `IDataReader` and `IDataWriter` for Parquet, SQLite, DuckDB, or another local format.
 - Add another `IMergeStrategy` for stricter merge behavior.
 - Add retry logic around provider failures.
-- Add interval validation before calling the downloader.
+- Add manager-level interval validation for programmatic usage before calling the downloader.
 
 ## Known Limitations
 
