@@ -101,7 +101,7 @@ download-all-us interval="1d" base_dir=justfile_directory():
     uv run python -m src.stock_data_manager.main -a {{base_dir}}/data/us_symbols.json -i {{interval}}
 
 analyzer symbol="AAPL":
-    uv run python -m src.stock_analyzer.main -s {{symbol}}
+    uv run python -m stock_analyzer.main -s {{symbol}}
 
 ibkr-option-chain symbol expiration max_strikes="10" option-type="BOTH" strike-step="5":
     uv run python -m src.ibkr.main --symbol {{symbol}} --expiration {{expiration}} --max-strikes {{max_strikes}} --option-type {{option-type}} --strike-step {{strike-step}}

@@ -4,6 +4,7 @@ Responsabilidade única: Orquestrar análise de dados.
 """
 
 import logging
+from pathlib import Path
 from typing import Optional
 
 import pandas as pd
@@ -55,7 +56,9 @@ class StockDataAnalyzer:
         return self.signal_generator.generate_historical_signals(symbol, df)
 
     @staticmethod
-    def retrieve_data(symbol: str, data_dir: str, interval: str = "1d") -> pd.DataFrame:
+    def retrieve_data(
+        symbol: str, data_dir: str | Path, interval: str = "1d"
+    ) -> pd.DataFrame:
         """
         Recupera dados mais recentes.
 
@@ -67,8 +70,9 @@ class StockDataAnalyzer:
             DataFrame com dados limpos
         """
         try:
-            sdm = StockDataManagerFactory().create_with_update_strategy(
-                data_dir=f"{data_dir}\{interval.upper()}"
+            interval_data_dir = Path(data_dir) / interval.upper()
+            sdm = StockDataManagerFactory.create_with_update_strategy(
+                data_dir=str(interval_data_dir)
             )
 
             df = sdm.download_and_save(symbol, interval=interval)
