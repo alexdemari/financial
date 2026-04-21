@@ -25,6 +25,7 @@ data/results/
 *.db
 *.sqlite
 reports
+cache
 
 # Logs
 logs/
