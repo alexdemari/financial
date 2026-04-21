@@ -24,6 +24,7 @@ data/processed/
 data/results/
 *.db
 *.sqlite
+reports
 
 # Logs
 logs/
