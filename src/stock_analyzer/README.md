@@ -6,6 +6,7 @@
 
 - Calculates core indicators (RSI, SMA, CCI)
 - Generates current and historical RSI/SMA-based signals
+- Generates current and historical RT signals ported from Pine Script
 - Contains simple strategy backtests (RSI, SMA crossover, CCI mean reversion)
 - Integrates with `stock_data_manager` to fetch/update symbol data
 
@@ -20,7 +21,7 @@ Current execution model:
 CLI / Python caller
   -> StockDataAnalyzer
       -> stock_data_manager retrieves or updates local CSV data
-      -> SignalGenerator
+      -> selected signal generator
           -> IndicatorCalculator
       -> current signal and historical signal DataFrame
 ```
@@ -34,7 +35,9 @@ There are currently no dedicated tests for this package under `tests/`.
 ## Package Structure
 
 - `analyzer.py`: high-level orchestrator (`StockDataAnalyzer`)
-- `signals.py`: signal generation (`SignalGenerator`, `SignalResult`)
+- `signals/`: signal generators
+  - `rsi_sma.py`: legacy RSI/SMA signal generation (`SignalGenerator`, `SignalResult`)
+  - `rt.py`: RT Pine Script signal port (`RTSignalGenerator`, `RTSignalResult`)
 - `indicators.py`: indicator calculations (`IndicatorCalculator`)
 - `backtest.py`: backtesting implementations (`RSIBacktesting`, `SMAPairBacktesting`, `CCIBacktesting`)
 - `config.py`: config dataclasses for indicators/backtests
@@ -69,6 +72,25 @@ There are currently no dedicated tests for this package under `tests/`.
 
 ## Signal Model
 
+The CLI currently supports two signal models:
+
+- `rsi-sma`: legacy RSI/SMA model, still the default
+- `rt`: port of `rt_signals.txt`
+
+Select a model with:
+
+```bash
+just analyzer AAPL rt
+```
+
+or:
+
+```bash
+PYTHONPATH=src uv run python -m stock_analyzer.main -s AAPL --model rt
+```
+
+### RSI/SMA
+
 Signal values are normalized in `enums.Signal`:
 
 - `BUY = 1`
@@ -80,6 +102,41 @@ The combined signal in `SignalGenerator` is conservative:
 - Combined Buy only if RSI and SMA are both Buy
 - Combined Sell only if RSI and SMA are both Sell
 - Otherwise Hold
+
+### RT Signals
+
+The RT model ports the core logic from `rt_signals.txt`:
+
+- Supertrend smart trail
+- Reversal zones based on `SMA(20) +/- 2 * stdev(close, 20)`
+- ADX strength classification
+- Confirmation buy/sell from close crossing the Supertrend
+- Contrarian buy/sell from RSI extremes at reversal zones
+- Optional trend filter config field, currently off by default to match the Pine input
+
+The historical RT output includes:
+
+```text
+date
+close
+supertrend
+supertrend_direction
+trend
+adx
+is_strong
+strength
+basis
+upper_zone
+lower_zone
+rsi
+confirmation_buy
+confirmation_sell
+contrarian_buy
+contrarian_sell
+confirmation_signal
+contrarian_signal
+combined_signal
+```
 
 ## Data Requirements
 
@@ -101,10 +158,22 @@ From project root:
 just analyzer AAPL
 ```
 
+Use the RT model:
+
+```bash
+just analyzer AAPL rt
+```
+
 Equivalent direct command:
 
 ```bash
 PYTHONPATH=src uv run python -m stock_analyzer.main -s AAPL
+```
+
+With RT:
+
+```bash
+PYTHONPATH=src uv run python -m stock_analyzer.main -s AAPL --model rt
 ```
 
 What it does:
@@ -186,7 +255,6 @@ cci_results = CCIBacktesting().backtest(
 - The CLI is minimal and only supports one symbol at a time.
 - The CLI always retrieves/updates data through `stock_data_manager`; there is no
   read-only mode for analyzing already downloaded CSV files.
-- There are no analyzer-specific tests yet.
 - Backtesting code is less mature than signal generation and should be reviewed
   before treating results as reliable.
 - `CCIBacktesting` appears to have result-shape inconsistencies that need tests
@@ -196,9 +264,9 @@ cci_results = CCIBacktesting().backtest(
 
 Near-term changes should keep the module local, manual, and synchronous:
 
-1. Add analyzer tests using in-memory DataFrames, with no network calls.
+1. Add broader analyzer tests using in-memory DataFrames, with no network calls.
 2. Separate "analyze existing CSV" from "download/update then analyze".
-3. Improve CLI output into a compact table with symbol, date, close, RSI, SMA,
-   RSI signal, SMA signal, and combined signal.
+3. Improve CLI output into a compact table with symbol, date, close, model metrics,
+   model-specific signal fields, and combined signal.
 4. Add multi-symbol CLI support after single-symbol behavior is covered.
 5. Review and fix backtests separately from signal generation.

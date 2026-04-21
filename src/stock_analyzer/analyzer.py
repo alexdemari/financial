@@ -5,15 +5,16 @@ Responsabilidade única: Orquestrar análise de dados.
 
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Any, Literal
 
 import pandas as pd
 
-from stock_analyzer.signals import SignalGenerator, SignalResult
 from stock_analyzer.config import IndicatorConfig
+from stock_analyzer.signals import RTSignalGenerator, SignalGenerator
 from stock_data_manager.factories.manager_factory import StockDataManagerFactory
 
 logger = logging.getLogger(__name__)
+SignalModel = Literal["rsi-sma", "rt"]
 
 
 class StockDataAnalyzer:
@@ -22,12 +23,22 @@ class StockDataAnalyzer:
     Delega cálculos para especialistas.
     """
 
-    def __init__(self, config: IndicatorConfig = None):
+    def __init__(
+        self, config: IndicatorConfig = None, signal_model: SignalModel = "rsi-sma"
+    ):
         self.config = config or IndicatorConfig()
-        self.signal_generator = SignalGenerator(self.config)
+        self.signal_model = signal_model
+        self.signal_generator = self._create_signal_generator(signal_model)
         logger.info(f"StockDataAnalyzer inicializado com config: {self.config}")
 
-    def generate_signal(self, symbol: str, df: pd.DataFrame) -> Optional[SignalResult]:
+    def _create_signal_generator(self, signal_model: SignalModel):
+        if signal_model == "rsi-sma":
+            return SignalGenerator(self.config)
+        if signal_model == "rt":
+            return RTSignalGenerator()
+        raise ValueError(f"Unsupported signal model: {signal_model}")
+
+    def generate_signal(self, symbol: str, df: pd.DataFrame) -> Any:
         """
         Gera sinal para o candle atual.
 

@@ -39,10 +39,16 @@ def main(argv=None) -> int:
     parser.add_argument(
         "-s", "--symbol", type=str, required=True, help="Stock symbol to analyze"
     )
+    parser.add_argument(
+        "--model",
+        choices=["rsi-sma", "rt"],
+        default="rsi-sma",
+        help="Signal model to use",
+    )
     args = parser.parse_args(argv)
 
     config = IndicatorConfig(rsi_period=14, sma_period=50)
-    analyzer = StockDataAnalyzer(config=config)
+    analyzer = StockDataAnalyzer(config=config, signal_model=args.model)
 
     symbol = args.symbol.upper()
     # Recuperar dados
@@ -50,6 +56,7 @@ def main(argv=None) -> int:
 
     # Sinal atual
     signal = analyzer.generate_signal(symbol, df)
+    print(f"Model: {args.model}")
     print(f"Signal: {signal.combined_signal}")
 
     # Histórico
