@@ -1,9 +1,9 @@
 from stock_analyzer.signals.rsi_sma import SignalGenerator, SignalResult
-from stock_analyzer.signals.rt import RTSignalGenerator, RTSignalResult
+from stock_analyzer.signals.lux import LuxSignalGenerator, LuxSignalResult
 
 __all__ = [
-    "RTSignalGenerator",
-    "RTSignalResult",
+    "LuxSignalGenerator",
+    "LuxSignalResult",
     "SignalGenerator",
     "SignalResult",
 ]

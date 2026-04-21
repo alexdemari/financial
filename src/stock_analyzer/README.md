@@ -6,7 +6,7 @@
 
 - Calculates core indicators (RSI, SMA, CCI)
 - Generates current and historical RSI/SMA-based signals
-- Generates current and historical RT signals ported from Pine Script
+- Generates current and historical Lux Signals & Overlays signals via `trading_indicators`
 - Contains simple strategy backtests (RSI, SMA crossover, CCI mean reversion)
 - Integrates with `stock_data_manager` to fetch/update symbol data
 
@@ -37,7 +37,7 @@ There are currently no dedicated tests for this package under `tests/`.
 - `analyzer.py`: high-level orchestrator (`StockDataAnalyzer`)
 - `signals/`: signal generators
   - `rsi_sma.py`: legacy RSI/SMA signal generation (`SignalGenerator`, `SignalResult`)
-  - `rt.py`: RT Pine Script signal port (`RTSignalGenerator`, `RTSignalResult`)
+  - `lux.py`: adapter for `trading_indicators.LuxSignalsOverlays`
 - `indicators.py`: indicator calculations (`IndicatorCalculator`)
 - `backtest.py`: backtesting implementations (`RSIBacktesting`, `SMAPairBacktesting`, `CCIBacktesting`)
 - `config.py`: config dataclasses for indicators/backtests
@@ -75,18 +75,18 @@ There are currently no dedicated tests for this package under `tests/`.
 The CLI currently supports two signal models:
 
 - `rsi-sma`: legacy RSI/SMA model, still the default
-- `rt`: port of `rt_signals.txt`
+- `lux`: adapter around `Signals & Overlays [Lux Replica]`
 
 Select a model with:
 
 ```bash
-just analyzer AAPL rt
+just analyzer AAPL lux
 ```
 
 or:
 
 ```bash
-PYTHONPATH=src uv run python -m stock_analyzer.main -s AAPL --model rt
+PYTHONPATH=src uv run python -m stock_analyzer.main -s AAPL --model lux
 ```
 
 ### RSI/SMA
@@ -103,9 +103,10 @@ The combined signal in `SignalGenerator` is conservative:
 - Combined Sell only if RSI and SMA are both Sell
 - Otherwise Hold
 
-### RT Signals
+### Lux Signals
 
-The RT model ports the core logic from `rt_signals.txt`:
+The `lux` model delegates to `trading_indicators.LuxSignalsOverlays`, which ports
+the core logic from `rt_signals.txt`:
 
 - Supertrend smart trail
 - Reversal zones based on `SMA(20) +/- 2 * stdev(close, 20)`
@@ -114,7 +115,7 @@ The RT model ports the core logic from `rt_signals.txt`:
 - Contrarian buy/sell from RSI extremes at reversal zones
 - Optional trend filter config field, currently off by default to match the Pine input
 
-The historical RT output includes:
+The historical Lux output includes:
 
 ```text
 date
@@ -158,10 +159,10 @@ From project root:
 just analyzer AAPL
 ```
 
-Use the RT model:
+Use the Lux model:
 
 ```bash
-just analyzer AAPL rt
+just analyzer AAPL lux
 ```
 
 Equivalent direct command:
@@ -170,17 +171,29 @@ Equivalent direct command:
 PYTHONPATH=src uv run python -m stock_analyzer.main -s AAPL
 ```
 
-With RT:
+With Lux:
 
 ```bash
-PYTHONPATH=src uv run python -m stock_analyzer.main -s AAPL --model rt
+PYTHONPATH=src uv run python -m stock_analyzer.main -s AAPL --model lux
 ```
 
 What it does:
 
 1. Updates/retrieves data for the symbol (`1d` interval)
-2. Prints the current combined signal
-3. Prints the historical signal DataFrame
+2. Prints a compact current snapshot
+3. Prints recent rows and recent signal events
+
+Optional CLI flags:
+
+```bash
+PYTHONPATH=src uv run python -m stock_analyzer.main -s AAPL --model lux --recent-rows 10 --signal-rows 8
+```
+
+Print full history only when needed:
+
+```bash
+PYTHONPATH=src uv run python -m stock_analyzer.main -s AAPL --model lux --full-history
+```
 
 ## Programmatic Usage
 

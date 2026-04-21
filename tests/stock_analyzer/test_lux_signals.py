@@ -2,13 +2,13 @@ import pandas as pd
 
 from stock_analyzer.analyzer import StockDataAnalyzer
 from stock_analyzer.enums import Signal
-from stock_analyzer.signals import RTSignalGenerator
+from stock_analyzer.signals import LuxSignalGenerator
 
 
-def make_ohlc(rows: int = 90) -> pd.DataFrame:
+def make_ohlc(rows: int = 220) -> pd.DataFrame:
     index = pd.date_range("2024-01-01", periods=rows, freq="D")
     close = pd.Series(
-        [100 + i * 0.4 + ((i % 7) - 3) * 0.25 for i in range(rows)],
+        [100 + i * 0.2 + ((i % 9) - 4) * 0.35 for i in range(rows)],
         index=index,
     )
     return pd.DataFrame(
@@ -22,8 +22,8 @@ def make_ohlc(rows: int = 90) -> pd.DataFrame:
     )
 
 
-def test_rt_signal_generator_returns_historical_columns():
-    generator = RTSignalGenerator()
+def test_lux_signal_generator_returns_historical_columns():
+    generator = LuxSignalGenerator()
 
     result = generator.generate_historical_signals("AAPL", make_ohlc())
 
@@ -51,8 +51,8 @@ def test_rt_signal_generator_returns_historical_columns():
     )
 
 
-def test_rt_signal_generator_returns_current_signal():
-    generator = RTSignalGenerator()
+def test_lux_signal_generator_returns_current_signal():
+    generator = LuxSignalGenerator()
 
     result = generator.generate_current_signal("AAPL", make_ohlc())
 
@@ -61,8 +61,8 @@ def test_rt_signal_generator_returns_current_signal():
     assert result.combined_signal in {Signal.BUY, Signal.SELL, Signal.HOLD}
 
 
-def test_stock_data_analyzer_can_select_rt_model():
-    analyzer = StockDataAnalyzer(signal_model="rt")
+def test_stock_data_analyzer_can_select_lux_model():
+    analyzer = StockDataAnalyzer(signal_model="lux")
 
     result = analyzer.generate_historical_signals("AAPL", make_ohlc())
 

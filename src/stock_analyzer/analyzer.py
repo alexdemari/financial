@@ -10,11 +10,11 @@ from typing import Any, Literal
 import pandas as pd
 
 from stock_analyzer.config import IndicatorConfig
-from stock_analyzer.signals import RTSignalGenerator, SignalGenerator
+from stock_analyzer.signals import LuxSignalGenerator, SignalGenerator
 from stock_data_manager.factories.manager_factory import StockDataManagerFactory
 
 logger = logging.getLogger(__name__)
-SignalModel = Literal["rsi-sma", "rt"]
+SignalModel = Literal["rsi-sma", "lux"]
 
 
 class StockDataAnalyzer:
@@ -34,8 +34,8 @@ class StockDataAnalyzer:
     def _create_signal_generator(self, signal_model: SignalModel):
         if signal_model == "rsi-sma":
             return SignalGenerator(self.config)
-        if signal_model == "rt":
-            return RTSignalGenerator()
+        if signal_model == "lux":
+            return LuxSignalGenerator()
         raise ValueError(f"Unsupported signal model: {signal_model}")
 
     def generate_signal(self, symbol: str, df: pd.DataFrame) -> Any:

@@ -18,24 +18,6 @@ class IndicatorConfig:
 
 
 @dataclass
-class RTSignalsConfig:
-    """Configuracao dos sinais RT portados do Pine Script."""
-
-    sensitivity: int = 14
-    multiplier: float = 1.5
-    use_trend_filter: bool = False
-    adx_period: int = 14
-    adx_signal_period: int = 14
-    adx_filter_threshold: float = 20.0
-    strong_adx_threshold: float = 25.0
-    rsi_period: int = 14
-    rsi_buy_threshold: float = 30.0
-    rsi_sell_threshold: float = 70.0
-    zone_period: int = 20
-    zone_stdev: float = 2.0
-
-
-@dataclass
 class BacktestConfig:
     """Configuração de backtesting."""
 
