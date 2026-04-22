@@ -1,0 +1,337 @@
+import argparse
+from dataclasses import asdict, dataclass
+from pathlib import Path
+
+import pandas as pd
+
+from options_tech_scanner.eligibility import (
+    MIN_HISTORY_ROWS,
+    EligibilityResult,
+    evaluate_symbol_eligibility,
+    load_symbol_csv,
+)
+from options_tech_scanner.ranking import (
+    classify_alignment,
+    compute_consistency_score,
+    signal_to_label,
+)
+from options_tech_scanner.report_writer import render_top_n_summary, write_csv_report
+from options_tech_scanner.universe_loader import load_universe
+from stock_analyzer.analyzer import StockDataAnalyzer
+
+
+@dataclass
+class ScannerRow:
+    symbol: str
+    close: float | None
+    avg_volume_20: float | None
+    market_cap: float | None
+    lux_signal: str | None
+    lux_options_hint: str | None
+    lux_context: str | None
+    lux_trend: str | None
+    lux_strength: str | None
+    lux_adx: float | None
+    smc_signal: str | None
+    smc_options_hint: str | None
+    smc_context: str | None
+    smc_bias: str | None
+    smc_range_position_pct: float | None
+    smc_rsi: float | None
+    alignment: str | None
+    consistency_score: int | None
+    eligible: bool
+    excluded_reason: str | None
+
+
+def scan_universe(
+    universe_file: str | Path,
+    data_dir: str | Path,
+    min_market_cap: float,
+    min_avg_volume_20: float,
+    top: int,
+    output: str | Path,
+    min_history_rows: int = MIN_HISTORY_ROWS,
+) -> tuple[pd.DataFrame, Path]:
+    universe = load_universe(universe_file)
+    rows: list[dict] = []
+
+    lux_analyzer = StockDataAnalyzer(signal_model="lux")
+    smc_analyzer = StockDataAnalyzer(signal_model="smc")
+
+    for entry in universe.itertuples(index=False):
+        symbol = str(entry.symbol)
+        market_cap = float(entry.market_cap) if pd.notna(entry.market_cap) else None
+
+        try:
+            df = load_symbol_csv(data_dir, symbol)
+        except FileNotFoundError:
+            eligibility = evaluate_symbol_eligibility(
+                market_cap=market_cap,
+                df=None,
+                min_market_cap=min_market_cap,
+                min_avg_volume_20=min_avg_volume_20,
+                min_history_rows=min_history_rows,
+            )
+            rows.append(_build_excluded_row(symbol, market_cap, eligibility))
+            continue
+        except Exception:
+            rows.append(
+                asdict(
+                    ScannerRow(
+                        symbol=symbol,
+                        close=None,
+                        avg_volume_20=None,
+                        market_cap=market_cap,
+                        lux_signal=None,
+                        lux_options_hint=None,
+                        lux_context=None,
+                        lux_trend=None,
+                        lux_strength=None,
+                        lux_adx=None,
+                        smc_signal=None,
+                        smc_options_hint=None,
+                        smc_context=None,
+                        smc_bias=None,
+                        smc_range_position_pct=None,
+                        smc_rsi=None,
+                        alignment=None,
+                        consistency_score=None,
+                        eligible=False,
+                        excluded_reason="analysis_failed",
+                    )
+                )
+            )
+            continue
+
+        eligibility = evaluate_symbol_eligibility(
+            market_cap=market_cap,
+            df=df,
+            min_market_cap=min_market_cap,
+            min_avg_volume_20=min_avg_volume_20,
+            min_history_rows=min_history_rows,
+        )
+        if not eligibility.eligible:
+            rows.append(_build_excluded_row(symbol, market_cap, eligibility))
+            continue
+
+        try:
+            rows.append(
+                _build_eligible_row(
+                    symbol=symbol,
+                    market_cap=market_cap,
+                    avg_volume_20=eligibility.avg_volume_20,
+                    close=eligibility.close,
+                    df=df,
+                    lux_analyzer=lux_analyzer,
+                    smc_analyzer=smc_analyzer,
+                )
+            )
+        except Exception:
+            rows.append(
+                asdict(
+                    ScannerRow(
+                        symbol=symbol,
+                        close=eligibility.close,
+                        avg_volume_20=eligibility.avg_volume_20,
+                        market_cap=market_cap,
+                        lux_signal=None,
+                        lux_options_hint=None,
+                        lux_context=None,
+                        lux_trend=None,
+                        lux_strength=None,
+                        lux_adx=None,
+                        smc_signal=None,
+                        smc_options_hint=None,
+                        smc_context=None,
+                        smc_bias=None,
+                        smc_range_position_pct=None,
+                        smc_rsi=None,
+                        alignment=None,
+                        consistency_score=None,
+                        eligible=False,
+                        excluded_reason="analysis_failed",
+                    )
+                )
+            )
+
+    result_df = pd.DataFrame(rows)
+    if not result_df.empty:
+        result_df = result_df.sort_values(
+            ["eligible", "consistency_score", "symbol"],
+            ascending=[False, False, True],
+            na_position="last",
+        ).reset_index(drop=True)
+
+    output_path = write_csv_report(result_df, output)
+    print(render_top_n_summary(result_df[result_df["eligible"]], top))
+    print(f"\nExported: {output_path}")
+    return result_df, output_path
+
+
+def _build_excluded_row(
+    symbol: str, market_cap: float | None, eligibility: EligibilityResult
+) -> dict:
+    return asdict(
+        ScannerRow(
+            symbol=symbol,
+            close=eligibility.close,
+            avg_volume_20=eligibility.avg_volume_20,
+            market_cap=market_cap,
+            lux_signal=None,
+            lux_options_hint=None,
+            lux_context=None,
+            lux_trend=None,
+            lux_strength=None,
+            lux_adx=None,
+            smc_signal=None,
+            smc_options_hint=None,
+            smc_context=None,
+            smc_bias=None,
+            smc_range_position_pct=None,
+            smc_rsi=None,
+            alignment=None,
+            consistency_score=None,
+            eligible=False,
+            excluded_reason=eligibility.excluded_reason,
+        )
+    )
+
+
+def _build_eligible_row(
+    symbol: str,
+    market_cap: float | None,
+    avg_volume_20: float | None,
+    close: float | None,
+    df: pd.DataFrame,
+    lux_analyzer: StockDataAnalyzer,
+    smc_analyzer: StockDataAnalyzer,
+) -> dict:
+    lux_signal = lux_analyzer.generate_signal(symbol, df)
+    smc_signal = smc_analyzer.generate_signal(symbol, df)
+
+    if lux_signal is None or smc_signal is None:
+        raise ValueError(f"Signal generation failed for {symbol}")
+
+    lux_signal_label = signal_to_label(lux_signal.combined_signal)
+    smc_signal_label = signal_to_label(smc_signal.combined_signal)
+    alignment = classify_alignment(lux_signal.options_hint, smc_signal.options_hint)
+    consistency_score = compute_consistency_score(
+        lux_options_hint=lux_signal.options_hint,
+        smc_options_hint=smc_signal.options_hint,
+        lux_signal=lux_signal_label,
+        smc_signal=smc_signal_label,
+    )
+
+    return asdict(
+        ScannerRow(
+            symbol=symbol,
+            close=close if close is not None else float(lux_signal.close_price),
+            avg_volume_20=avg_volume_20,
+            market_cap=market_cap,
+            lux_signal=lux_signal_label,
+            lux_options_hint=lux_signal.options_hint,
+            lux_context=_lux_context(lux_signal),
+            lux_trend=lux_signal.trend,
+            lux_strength=lux_signal.strength,
+            lux_adx=lux_signal.adx,
+            smc_signal=smc_signal_label,
+            smc_options_hint=smc_signal.options_hint,
+            smc_context=_smc_context(smc_signal),
+            smc_bias=smc_signal.bias,
+            smc_range_position_pct=smc_signal.range_position_pct,
+            smc_rsi=smc_signal.rsi,
+            alignment=alignment,
+            consistency_score=consistency_score,
+            eligible=True,
+            excluded_reason=None,
+        )
+    )
+
+
+def _lux_context(signal) -> str:
+    if (
+        signal.confirmation_signal == signal.combined_signal
+        and signal.combined_signal != 0
+    ):
+        return (
+            "trend_confirmation_buy"
+            if signal.options_hint == "CALL"
+            else "trend_confirmation_sell"
+        )
+    if (
+        signal.contrarian_signal == signal.combined_signal
+        and signal.combined_signal != 0
+    ):
+        return (
+            "contrarian_reversal_buy"
+            if signal.options_hint == "CALL"
+            else "contrarian_reversal_sell"
+        )
+    return "no_trade"
+
+
+def _smc_context(signal) -> str:
+    if signal.long_signal:
+        return "bullish_confluence"
+    if signal.short_signal:
+        return "bearish_confluence"
+    if signal.swing_low_marker and signal.in_discount:
+        return "short_term_bullish_reversal"
+    if signal.swing_high_marker and signal.in_premium:
+        return "short_term_bearish_reversal"
+    if signal.swing_low_marker:
+        return "swing_low_watch"
+    if signal.swing_high_marker:
+        return "swing_high_watch"
+    if signal.in_discount and signal.bullish_rejection:
+        return "discount_watch"
+    if signal.in_premium and signal.bearish_rejection:
+        return "premium_watch"
+    return "no_trade"
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser("Local Universe Scanner V1")
+    parser.add_argument(
+        "--universe-file", required=True, help="Local universe metadata file"
+    )
+    parser.add_argument(
+        "--data-dir", required=True, help="Directory with local OHLC CSV files"
+    )
+    parser.add_argument(
+        "--min-market-cap",
+        type=float,
+        default=1_000_000_000,
+        help="Minimum market cap eligibility filter",
+    )
+    parser.add_argument(
+        "--min-avg-volume-20",
+        type=float,
+        default=1_000_000,
+        help="Minimum average daily volume over the last 20 sessions",
+    )
+    parser.add_argument(
+        "--top", type=int, default=10, help="Top-N rows printed to terminal"
+    )
+    parser.add_argument("--output", required=True, help="CSV output path")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    scan_universe(
+        universe_file=args.universe_file,
+        data_dir=args.data_dir,
+        min_market_cap=args.min_market_cap,
+        min_avg_volume_20=args.min_avg_volume_20,
+        top=args.top,
+        output=args.output,
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
