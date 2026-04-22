@@ -1,71 +1,110 @@
-# AGENTS.md
+# AGENT.md
 
-## Project Context
+## Project Purpose
 
-This is a Python financial tooling project with a modular structure under `src/`.
+This is a local-first Python project for financial data collection and analysis.
 
-Current main modules:
+Main modules:
 
-- `stock_data_manager`
-- `stock_analyzer`
-- `options_tech_scanner`
+- `stock_data_manager`: historical market data ingestion and persistence
+- `stock_analyzer`: analysis of persisted data and signal generation
+- `trading_indicators`: reusable indicators and signal models
+- `options_tech_scanner`: options-based strategy evaluation
 
-`stock_data_manager` is currently a synchronous, batch-oriented module using:
+---
 
-- CLI execution
-- `StockDataManager` as the orchestrator
-- `yfinance` for historical market data downloads
-- CSV persistence
-- pandas DataFrames
-- append and update merge strategies
+## Current Architecture State
 
-It is not currently event-driven.
+- Modular monolith
+- CLI-driven execution
+- Batch-oriented workflows
+- CSV-based persistence
+- pandas as in-memory representation
+
+The system is NOT:
+
+- event-driven
+- distributed
+- real-time
+
+---
+
+## Current Priorities
+
+1. Stabilize local/manual workflows
+2. Improve module boundaries
+3. Expand and strengthen unit tests
+4. Keep architecture simple and explicit
+5. Avoid premature infrastructure (Redis, queues, async)
+
+---
+
+## Architectural Principles
+
+- Prefer simplicity over abstraction
+- Keep flows explicit and predictable
+- Separate concerns:
+  - data collection (`stock_data_manager`)
+  - analysis (`stock_analyzer`)
+- Reuse `trading_indicators` instead of duplicating logic
+- Avoid tight coupling between modules
+- Design for future evolution, but implement only what is needed now
+
+---
+
+## Rules For Changes
+
+- Do NOT introduce:
+  - Redis
+  - event buses
+  - async processing
+  - distributed systems
+
+- Do NOT:
+  - refactor unrelated modules
+  - redesign architecture unless explicitly requested
+  - duplicate logic already available in shared modules
+
+- Always:
+  - keep changes incremental
+  - preserve existing behavior unless explicitly changing it
+  - update tests when behavior changes
+  - update README/CLI help when UX changes
+
+---
+
+## CLI Behavior Expectations
+
+- CLI must be predictable and explicit
+- Avoid implicit side effects
+- Separate flows clearly (e.g., analyze vs update)
+
+---
+
+## Testing Guidelines
+
+- Prefer unit tests without network access
+- Use in-memory DataFrames
+- Mock only external boundaries (e.g., yfinance)
+- Test behavior, not implementation details
+- Add regression tests for CLI flags and workflows
+
+---
+
+## Documentation Rules
+
+- Architecture docs must reflect actual implementation
+- Future concepts must be clearly marked
+- Do NOT mix current and future state in the same document
+
+---
 
 ## Environment
 
-The project is normally run from PyCharm Terminal using Ubuntu/WSL.
+Primary environment: WSL / Ubuntu
 
-Prefer running commands from WSL/Ubuntu:
+Use:
 
 ```bash
 uv run pytest
-.venv/bin/python -m pytest tests/stock_data_manager
-just --list
-```
-
-PowerShell can be used for file inspection and edits, but Python, `uv`, and pre-commit may fail there because the virtualenv and Git hooks are WSL-oriented.
-
-## Documentation
-
-Architecture docs live under:
-
-```text
-docs/arquitecture
-```
-
-Note: the directory name is currently misspelled as `arquitecture`.
-
-Treat event-driven architecture docs and ADRs as future-facing unless matching implementation exists.
-
-## Testing
-
-For `stock_data_manager`, run:
-
-```bash
-.venv/bin/python -m pytest tests/stock_data_manager
-```
-
-Tests should avoid network calls. Use fakes or mocks for provider behavior such as `yfinance`.
-
-## Git Safety
-
-The working tree may contain unrelated staged and unstaged changes.
-
-Before committing:
-
-- inspect `git status --short`
-- stage only files related to the current task
-- use path-scoped commits when needed
-- do not revert unrelated changes
-
-If pre-commit fails from PowerShell because it cannot find the WSL virtualenv, rerun from Ubuntu/WSL when possible. For docs-only or already verified changes, `--no-verify` may be acceptable if the reason is documented in the final response.
+.venv/bin/python -m pytest

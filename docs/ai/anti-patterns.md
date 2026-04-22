@@ -1,0 +1,3 @@
+- Do not duplicate indicator logic
+- Do not couple analyzer with downloader
+- Do not introduce async or infra

@@ -12,7 +12,7 @@ Current modules include:
 
 - [Stock Data Manager README](src/stock_data_manager/README.md)
 - [Architecture Docs](docs/arquitecture)
-- [Agent Context](AGENTS.md)
+- [Agent Context](AGENT.md)
 
 Note: the architecture docs directory is currently named `docs/arquitecture`.
 
