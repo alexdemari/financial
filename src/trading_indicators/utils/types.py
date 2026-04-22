@@ -79,9 +79,11 @@ class SMCResult:
     long_signal: pd.Series
     short_signal: pd.Series
 
+    # Métricas históricas por candle
+    rsi: pd.Series
+
     # Métricas escalares (última barra)
     range_position_pct: float
-    rsi: float
 
 
 @dataclass

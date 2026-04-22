@@ -68,6 +68,7 @@ def _format_summary_rows(signal, model: str) -> list[list[str]]:
             [
                 ["Trend", str(signal.trend)],
                 ["Strength", str(signal.strength)],
+                ["Options Hint", str(signal.options_hint)],
                 ["ADX", _format_number(signal.adx)],
                 ["RSI", _format_number(signal.rsi)],
                 ["Supertrend", _format_number(signal.supertrend)],
@@ -86,6 +87,9 @@ def _format_summary_rows(signal, model: str) -> list[list[str]]:
                 ["Range %", _format_number(signal.range_position_pct)],
                 ["RSI", _format_number(signal.rsi)],
                 ["EMA200", _format_number(signal.ema200)],
+                ["Options Hint", str(signal.options_hint)],
+                ["Swing High", "Y" if signal.swing_high_marker else ""],
+                ["Swing Low", "Y" if signal.swing_low_marker else ""],
                 ["In Premium", "Y" if signal.in_premium else ""],
                 ["In Discount", "Y" if signal.in_discount else ""],
                 ["Bullish Rejection", "Y" if signal.bullish_rejection else ""],
@@ -125,6 +129,36 @@ def _prepare_display_frame(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame
         else:
             display[col] = display[col].astype(str)
     return display
+
+
+def _render_recent_structure_markers(
+    historical: pd.DataFrame, model: str, signal_rows: int
+) -> list[str]:
+    if model != "smc":
+        return []
+
+    structure_markers = historical[
+        historical["swing_high_marker"] | historical["swing_low_marker"]
+    ]
+    if structure_markers.empty:
+        return ["", "Recent Structure Markers", "No swing markers found."]
+
+    markers = _prepare_display_frame(
+        structure_markers.tail(signal_rows),
+        [
+            "date",
+            "close",
+            "signal_context",
+            "options_hint",
+            "swing_high_marker",
+            "swing_low_marker",
+        ],
+    )
+    return [
+        "",
+        f"Recent Structure Markers ({len(markers)})",
+        tabulate(markers, headers="keys", tablefmt="simple", showindex=False),
+    ]
 
 
 def render_analysis_report(
@@ -189,6 +223,8 @@ def render_analysis_report(
                 tabulate(events, headers="keys", tablefmt="simple", showindex=False),
             ]
         )
+
+    lines.extend(_render_recent_structure_markers(historical, model, signal_rows))
 
     if full_history:
         full_display = _prepare_display_frame(historical, list(historical.columns))

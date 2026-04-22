@@ -70,6 +70,7 @@ class TestSMC:
     def test_series_lengths_match(self, df, smc_result):
         r = smc_result
         assert len(r.ema200) == len(df)
+        assert len(r.rsi) == len(df)
         assert len(r.long_signal) == len(df)
         assert len(r.short_signal) == len(df)
 
@@ -87,7 +88,8 @@ class TestSMC:
         assert 0 <= smc_result.range_position_pct <= 100
 
     def test_rsi_between_0_and_100(self, smc_result):
-        assert 0 <= smc_result.rsi <= 100
+        rsi = smc_result.rsi.dropna()
+        assert (rsi >= 0).all() and (rsi <= 100).all()
 
     def test_premium_discount_exclusive(self, smc_result):
         r = smc_result

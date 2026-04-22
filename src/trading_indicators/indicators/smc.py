@@ -142,6 +142,6 @@ class SmartMoneyConfluence(BaseIndicator[SMCResult]):
             bearish_divergence=bearish_div,
             long_signal=long_signal,
             short_signal=short_signal,
+            rsi=rsi_val,
             range_position_pct=float(range_position_pct),
-            rsi=float(rsi_val.iloc[-1]),
         )

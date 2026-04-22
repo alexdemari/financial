@@ -14,6 +14,9 @@ class SMCSignalResult(AnalyzerSignalResult):
     range_position_pct: float | None
     rsi: float | None
     ema200: float | None
+    options_hint: str
+    swing_high_marker: bool
+    swing_low_marker: bool
     in_premium: bool
     in_discount: bool
     bullish_rejection: bool
@@ -50,6 +53,9 @@ class SMCSignalGenerator:
             range_position_pct=self._optional_float(latest["range_position_pct"]),
             rsi=self._optional_float(latest["rsi"]),
             ema200=self._optional_float(latest["ema200"]),
+            options_hint=str(latest["options_hint"]),
+            swing_high_marker=bool(latest["swing_high_marker"]),
+            swing_low_marker=bool(latest["swing_low_marker"]),
             in_premium=bool(latest["in_premium"]),
             in_discount=bool(latest["in_discount"]),
             bullish_rejection=bool(latest["bullish_rejection"]),
@@ -73,11 +79,13 @@ class SMCSignalGenerator:
         history = pd.DataFrame(index=prepared.index)
         history["date"] = prepared.index
         history["close"] = prepared["close"]
-        history["rsi"] = self._optional_series(result.rsi, prepared.index)
+        history["rsi"] = result.rsi
         history["ema200"] = result.ema200
         history["range_position_pct"] = self._range_position_pct(
             prepared["close"], result.range_high, result.range_low
         )
+        history["swing_high_marker"] = result.swing_highs.notna()
+        history["swing_low_marker"] = result.swing_lows.notna()
         history["in_premium"] = result.in_premium
         history["in_discount"] = result.in_discount
         history["bullish_rejection"] = result.bullish_rejection
@@ -96,6 +104,7 @@ class SMCSignalGenerator:
         history.loc[history["short_signal"], "signal_bias"] = "BEARISH"
 
         history["signal_context"] = history.apply(self._signal_context, axis=1)
+        history["options_hint"] = history.apply(self._options_hint, axis=1)
 
         return history.astype({"combined_signal": int}).reset_index(drop=True)
 
@@ -116,8 +125,11 @@ class SMCSignalGenerator:
             "close",
             "signal_bias",
             "signal_context",
+            "options_hint",
             "range_position_pct",
             "rsi",
+            "swing_high_marker",
+            "swing_low_marker",
             "combined_signal",
         ]
 
@@ -127,7 +139,10 @@ class SMCSignalGenerator:
             "close",
             "signal_bias",
             "signal_context",
+            "options_hint",
             "range_position_pct",
+            "swing_high_marker",
+            "swing_low_marker",
             "combined_signal",
         ]
 
@@ -157,20 +172,34 @@ class SMCSignalGenerator:
             return "bullish_confluence"
         if row["short_signal"]:
             return "bearish_confluence"
+        if row["swing_low_marker"] and row["in_discount"]:
+            return "short_term_bullish_reversal"
+        if row["swing_high_marker"] and row["in_premium"]:
+            return "short_term_bearish_reversal"
         if row["in_discount"] and row["bullish_rejection"]:
             return "discount_watch"
         if row["in_premium"] and row["bearish_rejection"]:
             return "premium_watch"
+        if row["swing_low_marker"]:
+            return "swing_low_watch"
+        if row["swing_high_marker"]:
+            return "swing_high_watch"
         return "no_trade"
+
+    @staticmethod
+    def _options_hint(row: pd.Series) -> str:
+        if row["long_signal"]:
+            return "CALL"
+        if row["short_signal"]:
+            return "PUT"
+        if row["swing_low_marker"] or (row["in_discount"] and row["bullish_rejection"]):
+            return "CALL_WATCH"
+        if row["swing_high_marker"] or (row["in_premium"] and row["bearish_rejection"]):
+            return "PUT_WATCH"
+        return "NO_TRADE"
 
     @staticmethod
     def _optional_float(value) -> Optional[float]:
         if pd.isna(value):
             return None
         return float(value)
-
-    @staticmethod
-    def _optional_series(value, index: pd.Index) -> pd.Series:
-        if isinstance(value, pd.Series):
-            return value
-        return pd.Series(value, index=index)

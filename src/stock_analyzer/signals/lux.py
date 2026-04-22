@@ -13,6 +13,7 @@ from trading_indicators.utils.types import Trend
 class LuxSignalResult(AnalyzerSignalResult):
     trend: str
     strength: str
+    options_hint: str
     supertrend: float | None
     adx: Optional[float]
     rsi: Optional[float]
@@ -46,6 +47,7 @@ class LuxSignalGenerator:
             close_price=float(latest["close"]),
             trend=str(latest["trend"]),
             strength=str(latest["strength"]),
+            options_hint=str(latest["options_hint"]),
             supertrend=float(latest["supertrend"]),
             adx=self._optional_float(latest["adx"]),
             rsi=self._optional_float(latest["rsi"]),
@@ -78,10 +80,27 @@ class LuxSignalGenerator:
         return f"{trend} trend, {strength} strength, no active entry signal."
 
     def recent_columns(self) -> list[str]:
-        return ["date", "close", "trend", "adx", "rsi", "combined_signal"]
+        return [
+            "date",
+            "close",
+            "trend",
+            "signal_context",
+            "options_hint",
+            "adx",
+            "rsi",
+            "combined_signal",
+        ]
 
     def event_columns(self) -> list[str]:
-        return ["date", "close", "trend", "adx", "combined_signal"]
+        return [
+            "date",
+            "close",
+            "trend",
+            "signal_context",
+            "options_hint",
+            "adx",
+            "combined_signal",
+        ]
 
     def generate_historical_signals(
         self, symbol: str, df: pd.DataFrame
@@ -130,6 +149,14 @@ class LuxSignalGenerator:
         history.loc[no_confirmation, "combined_signal"] = history.loc[
             no_confirmation, "contrarian_signal"
         ]
+        history["signal_context"] = history.apply(self._signal_context, axis=1)
+        history["options_hint"] = history["combined_signal"].map(
+            {
+                int(Signal.BUY): "CALL",
+                int(Signal.SELL): "PUT",
+                int(Signal.HOLD): "NO_TRADE",
+            }
+        )
 
         return history.astype(
             {
@@ -156,6 +183,18 @@ class LuxSignalGenerator:
         if pd.isna(value):
             return None
         return float(value)
+
+    @staticmethod
+    def _signal_context(row: pd.Series) -> str:
+        if row["confirmation_signal"] == int(Signal.BUY):
+            return "trend_confirmation_buy"
+        if row["confirmation_signal"] == int(Signal.SELL):
+            return "trend_confirmation_sell"
+        if row["contrarian_signal"] == int(Signal.BUY):
+            return "contrarian_reversal_buy"
+        if row["contrarian_signal"] == int(Signal.SELL):
+            return "contrarian_reversal_sell"
+        return "no_trade"
 
     @staticmethod
     def _signal_label(value) -> str:

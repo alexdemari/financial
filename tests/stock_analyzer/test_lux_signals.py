@@ -32,6 +32,8 @@ def test_lux_signal_generator_returns_historical_columns():
         "close",
         "supertrend",
         "trend",
+        "signal_context",
+        "options_hint",
         "adx",
         "is_strong",
         "upper_zone",
@@ -59,6 +61,7 @@ def test_lux_signal_generator_returns_current_signal():
     assert result is not None
     assert result.symbol == "AAPL"
     assert result.combined_signal in {Signal.BUY, Signal.SELL, Signal.HOLD}
+    assert result.options_hint in {"CALL", "PUT", "NO_TRADE"}
 
 
 def test_stock_data_analyzer_can_select_lux_model():
@@ -68,3 +71,19 @@ def test_stock_data_analyzer_can_select_lux_model():
 
     assert "supertrend" in result.columns
     assert "combined_signal" in result.columns
+
+
+def test_lux_signal_generator_assigns_signal_context_and_options_hint():
+    generator = LuxSignalGenerator()
+    result = generator.generate_historical_signals("AAPL", make_ohlc())
+
+    assert set(result["signal_context"].unique()).issubset(
+        {
+            "trend_confirmation_buy",
+            "trend_confirmation_sell",
+            "contrarian_reversal_buy",
+            "contrarian_reversal_sell",
+            "no_trade",
+        }
+    )
+    assert set(result["options_hint"].unique()).issubset({"CALL", "PUT", "NO_TRADE"})

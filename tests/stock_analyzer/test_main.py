@@ -16,6 +16,7 @@ def test_render_analysis_report_for_lux_is_concise():
         close_price=273.049988,
         trend="BULLISH",
         strength="NORMAL",
+        options_hint="CALL",
         adx=15.47,
         rsi=67.12,
         supertrend=263.22,
@@ -30,6 +31,8 @@ def test_render_analysis_report_for_lux_is_concise():
             "date": pd.to_datetime(["2026-04-18", "2026-04-19", "2026-04-20"]),
             "close": [270.23, 271.00, 273.05],
             "trend": ["BULLISH", "BULLISH", "BULLISH"],
+            "signal_context": ["no_trade", "trend_confirmation_buy", "no_trade"],
+            "options_hint": ["NO_TRADE", "CALL", "NO_TRADE"],
             "adx": [14.98, 15.10, 15.47],
             "rsi": [65.10, 66.01, 67.12],
             "combined_signal": [0, 1, 0],
@@ -50,6 +53,7 @@ def test_render_analysis_report_for_lux_is_concise():
     assert "Interpretation" in report
     assert "bullish trend, normal strength, no active entry signal." in report
     assert "Current Snapshot" in report
+    assert "Options Hint" in report
     assert "Recent Rows (2)" in report
     assert "Recent Signal Events (1)" in report
     assert "2026-04-20" in report
@@ -151,6 +155,9 @@ def test_main_accepts_smc_model(monkeypatch):
                 range_position_pct=50.0,
                 rsi=50.0,
                 ema200=1.0,
+                options_hint="NO_TRADE",
+                swing_high_marker=False,
+                swing_low_marker=False,
                 in_premium=False,
                 in_discount=False,
                 bullish_rejection=False,
@@ -215,6 +222,7 @@ def test_main_local_only_reads_local_csv(monkeypatch):
                 close_price=1.0,
                 trend="BULLISH",
                 strength="NORMAL",
+                options_hint="NO_TRADE",
                 adx=20.0,
                 rsi=55.0,
                 supertrend=0.9,
@@ -231,6 +239,8 @@ def test_main_local_only_reads_local_csv(monkeypatch):
                     "date": pd.to_datetime(["2026-04-20"]),
                     "close": [1.0],
                     "trend": ["BULLISH"],
+                    "signal_context": ["no_trade"],
+                    "options_hint": ["NO_TRADE"],
                     "adx": [20.0],
                     "rsi": [55.0],
                     "combined_signal": [0],
