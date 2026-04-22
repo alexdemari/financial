@@ -10,11 +10,16 @@ from typing import Any, Literal
 import pandas as pd
 
 from stock_analyzer.config import IndicatorConfig
-from stock_analyzer.signals import LuxSignalGenerator, SignalGenerator
+from stock_analyzer.signals import (
+    AnalyzerSignalAdapter,
+    LuxSignalGenerator,
+    SignalGenerator,
+    SMCSignalGenerator,
+)
 from stock_data_manager.factories.manager_factory import StockDataManagerFactory
 
 logger = logging.getLogger(__name__)
-SignalModel = Literal["rsi-sma", "lux"]
+SignalModel = Literal["rsi-sma", "lux", "smc"]
 
 
 class StockDataAnalyzer:
@@ -31,11 +36,15 @@ class StockDataAnalyzer:
         self.signal_generator = self._create_signal_generator(signal_model)
         logger.info(f"StockDataAnalyzer inicializado com config: {self.config}")
 
-    def _create_signal_generator(self, signal_model: SignalModel):
+    def _create_signal_generator(
+        self, signal_model: SignalModel
+    ) -> AnalyzerSignalAdapter:
         if signal_model == "rsi-sma":
             return SignalGenerator(self.config)
         if signal_model == "lux":
             return LuxSignalGenerator()
+        if signal_model == "smc":
+            return SMCSignalGenerator()
         raise ValueError(f"Unsupported signal model: {signal_model}")
 
     def generate_signal(self, symbol: str, df: pd.DataFrame) -> Any:
@@ -99,3 +108,36 @@ class StockDataAnalyzer:
         except Exception as e:
             logger.error(f"Erro ao recuperar dados para {symbol}: {e}", exc_info=True)
             raise
+
+    @staticmethod
+    def load_local_data(
+        symbol: str, data_dir: str | Path, interval: str = "1d"
+    ) -> pd.DataFrame:
+        """
+        Carrega dados locais existentes sem atualizar nem baixar.
+
+        Args:
+            symbol: Ticker
+            interval: '1d', '1w', '1m'
+
+        Returns:
+            DataFrame com dados locais limpos
+        """
+        interval_data_dir = Path(data_dir) / interval.upper()
+        manager = StockDataManagerFactory.create_default(
+            data_dir=str(interval_data_dir)
+        )
+        df = manager.get_data(symbol)
+
+        if df is None:
+            filepath = interval_data_dir / f"{symbol}.csv"
+            raise FileNotFoundError(f"Local CSV not found: {filepath}")
+
+        if df.empty:
+            logger.warning(f"{symbol}: Arquivo local vazio")
+            return df
+
+        df = df.copy()
+        df.dropna(inplace=True)
+        logger.info(f"{symbol}: {len(df)} linhas carregadas localmente")
+        return df

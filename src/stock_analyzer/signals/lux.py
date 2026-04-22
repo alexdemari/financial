@@ -4,18 +4,16 @@ from typing import Optional
 import pandas as pd
 
 from stock_analyzer.enums import Signal
+from stock_analyzer.signals.base import AnalyzerSignalResult
 from trading_indicators import LuxConfig, LuxSignalsOverlays
 from trading_indicators.utils.types import Trend
 
 
 @dataclass
-class LuxSignalResult:
-    symbol: str
-    date: pd.Timestamp
-    close_price: float
+class LuxSignalResult(AnalyzerSignalResult):
     trend: str
     strength: str
-    supertrend: float
+    supertrend: float | None
     adx: Optional[float]
     rsi: Optional[float]
     upper_zone: Optional[float]
@@ -57,6 +55,33 @@ class LuxSignalGenerator:
             contrarian_signal=Signal(int(latest["contrarian_signal"])),
             combined_signal=Signal(int(latest["combined_signal"])),
         )
+
+    def interpret(self, signal: LuxSignalResult) -> str:
+        combined = self._signal_label(signal.combined_signal)
+        trend = str(signal.trend).lower()
+        strength = str(signal.strength).lower()
+        confirmation = self._signal_label(signal.confirmation_signal)
+        contrarian = self._signal_label(signal.contrarian_signal)
+
+        if combined == "BUY":
+            if confirmation == "BUY":
+                return f"{trend} trend with a {strength} confirmation buy."
+            if contrarian == "BUY":
+                return f"{trend} trend with a contrarian buy at a reversal zone."
+
+        if combined == "SELL":
+            if confirmation == "SELL":
+                return f"{trend} trend with a {strength} confirmation sell."
+            if contrarian == "SELL":
+                return f"{trend} trend with a contrarian sell at a reversal zone."
+
+        return f"{trend} trend, {strength} strength, no active entry signal."
+
+    def recent_columns(self) -> list[str]:
+        return ["date", "close", "trend", "adx", "rsi", "combined_signal"]
+
+    def event_columns(self) -> list[str]:
+        return ["date", "close", "trend", "adx", "combined_signal"]
 
     def generate_historical_signals(
         self, symbol: str, df: pd.DataFrame
@@ -131,3 +156,15 @@ class LuxSignalGenerator:
         if pd.isna(value):
             return None
         return float(value)
+
+    @staticmethod
+    def _signal_label(value) -> str:
+        labels = {
+            Signal.BUY: "BUY",
+            Signal.SELL: "SELL",
+            Signal.HOLD: "HOLD",
+            1: "BUY",
+            -1: "SELL",
+            0: "HOLD",
+        }
+        return labels.get(value, str(value))

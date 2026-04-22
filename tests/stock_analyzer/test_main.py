@@ -2,7 +2,12 @@ from types import SimpleNamespace
 
 import pandas as pd
 
-from stock_analyzer.main import render_analysis_report
+from stock_analyzer.main import main, render_analysis_report
+from stock_analyzer.signals import (
+    LuxSignalGenerator,
+    SignalGenerator,
+    SMCSignalGenerator,
+)
 
 
 def test_render_analysis_report_for_lux_is_concise():
@@ -36,6 +41,7 @@ def test_render_analysis_report_for_lux_is_concise():
         model="lux",
         signal=signal,
         historical=historical,
+        adapter=LuxSignalGenerator(),
         recent_rows=2,
         signal_rows=2,
     )
@@ -76,6 +82,7 @@ def test_render_analysis_report_handles_no_signal_events():
         model="rsi-sma",
         signal=signal,
         historical=historical,
+        adapter=SignalGenerator(),
         recent_rows=2,
         signal_rows=2,
     )
@@ -110,7 +117,208 @@ def test_render_analysis_report_can_include_full_history():
         model="rsi-sma",
         signal=signal,
         historical=historical,
+        adapter=SignalGenerator(),
         full_history=True,
     )
 
     assert "Full History (2 rows)" in report
+
+
+def test_main_accepts_smc_model(monkeypatch):
+    calls = []
+    df = pd.DataFrame({"Close": [1.0]}, index=pd.to_datetime(["2026-04-20"]))
+
+    class FakeAnalyzer:
+        def __init__(self, config=None, signal_model="rsi-sma"):
+            calls.append(("init", signal_model))
+            self.config = config
+            self.signal_model = signal_model
+            self.signal_generator = SMCSignalGenerator()
+
+        def load_local_data(self, symbol, data_dir, interval):
+            calls.append(("local", symbol, str(data_dir), interval))
+            return df
+
+        def retrieve_data(self, symbol, data_dir, interval):
+            calls.append(("update", symbol, str(data_dir), interval))
+            return df
+
+        def generate_signal(self, symbol, data):
+            return SimpleNamespace(
+                date=pd.Timestamp("2026-04-20"),
+                close_price=1.0,
+                bias="NEUTRAL",
+                range_position_pct=50.0,
+                rsi=50.0,
+                ema200=1.0,
+                in_premium=False,
+                in_discount=False,
+                bullish_rejection=False,
+                bearish_rejection=False,
+                bullish_divergence=False,
+                bearish_divergence=False,
+                long_signal=False,
+                short_signal=False,
+                combined_signal=0,
+            )
+
+        def generate_historical_signals(self, symbol, data):
+            return pd.DataFrame(
+                {
+                    "date": pd.to_datetime(["2026-04-20"]),
+                    "close": [1.0],
+                    "signal_bias": ["NEUTRAL"],
+                    "signal_context": ["no_trade"],
+                    "range_position_pct": [50.0],
+                    "rsi": [50.0],
+                    "combined_signal": [0],
+                }
+            )
+
+    monkeypatch.setattr("stock_analyzer.main.StockDataAnalyzer", FakeAnalyzer)
+    monkeypatch.setattr(
+        "stock_analyzer.main.render_analysis_report",
+        lambda **kwargs: "REPORT",
+    )
+
+    exit_code = main(["-s", "AAPL", "--model", "smc", "--local-only"])
+
+    assert exit_code == 0
+    assert calls == [
+        ("init", "smc"),
+        ("local", "AAPL", str(data_dir()), "1d"),
+    ]
+
+
+def test_main_local_only_reads_local_csv(monkeypatch):
+    calls = []
+    df = pd.DataFrame({"Close": [1.0]}, index=pd.to_datetime(["2026-04-20"]))
+
+    class FakeAnalyzer:
+        def __init__(self, config=None, signal_model="rsi-sma"):
+            self.config = config
+            self.signal_model = signal_model
+            self.signal_generator = SignalGenerator()
+            self.signal_generator = LuxSignalGenerator()
+
+        def load_local_data(self, symbol, data_dir, interval):
+            calls.append(("local", symbol, str(data_dir), interval))
+            return df
+
+        def retrieve_data(self, symbol, data_dir, interval):
+            calls.append(("update", symbol, str(data_dir), interval))
+            return df
+
+        def generate_signal(self, symbol, data):
+            return SimpleNamespace(
+                date=pd.Timestamp("2026-04-20"),
+                close_price=1.0,
+                trend="BULLISH",
+                strength="NORMAL",
+                adx=20.0,
+                rsi=55.0,
+                supertrend=0.9,
+                upper_zone=1.2,
+                lower_zone=0.8,
+                confirmation_signal=0,
+                contrarian_signal=0,
+                combined_signal=0,
+            )
+
+        def generate_historical_signals(self, symbol, data):
+            return pd.DataFrame(
+                {
+                    "date": pd.to_datetime(["2026-04-20"]),
+                    "close": [1.0],
+                    "trend": ["BULLISH"],
+                    "adx": [20.0],
+                    "rsi": [55.0],
+                    "combined_signal": [0],
+                }
+            )
+
+    monkeypatch.setattr("stock_analyzer.main.StockDataAnalyzer", FakeAnalyzer)
+    monkeypatch.setattr(
+        "stock_analyzer.main.render_analysis_report",
+        lambda **kwargs: "REPORT",
+    )
+
+    exit_code = main(["-s", "AAPL", "--model", "lux", "--local-only"])
+
+    assert exit_code == 0
+    assert calls == [("local", "AAPL", str(data_dir()), "1d")]
+
+
+def test_main_local_only_fails_without_csv(monkeypatch):
+    class FakeAnalyzer:
+        def __init__(self, config=None, signal_model="rsi-sma"):
+            self.config = config
+            self.signal_model = signal_model
+            self.signal_generator = SignalGenerator()
+
+        def load_local_data(self, symbol, data_dir, interval):
+            raise FileNotFoundError("Local CSV not found")
+
+    monkeypatch.setattr("stock_analyzer.main.StockDataAnalyzer", FakeAnalyzer)
+
+    exit_code = main(["-s", "AAPL", "--local-only"])
+
+    assert exit_code == 1
+
+
+def test_main_default_mode_keeps_update_behavior(monkeypatch):
+    calls = []
+    df = pd.DataFrame({"Close": [1.0]}, index=pd.to_datetime(["2026-04-20"]))
+
+    class FakeAnalyzer:
+        def __init__(self, config=None, signal_model="rsi-sma"):
+            self.config = config
+            self.signal_model = signal_model
+            self.signal_generator = SignalGenerator()
+
+        def load_local_data(self, symbol, data_dir, interval):
+            calls.append(("local", symbol, str(data_dir), interval))
+            return df
+
+        def retrieve_data(self, symbol, data_dir, interval):
+            calls.append(("update", symbol, str(data_dir), interval))
+            return df
+
+        def generate_signal(self, symbol, data):
+            return SimpleNamespace(
+                date=pd.Timestamp("2026-04-20"),
+                close_price=1.0,
+                rsi_value=45.0,
+                sma_value=1.0,
+                rsi_signal=0,
+                sma_signal=0,
+                combined_signal=0,
+            )
+
+        def generate_historical_signals(self, symbol, data):
+            return pd.DataFrame(
+                {
+                    "date": pd.to_datetime(["2026-04-20"]),
+                    "close": [1.0],
+                    "rsi": [45.0],
+                    "sma": [1.0],
+                    "combined_signal": [0],
+                }
+            )
+
+    monkeypatch.setattr("stock_analyzer.main.StockDataAnalyzer", FakeAnalyzer)
+    monkeypatch.setattr(
+        "stock_analyzer.main.render_analysis_report",
+        lambda **kwargs: "REPORT",
+    )
+
+    exit_code = main(["-s", "AAPL"])
+
+    assert exit_code == 0
+    assert calls == [("update", "AAPL", str(data_dir()), "1d")]
+
+
+def data_dir():
+    from stock_analyzer.main import DATA_DIR
+
+    return DATA_DIR

@@ -11,17 +11,15 @@ import pandas as pd
 from stock_analyzer.config import IndicatorConfig
 from stock_analyzer.enums import Signal
 from stock_analyzer.indicators import IndicatorCalculator
+from stock_analyzer.signals.base import AnalyzerSignalResult
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
-class SignalResult:
+class SignalResult(AnalyzerSignalResult):
     """Resultado de um sinal RSI/SMA normalizado."""
 
-    symbol: str
-    date: pd.Timestamp
-    close_price: float
     rsi_value: Optional[float]
     sma_value: Optional[float]
     rsi_signal: Signal
@@ -171,3 +169,37 @@ class SignalGenerator:
                 "combined_signal",
             ]
         ].rename(columns={"Close": "close"})
+
+    def interpret(self, signal: SignalResult) -> str:
+        combined = self._signal_label(signal.combined_signal)
+        rsi_signal = self._signal_label(signal.rsi_signal)
+        sma_signal = self._signal_label(signal.sma_signal)
+
+        if combined == "BUY":
+            return "RSI and SMA are aligned on a buy."
+        if combined == "SELL":
+            return "RSI and SMA are aligned on a sell."
+        if rsi_signal == sma_signal and rsi_signal != "HOLD":
+            return (
+                f"RSI and SMA are aligned on {rsi_signal.lower()}, "
+                "but no combined trigger was emitted."
+            )
+        return "RSI and SMA are not aligned, so the model remains on hold."
+
+    def recent_columns(self) -> list[str]:
+        return ["date", "close", "rsi", "sma", "combined_signal"]
+
+    def event_columns(self) -> list[str]:
+        return ["date", "close", "rsi", "sma", "combined_signal"]
+
+    @staticmethod
+    def _signal_label(value) -> str:
+        labels = {
+            Signal.BUY: "BUY",
+            Signal.SELL: "SELL",
+            Signal.HOLD: "HOLD",
+            1: "BUY",
+            -1: "SELL",
+            0: "HOLD",
+        }
+        return labels.get(value, str(value))

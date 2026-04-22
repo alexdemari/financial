@@ -7,6 +7,7 @@
 - Calculates core indicators (RSI, SMA, CCI)
 - Generates current and historical RSI/SMA-based signals
 - Generates current and historical Lux Signals & Overlays signals via `trading_indicators`
+- Generates current and historical Smart Money Confluence signals via `trading_indicators`
 - Contains simple strategy backtests (RSI, SMA crossover, CCI mean reversion)
 - Integrates with `stock_data_manager` to fetch/update symbol data
 
@@ -30,7 +31,7 @@ The current analyzer is not event-driven, not a scanner, and not an options
 strategy engine. Its practical job is to take OHLC data and produce simple
 technical signals for one stock at a time.
 
-There are currently no dedicated tests for this package under `tests/`.
+There are dedicated tests for this package under `tests/stock_analyzer`.
 
 ## Package Structure
 
@@ -38,6 +39,7 @@ There are currently no dedicated tests for this package under `tests/`.
 - `signals/`: signal generators
   - `rsi_sma.py`: legacy RSI/SMA signal generation (`SignalGenerator`, `SignalResult`)
   - `lux.py`: adapter for `trading_indicators.LuxSignalsOverlays`
+  - `smc.py`: adapter for `trading_indicators.SmartMoneyConfluence`
 - `indicators.py`: indicator calculations (`IndicatorCalculator`)
 - `backtest.py`: backtesting implementations (`RSIBacktesting`, `SMAPairBacktesting`, `CCIBacktesting`)
 - `config.py`: config dataclasses for indicators/backtests
@@ -72,10 +74,11 @@ There are currently no dedicated tests for this package under `tests/`.
 
 ## Signal Model
 
-The CLI currently supports two signal models:
+The CLI currently supports three signal models:
 
 - `rsi-sma`: legacy RSI/SMA model, still the default
 - `lux`: adapter around `Signals & Overlays [Lux Replica]`
+- `smc`: adapter around `Smart Money Confluence`
 
 Select a model with:
 
@@ -87,6 +90,12 @@ or:
 
 ```bash
 PYTHONPATH=src uv run python -m stock_analyzer.main -s AAPL --model lux
+```
+
+For SMC:
+
+```bash
+PYTHONPATH=src uv run python -m stock_analyzer.main -s AAPL --model smc
 ```
 
 ### RSI/SMA
@@ -139,6 +148,37 @@ contrarian_signal
 combined_signal
 ```
 
+### SMC Signals
+
+The `smc` model delegates to `trading_indicators.SmartMoneyConfluence`, which
+combines:
+
+- RSI divergence
+- Wick rejection
+- Premium/discount range context
+- Optional EMA 200 trend filter
+
+The historical SMC output includes:
+
+```text
+date
+close
+combined_signal
+signal_bias
+signal_context
+rsi
+ema200
+range_position_pct
+in_premium
+in_discount
+bullish_rejection
+bearish_rejection
+bullish_divergence
+bearish_divergence
+long_signal
+short_signal
+```
+
 ## Data Requirements
 
 For RSI/SMA signal generation:
@@ -159,6 +199,16 @@ From project root:
 just analyzer AAPL
 ```
 
+Execution modes:
+
+- Default mode:
+  - updates/downloads data first
+  - then analyzes the latest local dataset
+- `--local-only` mode:
+  - reads the existing local CSV only
+  - does not call `stock_data_manager` update/download flow
+  - fails clearly if the CSV is missing
+
 Use the Lux model:
 
 ```bash
@@ -177,22 +227,46 @@ With Lux:
 PYTHONPATH=src uv run python -m stock_analyzer.main -s AAPL --model lux
 ```
 
+With SMC:
+
+```bash
+PYTHONPATH=src uv run python -m stock_analyzer.main -s AAPL --model smc
+```
+
 What it does:
 
 1. Updates/retrieves data for the symbol (`1d` interval)
 2. Prints a compact current snapshot
 3. Prints recent rows and recent signal events
 
+Analyze only the existing local CSV:
+
+```bash
+PYTHONPATH=src uv run python -m stock_analyzer.main -s AAPL --local-only
+```
+
+Analyze and update first, which remains the default behavior:
+
+```bash
+PYTHONPATH=src uv run python -m stock_analyzer.main -s AAPL
+```
+
 Optional CLI flags:
 
 ```bash
-PYTHONPATH=src uv run python -m stock_analyzer.main -s AAPL --model lux --recent-rows 10 --signal-rows 8
+PYTHONPATH=src uv run python -m stock_analyzer.main -s AAPL --model smc --recent-rows 10 --signal-rows 8
+```
+
+Analyze only existing local CSV, with no update/download:
+
+```bash
+PYTHONPATH=src uv run python -m stock_analyzer.main -s AAPL --model smc --local-only
 ```
 
 Print full history only when needed:
 
 ```bash
-PYTHONPATH=src uv run python -m stock_analyzer.main -s AAPL --model lux --full-history
+PYTHONPATH=src uv run python -m stock_analyzer.main -s AAPL --model smc --full-history
 ```
 
 ## Programmatic Usage
@@ -261,13 +335,12 @@ cci_results = CCIBacktesting().backtest(
 
 - `main.py` currently analyzes one symbol at a time (`-s/--symbol` required).
 - Data retrieval in `StockDataAnalyzer.retrieve_data` writes/reads under `data_dir/<INTERVAL>` (for example `./data/stocks/1D`).
+- `--local-only` reads the existing CSV only and fails clearly if it does not exist.
 - If there are not enough rows for a configured indicator period, methods return empty/hold-like outputs and log warnings.
 
 ## Known Gaps
 
 - The CLI is minimal and only supports one symbol at a time.
-- The CLI always retrieves/updates data through `stock_data_manager`; there is no
-  read-only mode for analyzing already downloaded CSV files.
 - Backtesting code is less mature than signal generation and should be reviewed
   before treating results as reliable.
 - `CCIBacktesting` appears to have result-shape inconsistencies that need tests
@@ -278,8 +351,7 @@ cci_results = CCIBacktesting().backtest(
 Near-term changes should keep the module local, manual, and synchronous:
 
 1. Add broader analyzer tests using in-memory DataFrames, with no network calls.
-2. Separate "analyze existing CSV" from "download/update then analyze".
-3. Improve CLI output into a compact table with symbol, date, close, model metrics,
+2. Improve CLI output into a compact table with symbol, date, close, model metrics,
    model-specific signal fields, and combined signal.
-4. Add multi-symbol CLI support after single-symbol behavior is covered.
-5. Review and fix backtests separately from signal generation.
+3. Add multi-symbol CLI support after single-symbol behavior is covered.
+4. Review and fix backtests separately from signal generation.

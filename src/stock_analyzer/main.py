@@ -8,6 +8,7 @@ from tabulate import tabulate
 from stock_analyzer.analyzer import StockDataAnalyzer
 from stock_analyzer.config import IndicatorConfig
 from stock_analyzer.enums import Signal
+from stock_analyzer.signals import AnalyzerSignalAdapter
 from stock_data_manager.implementations.trading_view_tickers_download import (
     TradingViewDownloader,
 )
@@ -78,6 +79,25 @@ def _format_summary_rows(signal, model: str) -> list[list[str]]:
         )
         return rows
 
+    if model == "smc":
+        rows.extend(
+            [
+                ["Bias", str(signal.bias)],
+                ["Range %", _format_number(signal.range_position_pct)],
+                ["RSI", _format_number(signal.rsi)],
+                ["EMA200", _format_number(signal.ema200)],
+                ["In Premium", "Y" if signal.in_premium else ""],
+                ["In Discount", "Y" if signal.in_discount else ""],
+                ["Bullish Rejection", "Y" if signal.bullish_rejection else ""],
+                ["Bearish Rejection", "Y" if signal.bearish_rejection else ""],
+                ["Bullish Divergence", "Y" if signal.bullish_divergence else ""],
+                ["Bearish Divergence", "Y" if signal.bearish_divergence else ""],
+                ["Long Signal", "Y" if signal.long_signal else ""],
+                ["Short Signal", "Y" if signal.short_signal else ""],
+            ]
+        )
+        return rows
+
     if model == "rsi-sma":
         rows.extend(
             [
@@ -89,56 +109,6 @@ def _format_summary_rows(signal, model: str) -> list[list[str]]:
         )
 
     return rows
-
-
-def _interpret_signal(signal, model: str) -> str:
-    combined = _signal_label(signal.combined_signal)
-
-    if model == "lux":
-        trend = str(signal.trend).lower()
-        strength = str(signal.strength).lower()
-        confirmation = _signal_label(signal.confirmation_signal)
-        contrarian = _signal_label(signal.contrarian_signal)
-
-        if combined == "BUY":
-            if confirmation == "BUY":
-                return f"{trend} trend with a {strength} confirmation buy."
-            if contrarian == "BUY":
-                return f"{trend} trend with a contrarian buy at a reversal zone."
-
-        if combined == "SELL":
-            if confirmation == "SELL":
-                return f"{trend} trend with a {strength} confirmation sell."
-            if contrarian == "SELL":
-                return f"{trend} trend with a contrarian sell at a reversal zone."
-
-        return f"{trend} trend, {strength} strength, no active entry signal."
-
-    if model == "rsi-sma":
-        rsi_signal = _signal_label(signal.rsi_signal)
-        sma_signal = _signal_label(signal.sma_signal)
-
-        if combined == "BUY":
-            return "RSI and SMA are aligned on a buy."
-        if combined == "SELL":
-            return "RSI and SMA are aligned on a sell."
-        if rsi_signal == sma_signal and rsi_signal != "HOLD":
-            return f"RSI and SMA are aligned on {rsi_signal.lower()}, but no combined trigger was emitted."
-        return "RSI and SMA are not aligned, so the model remains on hold."
-
-    return f"Current signal is {combined}."
-
-
-def _recent_columns_for_model(model: str) -> list[str]:
-    if model == "lux":
-        return ["date", "close", "trend", "adx", "rsi", "combined_signal"]
-    return ["date", "close", "rsi", "sma", "combined_signal"]
-
-
-def _event_columns_for_model(model: str) -> list[str]:
-    if model == "lux":
-        return ["date", "close", "trend", "adx", "combined_signal"]
-    return ["date", "close", "rsi", "sma", "combined_signal"]
 
 
 def _prepare_display_frame(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
@@ -162,6 +132,7 @@ def render_analysis_report(
     model: str,
     signal,
     historical: pd.DataFrame,
+    adapter: AnalyzerSignalAdapter,
     recent_rows: int = 8,
     signal_rows: int = 5,
     full_history: bool = False,
@@ -180,7 +151,7 @@ def render_analysis_report(
     lines.extend(
         [
             "Interpretation",
-            _interpret_signal(signal, model),
+            adapter.interpret(signal),
             "",
             "Current Snapshot",
             summary,
@@ -193,7 +164,7 @@ def render_analysis_report(
 
     recent = _prepare_display_frame(
         historical.tail(recent_rows),
-        _recent_columns_for_model(model),
+        adapter.recent_columns(),
     )
     lines.extend(
         [
@@ -209,7 +180,7 @@ def render_analysis_report(
     else:
         events = _prepare_display_frame(
             signal_events.tail(signal_rows),
-            _event_columns_for_model(model),
+            adapter.event_columns(),
         )
         lines.extend(
             [
@@ -246,9 +217,9 @@ def main(argv=None) -> int:
     )
     parser.add_argument(
         "--model",
-        choices=["rsi-sma", "lux"],
+        choices=["rsi-sma", "lux", "smc"],
         default="rsi-sma",
-        help="Signal model to use",
+        help="Signal model to use: rsi-sma, lux, or smc",
     )
     parser.add_argument(
         "--recent-rows",
@@ -267,13 +238,26 @@ def main(argv=None) -> int:
         action="store_true",
         help="Print the full historical signal DataFrame",
     )
+    parser.add_argument(
+        "--local-only",
+        action="store_true",
+        help="Analyze existing local CSV only, without updating/downloading data",
+    )
     args = parser.parse_args(argv)
 
     config = IndicatorConfig(rsi_period=14, sma_period=50)
     analyzer = StockDataAnalyzer(config=config, signal_model=args.model)
 
     symbol = args.symbol.upper()
-    df = analyzer.retrieve_data(symbol, data_dir=DATA_DIR, interval="1d")
+    try:
+        if args.local_only:
+            df = analyzer.load_local_data(symbol, data_dir=DATA_DIR, interval="1d")
+        else:
+            df = analyzer.retrieve_data(symbol, data_dir=DATA_DIR, interval="1d")
+    except FileNotFoundError as exc:
+        print(f"Error: {exc}")
+        return 1
+
     signal = analyzer.generate_signal(symbol, df)
     historical = analyzer.generate_historical_signals(symbol, df)
 
@@ -283,6 +267,7 @@ def main(argv=None) -> int:
             model=args.model,
             signal=signal,
             historical=historical,
+            adapter=analyzer.signal_generator,
             recent_rows=args.recent_rows,
             signal_rows=args.signal_rows,
             full_history=args.full_history,
