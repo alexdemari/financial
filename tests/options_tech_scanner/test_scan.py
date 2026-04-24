@@ -154,16 +154,34 @@ def test_scan_universe_generates_csv_and_sorts_top_results(
     assert eligible.iloc[0]["symbol"] == "AAPL"
     assert eligible.iloc[0]["consistency_score"] == 4
     assert eligible.iloc[0]["alignment"] == "bullish_aligned"
+    assert eligible.iloc[0]["market_state"] == "unknown"
+    assert eligible.iloc[0]["adjusted_alignment"] == "bullish_aligned"
+    assert eligible.iloc[0]["action_bucket"] == "needs_review"
     assert eligible.iloc[0]["lux_last_event"] == "BUY"
     assert eligible.iloc[0]["smc_last_event_options_hint"] == "CALL"
     assert (
         result_df.loc[result_df["symbol"] == "MISSING", "excluded_reason"].item()
         == "missing_csv"
     )
+    assert (
+        result_df.loc[result_df["symbol"] == "MISSING", "market_state"].item()
+        == "unknown"
+    )
+    assert (
+        result_df.loc[result_df["symbol"] == "MISSING", "adjusted_alignment"].item()
+        == "no_trade"
+    )
+    assert (
+        result_df.loc[result_df["symbol"] == "MISSING", "action_bucket"].item()
+        == "avoid"
+    )
 
     stdout = capsys.readouterr().out
     assert "AAPL" in stdout
     assert "MSFT" in stdout
+    assert "adjusted_alignment" in stdout
+    assert "market_state" in stdout
+    assert "action_bucket" in stdout
     assert "Exported:" in stdout
 
 
@@ -318,14 +336,21 @@ def test_scan_universe_recent_event_mode_uses_watch_events_for_ranking(
     assert nvts["smc_active_event_options_hint"] == "CALL_WATCH"
     assert nvts["smc_active_event"] == "HOLD"
     assert nvts["smc_days_since_active_event"] == 2
+    assert nvts["market_state"] == "early_trend"
+    assert nvts["adjusted_alignment"] == "bullish_aligned"
+    assert nvts["action_bucket"] == "candidate"
     assert nvts["alignment"] == "bullish_aligned"
     assert nvts["consistency_score"] == 1
     assert hood["alignment"] == "bearish_aligned"
+    assert hood["market_state"] == "early_trend"
+    assert hood["adjusted_alignment"] == "bearish_aligned"
+    assert hood["action_bucket"] == "candidate"
     assert hood["consistency_score"] == 1
 
     stdout = capsys.readouterr().out
-    assert "lux_active_event_options_hint" in stdout
-    assert "smc_active_event_options_hint" in stdout
+    assert "lux_trend" in stdout
+    assert "adjusted_alignment" in stdout
+    assert "market_state" in stdout
 
 
 def test_smc_active_event_prefers_latest_reversal_over_older_confluence(
@@ -420,6 +445,9 @@ def test_smc_active_event_prefers_latest_reversal_over_older_confluence(
     assert aapl["smc_active_event_options_hint"] == "CALL_WATCH"
     assert aapl["smc_active_event_context"] == "short_term_bullish_reversal"
     assert aapl["smc_days_since_active_event"] == 22
+    assert aapl["market_state"] == "unknown"
+    assert aapl["adjusted_alignment"] == "mixed"
+    assert aapl["action_bucket"] == "needs_review"
 
 
 def test_smc_context_matches_historical_adapter_context():
@@ -562,52 +590,38 @@ def test_recent_event_mode_falls_back_to_no_trade_without_active_directional_eve
     assert aapl["smc_last_event_options_hint"] == "PUT_WATCH"
     assert aapl["smc_active_event"] is None
     assert aapl["smc_active_event_options_hint"] is None
+    assert aapl["market_state"] == "unknown"
+    assert aapl["adjusted_alignment"] == "no_trade"
+    assert aapl["action_bucket"] == "avoid"
     assert aapl["alignment"] == "no_trade"
     assert aapl["consistency_score"] == 0
 
 
-def test_render_top_n_summary_uses_columns_for_ranking_mode():
-    snapshot_df = pd.DataFrame(
+def test_render_top_n_summary_uses_v2_decision_columns():
+    summary_df = pd.DataFrame(
         [
             {
                 "symbol": "AAPL",
                 "close": 10.5,
-                "avg_volume_20": 2_000_000.0,
-                "market_cap": 1_000_000_000.0,
-                "ranking_mode": "snapshot",
-                "lux_options_hint": "CALL",
-                "smc_options_hint": "CALL",
+                "lux_trend": "BULLISH",
+                "lux_strength": "STRONG",
+                "smc_range_position_pct": 55.0,
+                "smc_rsi": 52.0,
                 "alignment": "bullish_aligned",
+                "adjusted_alignment": "bullish_aligned",
+                "market_state": "early_trend",
+                "action_bucket": "candidate",
                 "consistency_score": 4,
             }
         ]
     )
-    recent_event_df = pd.DataFrame(
-        [
-            {
-                "symbol": "AAPL",
-                "close": 10.5,
-                "avg_volume_20": 2_000_000.0,
-                "market_cap": 1_000_000_000.0,
-                "ranking_mode": "recent-event",
-                "lux_active_event_options_hint": "CALL",
-                "lux_days_since_active_event": 3,
-                "smc_active_event_options_hint": "CALL_WATCH",
-                "smc_days_since_active_event": 7,
-                "alignment": "bullish_aligned",
-                "consistency_score": 1,
-            }
-        ]
-    )
 
-    snapshot_summary = render_top_n_summary(snapshot_df, top=10)
-    recent_event_summary = render_top_n_summary(recent_event_df, top=10)
+    summary = render_top_n_summary(summary_df, top=10)
 
-    assert "lux_options_hint" in snapshot_summary
-    assert "smc_options_hint" in snapshot_summary
-    assert "lux_active_event_options_hint" not in snapshot_summary
-
-    assert "lux_active_event_options_hint" in recent_event_summary
-    assert "smc_active_event_options_hint" in recent_event_summary
-    assert "lux_days_since_active_event" in recent_event_summary
-    assert "lux_options_hint" not in recent_event_summary
+    assert "lux_trend" in summary
+    assert "lux_strength" in summary
+    assert "smc_range_position_pct" in summary
+    assert "smc_rsi" in summary
+    assert "adjusted_alignment" in summary
+    assert "market_state" in summary
+    assert "action_bucket" in summary

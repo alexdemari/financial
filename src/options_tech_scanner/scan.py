@@ -10,6 +10,13 @@ from options_tech_scanner.eligibility import (
     evaluate_symbol_eligibility,
     load_symbol_csv,
 )
+from options_tech_scanner.market_state import (
+    AVOID,
+    UNKNOWN,
+    adjust_alignment_for_market_state,
+    classify_action_bucket,
+    classify_market_state,
+)
 from options_tech_scanner.ranking import (
     classify_alignment,
     compute_consistency_score,
@@ -61,6 +68,9 @@ class ScannerRow:
     smc_days_since_active_event: int | None
     alignment: str | None
     consistency_score: int | None
+    market_state: str | None
+    adjusted_alignment: str | None
+    action_bucket: str | None
     eligible: bool
     excluded_reason: str | None
 
@@ -147,6 +157,9 @@ def scan_universe(
                         smc_days_since_active_event=None,
                         alignment=None,
                         consistency_score=None,
+                        market_state=UNKNOWN,
+                        adjusted_alignment="no_trade",
+                        action_bucket=AVOID,
                         eligible=False,
                         excluded_reason="analysis_failed",
                     )
@@ -228,6 +241,9 @@ def scan_universe(
                         smc_days_since_active_event=None,
                         alignment=None,
                         consistency_score=None,
+                        market_state=UNKNOWN,
+                        adjusted_alignment="no_trade",
+                        action_bucket=AVOID,
                         eligible=False,
                         excluded_reason="analysis_failed",
                     )
@@ -295,6 +311,9 @@ def _build_excluded_row(
             smc_days_since_active_event=None,
             alignment=None,
             consistency_score=None,
+            market_state=UNKNOWN,
+            adjusted_alignment="no_trade",
+            action_bucket=AVOID,
             eligible=False,
             excluded_reason=eligibility.excluded_reason,
         )
@@ -345,6 +364,29 @@ def _build_eligible_row(
         lux_signal=ranked_lux_signal,
         smc_signal=ranked_smc_signal,
     )
+    v2_row = {
+        "lux_trend": lux_signal.trend,
+        "lux_strength": lux_signal.strength,
+        "lux_last_event": lux_event["signal"],
+        "lux_days_since_last_event": lux_event["days_since"],
+        "lux_active_event": lux_active_event["signal"],
+        "lux_days_since_active_event": lux_active_event["days_since"],
+        "smc_bias": smc_signal.bias,
+        "smc_range_position_pct": smc_signal.range_position_pct,
+        "smc_rsi": smc_signal.rsi,
+        "smc_last_event": smc_event["signal"],
+        "smc_last_event_context": smc_event["context"],
+        "smc_days_since_last_event": smc_event["days_since"],
+        "alignment": alignment,
+        "consistency_score": consistency_score,
+    }
+    market_state = classify_market_state(v2_row)
+    adjusted_alignment = adjust_alignment_for_market_state(
+        alignment=alignment,
+        row=v2_row,
+        market_state=market_state,
+    )
+    action_bucket = classify_action_bucket(adjusted_alignment, market_state)
 
     return asdict(
         ScannerRow(
@@ -387,6 +429,9 @@ def _build_eligible_row(
             smc_days_since_active_event=smc_active_event["days_since"],
             alignment=alignment,
             consistency_score=consistency_score,
+            market_state=market_state,
+            adjusted_alignment=adjusted_alignment,
+            action_bucket=action_bucket,
             eligible=True,
             excluded_reason=None,
         )

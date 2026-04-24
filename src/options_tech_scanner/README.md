@@ -129,6 +129,9 @@ The CSV report includes:
 - `smc_days_since_active_event`
 - `alignment`
 - `consistency_score`
+- `market_state`
+- `adjusted_alignment`
+- `action_bucket`
 - `eligible`
 - `excluded_reason`
 
@@ -180,6 +183,9 @@ Terminal output prints only the top-N rows with compact ranking fields.
 | `smc_days_since_active_event` | calendar-day distance between the latest candle and the active SMC directional event |
 | `alignment` | scanner alignment class (`bullish_aligned`, `bearish_aligned`, `mixed`, `no_trade`) |
 | `consistency_score` | V1 deterministic consistency score |
+| `market_state` | V2 state classifier (`early_trend`, `pullback`, `extended`, `exhaustion`, `range`, `unknown`) |
+| `adjusted_alignment` | V2 decision alignment derived from V1 alignment plus market state |
+| `action_bucket` | V2 action bucket (`candidate`, `watchlist`, `avoid`, `needs_review`) |
 | `eligible` | whether the symbol passed the scanner eligibility gates |
 | `excluded_reason` | explicit exclusion reason when `eligible == False` |
 
@@ -205,6 +211,30 @@ The scoring rules do not change with `--ranking-mode`. Only the source inputs ch
 - `recent-event`: use `lux_active_event_options_hint`, `smc_active_event_options_hint`, `lux_active_event`, `smc_active_event`
 
 This means SMC reversal watches can still contribute directional alignment without contributing signal agreement, because `CALL_WATCH` / `PUT_WATCH` still map to `HOLD` at the signal layer. If no active directional event exists for a model, `recent-event` falls back to `NO_TRADE` / `HOLD` for ranking on that side.
+
+### Scanner V2 Market State
+
+V2 adds a transparent market-state layer on top of the V1 diagnostics.
+
+- `alignment` remains the raw V1 diagnosis of Lux/SMC agreement
+- `adjusted_alignment` is the V2 decision layer used to downgrade late or range-bound setups
+- `action_bucket` is the operational outcome for triage: `candidate`, `watchlist`, `avoid`, or `needs_review`
+
+Current `market_state` values:
+
+- `early_trend`
+- `pullback`
+- `extended`
+- `exhaustion`
+- `range`
+- `unknown`
+
+Examples:
+
+- bullish aligned + `extended` -> `bullish_watchlist`
+- bearish aligned + `exhaustion` -> `bearish_watchlist`
+- mixed + bearish Lux context + late move -> bearish-biased V2 output instead of a generic mixed label
+- excluded or failed rows still receive explicit V2 values: `market_state=unknown`, `adjusted_alignment=no_trade`, `action_bucket=avoid`
 
 ## Current Pipeline (Scan)
 
