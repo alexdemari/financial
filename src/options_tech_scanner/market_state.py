@@ -46,6 +46,11 @@ def _to_int(value: Any) -> int | None:
         return None
 
 
+def _consistency_allows_candidate(value: Any) -> bool:
+    consistency_score = _to_int(value)
+    return consistency_score is not None and consistency_score >= 1
+
+
 def classify_market_state(row: Mapping[str, Any]) -> str:
     lux_trend = str(row.get("lux_trend") or "")
     lux_strength = str(row.get("lux_strength") or "")
@@ -129,10 +134,16 @@ def adjust_alignment_for_market_state(
     return alignment
 
 
-def classify_action_bucket(adjusted_alignment: str, market_state: str) -> str:
+def classify_action_bucket(
+    adjusted_alignment: str,
+    market_state: str,
+    consistency_score: Any = None,
+) -> str:
     if adjusted_alignment in {"bullish_aligned", "bearish_aligned"}:
         if market_state in {EARLY_TREND, PULLBACK}:
-            return CANDIDATE
+            if _consistency_allows_candidate(consistency_score):
+                return CANDIDATE
+            return WATCHLIST
 
     if adjusted_alignment in {
         BULLISH_WATCHLIST,

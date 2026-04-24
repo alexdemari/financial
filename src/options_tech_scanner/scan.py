@@ -386,7 +386,11 @@ def _build_eligible_row(
         row=v2_row,
         market_state=market_state,
     )
-    action_bucket = classify_action_bucket(adjusted_alignment, market_state)
+    action_bucket = classify_action_bucket(
+        adjusted_alignment,
+        market_state,
+        consistency_score=consistency_score,
+    )
 
     return asdict(
         ScannerRow(

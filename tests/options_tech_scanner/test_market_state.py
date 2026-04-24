@@ -17,7 +17,11 @@ def _evaluate(row: dict[str, object]) -> tuple[str, str, str]:
         row=row,
         market_state=market_state,
     )
-    action_bucket = classify_action_bucket(adjusted_alignment, market_state)
+    action_bucket = classify_action_bucket(
+        adjusted_alignment,
+        market_state,
+        consistency_score=row.get("consistency_score"),
+    )
     return market_state, adjusted_alignment, action_bucket
 
 
@@ -31,6 +35,7 @@ def test_afrm_like_case_becomes_bullish_watchlist():
         "smc_range_position_pct": 78,
         "smc_rsi": 65,
         "alignment": "bullish_aligned",
+        "consistency_score": 1,
     }
 
     market_state, adjusted_alignment, action_bucket = _evaluate(row)
@@ -50,6 +55,7 @@ def test_gild_like_case_keeps_bearish_bias_but_not_clean_entry():
         "smc_range_position_pct": 9,
         "smc_rsi": 36,
         "alignment": "mixed",
+        "consistency_score": 1,
     }
 
     market_state, adjusted_alignment, action_bucket = _evaluate(row)
@@ -69,6 +75,7 @@ def test_nu_like_case_is_not_promoted_to_bullish_candidate():
         "smc_range_position_pct": 23,
         "smc_rsi": 44,
         "alignment": "mixed",
+        "consistency_score": 0,
     }
 
     market_state, adjusted_alignment, action_bucket = _evaluate(row)
@@ -88,6 +95,7 @@ def test_baba_like_case_becomes_bearish_watchlist_not_candidate():
         "smc_range_position_pct": 29.13,
         "smc_rsi": 48.44,
         "alignment": "mixed",
+        "consistency_score": -1,
     }
 
     market_state, adjusted_alignment, action_bucket = _evaluate(row)
@@ -107,6 +115,7 @@ def test_ccl_like_case_becomes_range_watchlist_not_candidate():
         "smc_range_position_pct": 31.41,
         "smc_rsi": 47.20,
         "alignment": "mixed",
+        "consistency_score": -1,
     }
 
     market_state, adjusted_alignment, action_bucket = _evaluate(row)
@@ -153,6 +162,7 @@ def test_range_case_becomes_range_watchlist():
         "smc_range_position_pct": 50,
         "smc_rsi": 50,
         "alignment": "mixed",
+        "consistency_score": 0,
     }
 
     market_state, adjusted_alignment, action_bucket = _evaluate(row)
@@ -172,6 +182,7 @@ def test_clean_bullish_candidate_is_pullback_candidate():
         "smc_range_position_pct": 55,
         "smc_rsi": 52,
         "alignment": "bullish_aligned",
+        "consistency_score": 4,
     }
 
     market_state, adjusted_alignment, action_bucket = _evaluate(row)
@@ -191,6 +202,7 @@ def test_strong_bearish_pullback_candidate():
         "smc_range_position_pct": 55,
         "smc_rsi": 50,
         "alignment": "bearish_aligned",
+        "consistency_score": 1,
     }
 
     market_state, adjusted_alignment, action_bucket = _evaluate(row)
@@ -210,6 +222,7 @@ def test_mixed_strong_bearish_pullback_candidate():
         "smc_range_position_pct": 55,
         "smc_rsi": 50,
         "alignment": "mixed",
+        "consistency_score": 1,
     }
 
     market_state, adjusted_alignment, action_bucket = _evaluate(row)
@@ -229,6 +242,7 @@ def test_mixed_normal_bearish_pullback_stays_watchlist():
         "smc_range_position_pct": 55,
         "smc_rsi": 50,
         "alignment": "mixed",
+        "consistency_score": 0,
     }
 
     market_state, adjusted_alignment, action_bucket = _evaluate(row)
@@ -248,6 +262,7 @@ def test_mixed_strong_bullish_pullback_candidate():
         "smc_range_position_pct": 50,
         "smc_rsi": 54,
         "alignment": "mixed",
+        "consistency_score": 1,
     }
 
     market_state, adjusted_alignment, action_bucket = _evaluate(row)
@@ -267,10 +282,31 @@ def test_mixed_normal_bullish_pullback_stays_watchlist():
         "smc_range_position_pct": 50,
         "smc_rsi": 54,
         "alignment": "mixed",
+        "consistency_score": 0,
     }
 
     market_state, adjusted_alignment, action_bucket = _evaluate(row)
 
     assert market_state == PULLBACK
     assert adjusted_alignment == "bullish_watchlist"
+    assert action_bucket == "watchlist"
+
+
+def test_aligned_pullback_with_zero_consistency_becomes_watchlist():
+    row = {
+        "lux_trend": "BEARISH",
+        "lux_strength": "STRONG",
+        "lux_last_event": "SELL",
+        "lux_days_since_last_event": 2,
+        "smc_bias": "NEUTRAL",
+        "smc_range_position_pct": 55,
+        "smc_rsi": 50,
+        "alignment": "bearish_aligned",
+        "consistency_score": 0,
+    }
+
+    market_state, adjusted_alignment, action_bucket = _evaluate(row)
+
+    assert market_state == PULLBACK
+    assert adjusted_alignment == "bearish_aligned"
     assert action_bucket == "watchlist"
