@@ -108,3 +108,19 @@ Use:
 ```bash
 uv run pytest
 .venv/bin/python -m pytest
+```
+
+When working from Windows against this repo:
+
+- prefer running test/lint/commit flows through `wsl bash -lc "..."`
+- if `git commit` depends on hooks/pre-commit from the Linux `.venv`, do NOT commit from plain PowerShell
+- use this commit flow:
+
+```bash
+wsl bash -lc "cd /mnt/c/Users/alexa/Documents/development/financial && git commit -m '...'"
+```
+
+- if `ruff-format` or another hook rewrites files during commit:
+  - review the changes
+  - re-stage the modified files
+  - re-run the same `wsl` commit command
