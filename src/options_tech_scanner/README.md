@@ -20,6 +20,7 @@ For the Lux + SMC scanner flow, use local universe metadata plus local OHLC CSVs
 - filter symbols by 20-day average volume
 - run Lux and SMC snapshots per symbol
 - compute alignment and consistency scores
+- optionally rank by the latest actionable event instead of the current candle snapshot
 - export a CSV report
 - print only the top-N candidates in terminal output
 
@@ -44,8 +45,29 @@ PYTHONPATH=src uv run python -m options_tech_scanner.scan \
   --min-market-cap 1000000000 \
   --min-avg-volume-20 1000000 \
   --top 10 \
+  --ranking-mode snapshot \
   --output reports/options_scanner/scan_latest.csv
 ```
+
+`--universe-file` accepts `.json` or `.csv` and must provide `symbol` plus either `market_cap` or `market_cap_basic`.
+
+`--ranking-mode` accepts:
+
+- `snapshot`: rank by the current Lux and SMC snapshot
+- `recent-event`: rank by the model's active directional event derived from the historical Lux/SMC series
+
+The scanner exports both `last_event` and `active_event`:
+
+- `last_event`: the latest non-`NO_TRADE` marker in the model's historical series
+- `active_event`: the event used by `recent-event` ranking after model-specific directional priority rules are applied
+
+`recent-event` uses `active_event`, not just the raw last marker:
+
+- Lux active events prioritize `trend_confirmation_*` over later `contrarian_reversal_*` markers
+- SMC active events prioritize `short_term_*_reversal` over older `bullish/bearish_confluence`
+- weaker SMC watches such as `premium_watch`, `discount_watch`, `swing_low_watch`, and `swing_high_watch` remain visible in the CSV as `last_event`, but do not override the active directional state
+
+This keeps names like `NVTS` from flipping bearish just because a later local watch marker appeared inside an otherwise bullish move.
 
 ### Scanner V1 Eligibility
 
@@ -72,24 +94,48 @@ The CSV report includes:
 - `close`
 - `avg_volume_20`
 - `market_cap`
+- `ranking_mode`
 - `lux_signal`
 - `lux_options_hint`
 - `lux_context`
 - `lux_trend`
 - `lux_strength`
 - `lux_adx`
+- `lux_last_event`
+- `lux_last_event_options_hint`
+- `lux_last_event_context`
+- `lux_last_event_date`
+- `lux_days_since_last_event`
+- `lux_active_event`
+- `lux_active_event_options_hint`
+- `lux_active_event_context`
+- `lux_active_event_date`
+- `lux_days_since_active_event`
 - `smc_signal`
 - `smc_options_hint`
 - `smc_context`
 - `smc_bias`
 - `smc_range_position_pct`
 - `smc_rsi`
+- `smc_last_event`
+- `smc_last_event_options_hint`
+- `smc_last_event_context`
+- `smc_last_event_date`
+- `smc_days_since_last_event`
+- `smc_active_event`
+- `smc_active_event_options_hint`
+- `smc_active_event_context`
+- `smc_active_event_date`
+- `smc_days_since_active_event`
 - `alignment`
 - `consistency_score`
 - `eligible`
 - `excluded_reason`
 
 Terminal output prints only the top-N rows with compact ranking fields.
+
+- `snapshot`: `lux_options_hint`, `smc_options_hint`, `alignment`, `consistency_score`
+- `recent-event`: `lux_active_event_options_hint`, `lux_days_since_active_event`, `smc_active_event_options_hint`, `smc_days_since_active_event`, `alignment`, `consistency_score`
 
 ### Scanner V1 CSV Schema
 
@@ -99,18 +145,39 @@ Terminal output prints only the top-N rows with compact ranking fields.
 | `close` | latest close from the local CSV |
 | `avg_volume_20` | average share volume over the last 20 sessions |
 | `market_cap` | market cap from the local universe metadata |
+| `ranking_mode` | ranking basis used for the run: `snapshot` or `recent-event` |
 | `lux_signal` | Lux combined signal (`BUY`, `SELL`, `HOLD`) |
 | `lux_options_hint` | Lux options-oriented hint (`CALL`, `PUT`, `NO_TRADE`) |
 | `lux_context` | Lux context label (`trend_confirmation_*`, `contrarian_reversal_*`, `no_trade`) |
 | `lux_trend` | Lux trend snapshot (`BULLISH`, `BEARISH`) |
 | `lux_strength` | Lux strength snapshot (`STRONG`, `NORMAL`) |
 | `lux_adx` | Lux ADX snapshot |
+| `lux_last_event` | most recent Lux event signal, which may be older than the current row |
+| `lux_last_event_options_hint` | most recent Lux event options hint |
+| `lux_last_event_context` | most recent Lux event context |
+| `lux_last_event_date` | ISO timestamp for the most recent Lux event |
+| `lux_days_since_last_event` | calendar-day distance between the latest candle and the most recent Lux event |
+| `lux_active_event` | active Lux directional event used by `recent-event` ranking |
+| `lux_active_event_options_hint` | active Lux options hint used by `recent-event` ranking |
+| `lux_active_event_context` | active Lux context used by `recent-event` ranking |
+| `lux_active_event_date` | ISO timestamp for the active Lux directional event |
+| `lux_days_since_active_event` | calendar-day distance between the latest candle and the active Lux directional event |
 | `smc_signal` | SMC combined signal (`BUY`, `SELL`, `HOLD`) |
 | `smc_options_hint` | SMC options-oriented hint (`CALL`, `PUT`, `CALL_WATCH`, `PUT_WATCH`, `NO_TRADE`) |
 | `smc_context` | SMC context label (`bullish_confluence`, `short_term_bullish_reversal`, etc.) |
 | `smc_bias` | SMC directional bias (`BULLISH`, `BEARISH`, `NEUTRAL`) |
 | `smc_range_position_pct` | SMC close position within the rolling range |
 | `smc_rsi` | SMC RSI snapshot |
+| `smc_last_event` | most recent SMC event signal; watch events can still be `HOLD` here |
+| `smc_last_event_options_hint` | most recent SMC event options hint, including `CALL_WATCH` / `PUT_WATCH` |
+| `smc_last_event_context` | most recent SMC event context |
+| `smc_last_event_date` | ISO timestamp for the most recent SMC event |
+| `smc_days_since_last_event` | calendar-day distance between the latest candle and the most recent SMC event |
+| `smc_active_event` | active SMC directional event used by `recent-event` ranking |
+| `smc_active_event_options_hint` | active SMC options hint used by `recent-event` ranking |
+| `smc_active_event_context` | active SMC context used by `recent-event` ranking |
+| `smc_active_event_date` | ISO timestamp for the active SMC directional event |
+| `smc_days_since_active_event` | calendar-day distance between the latest candle and the active SMC directional event |
 | `alignment` | scanner alignment class (`bullish_aligned`, `bearish_aligned`, `mixed`, `no_trade`) |
 | `consistency_score` | V1 deterministic consistency score |
 | `eligible` | whether the symbol passed the scanner eligibility gates |
@@ -131,6 +198,13 @@ Consistency score uses the V1 rule set:
 - `+1` if `lux_signal == smc_signal` and both are not `HOLD`
 - `+1` if both sides are directional in the same direction
 - `-1` if the signals conflict
+
+The scoring rules do not change with `--ranking-mode`. Only the source inputs change:
+
+- `snapshot`: use `lux_options_hint`, `smc_options_hint`, `lux_signal`, `smc_signal`
+- `recent-event`: use `lux_active_event_options_hint`, `smc_active_event_options_hint`, `lux_active_event`, `smc_active_event`
+
+This means SMC reversal watches can still contribute directional alignment without contributing signal agreement, because `CALL_WATCH` / `PUT_WATCH` still map to `HOLD` at the signal layer. If no active directional event exists for a model, `recent-event` falls back to `NO_TRADE` / `HOLD` for ranking on that side.
 
 ## Current Pipeline (Scan)
 
