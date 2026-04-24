@@ -336,15 +336,15 @@ def test_scan_universe_recent_event_mode_uses_watch_events_for_ranking(
     assert nvts["smc_active_event_options_hint"] == "CALL_WATCH"
     assert nvts["smc_active_event"] == "HOLD"
     assert nvts["smc_days_since_active_event"] == 2
-    assert nvts["market_state"] == "early_trend"
-    assert nvts["adjusted_alignment"] == "bullish_aligned"
-    assert nvts["action_bucket"] == "candidate"
+    assert nvts["market_state"] == "range"
+    assert nvts["adjusted_alignment"] == "bullish_watchlist"
+    assert nvts["action_bucket"] == "watchlist"
     assert nvts["alignment"] == "bullish_aligned"
     assert nvts["consistency_score"] == 1
     assert hood["alignment"] == "bearish_aligned"
-    assert hood["market_state"] == "early_trend"
-    assert hood["adjusted_alignment"] == "bearish_aligned"
-    assert hood["action_bucket"] == "candidate"
+    assert hood["market_state"] == "range"
+    assert hood["adjusted_alignment"] == "bearish_watchlist"
+    assert hood["action_bucket"] == "watchlist"
     assert hood["consistency_score"] == 1
 
     stdout = capsys.readouterr().out

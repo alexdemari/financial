@@ -78,17 +78,19 @@ def classify_market_state(row: Mapping[str, Any]) -> str:
     if lux_days_since_last_event is None:
         return UNKNOWN
 
-    if lux_last_event in {"BUY", "SELL"} and lux_days_since_last_event <= 5:
-        if 25 <= range_position_pct <= 70:
-            return EARLY_TREND
-
-    if lux_trend == "BULLISH" and lux_strength == "STRONG":
-        if 30 <= range_position_pct <= 60 and smc_rsi <= 55:
+    if lux_trend == "BEARISH" and lux_last_event == "SELL":
+        if 35 <= range_position_pct <= 70 and smc_rsi >= 40:
             return PULLBACK
 
-    if lux_trend == "BEARISH" and lux_strength == "STRONG":
-        if 40 <= range_position_pct <= 70 and smc_rsi >= 45:
+    if lux_trend == "BULLISH" and lux_last_event == "BUY":
+        if 30 <= range_position_pct <= 65 and smc_rsi <= 60:
             return PULLBACK
+
+    if lux_last_event in {"BUY", "SELL"} and lux_days_since_last_event <= 3:
+        if lux_strength == "STRONG":
+            if 30 <= range_position_pct <= 65:
+                if 45 <= smc_rsi <= 65:
+                    return EARLY_TREND
 
     if lux_strength == "NORMAL" and smc_bias == "NEUTRAL":
         if 20 <= range_position_pct <= 80:
@@ -107,9 +109,14 @@ def adjust_alignment_for_market_state(
 
     if alignment == "mixed":
         if row.get("lux_trend") == "BEARISH" and row.get("lux_last_event") == "SELL":
-            if market_state in {EXTENDED, EXHAUSTION}:
-                return BEARISH_WATCHLIST
-            return "bearish_aligned"
+            if market_state == PULLBACK and row.get("lux_strength") == "STRONG":
+                return "bearish_aligned"
+            return BEARISH_WATCHLIST
+
+        if row.get("lux_trend") == "BULLISH" and row.get("lux_last_event") == "BUY":
+            if market_state == PULLBACK and row.get("lux_strength") == "STRONG":
+                return "bullish_aligned"
+            return BULLISH_WATCHLIST
 
     if alignment == "bearish_aligned" and market_state in {EXTENDED, EXHAUSTION}:
         return BEARISH_WATCHLIST
@@ -124,7 +131,7 @@ def adjust_alignment_for_market_state(
 
 def classify_action_bucket(adjusted_alignment: str, market_state: str) -> str:
     if adjusted_alignment in {"bullish_aligned", "bearish_aligned"}:
-        if market_state not in {EXTENDED, EXHAUSTION, RANGE, UNKNOWN}:
+        if market_state in {EARLY_TREND, PULLBACK}:
             return CANDIDATE
 
     if adjusted_alignment in {
@@ -134,10 +141,10 @@ def classify_action_bucket(adjusted_alignment: str, market_state: str) -> str:
     }:
         return WATCHLIST
 
+    if market_state in {EXTENDED, EXHAUSTION, RANGE}:
+        return WATCHLIST
+
     if adjusted_alignment == "no_trade":
         return AVOID
-
-    if market_state in {EXHAUSTION, UNKNOWN}:
-        return NEEDS_REVIEW
 
     return NEEDS_REVIEW
