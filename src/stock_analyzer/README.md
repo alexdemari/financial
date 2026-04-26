@@ -33,6 +33,37 @@ technical signals for one stock at a time.
 
 There are dedicated tests for this package under `tests/stock_analyzer`.
 
+## Primary Use
+
+The primary role of `stock_analyzer` today is:
+
+- generate a current signal for one symbol
+- generate historical signals for one symbol
+- support local inspection of Lux, SMC, or RSI/SMA output
+
+You can use it as a single-symbol signal engine.
+
+For supported models, the package normalizes the current signal into:
+
+- `BUY`
+- `SELL`
+- `HOLD`
+
+This is the right tool for questions like:
+
+- "What is `AAPL` signaling now?"
+- "Does `NVDA` currently have a Lux buy or sell?"
+- "Show the recent SMC signal history for `CEG`."
+
+It is not the right tool for:
+
+- ranking multiple symbols
+- deciding `candidate` vs `watchlist`
+- portfolio-level selection
+- scanner-level actionability decisions
+
+Those belong to `market_scanner`.
+
 ## Package Structure
 
 - `analyzer.py`: high-level orchestrator (`StockDataAnalyzer`)
