@@ -1,4 +1,5 @@
 import argparse
+import sys
 from dataclasses import asdict
 from pathlib import Path
 
@@ -17,7 +18,11 @@ from market_scanner.pipeline import (
     iter_symbol_data,
     load_selected_universe,
 )
-from market_scanner.report_writer import render_top_n_summary, write_csv_report
+from market_scanner.report_writer import (
+    render_top_n_summary,
+    sort_scanner_results,
+    write_csv_report,
+)
 from market_scanner.scanner_row import build_scanner_row
 from stock_analyzer.analyzer import StockDataAnalyzer
 
@@ -96,16 +101,23 @@ def scan_universe(
                     market_cap=market_cap,
                 )
             )
-        except Exception:
-            rows.append(_build_analysis_failed_row(symbol, market_cap, ranking_mode))
+        except Exception as exc:
+            print(
+                f"Analysis failed for {symbol}: {type(exc).__name__}: {exc}",
+                file=sys.stderr,
+            )
+            rows.append(
+                _build_analysis_failed_row(
+                    symbol,
+                    market_cap,
+                    ranking_mode,
+                    error=exc,
+                )
+            )
 
     result_df = pd.DataFrame(rows)
     if not result_df.empty:
-        result_df = result_df.sort_values(
-            ["eligible", "consistency_score", "symbol"],
-            ascending=[False, False, True],
-            na_position="last",
-        ).reset_index(drop=True)
+        result_df = sort_scanner_results(result_df).reset_index(drop=True)
 
     output_path = write_csv_report(result_df, output)
     print(render_top_n_summary(result_df[result_df["eligible"]], top))
@@ -173,7 +185,12 @@ def _build_analysis_failed_row(
     symbol: str,
     market_cap: float | None,
     ranking_mode: str,
+    error: Exception | None = None,
 ) -> dict:
+    excluded_reason = "analysis_failed"
+    if error is not None:
+        excluded_reason = f"analysis_failed:{type(error).__name__}"
+
     return asdict(
         ScannerRow(
             symbol=symbol,
@@ -219,7 +236,7 @@ def _build_analysis_failed_row(
             adjusted_alignment="no_trade",
             action_bucket=AVOID,
             eligible=False,
-            excluded_reason="analysis_failed",
+            excluded_reason=excluded_reason,
         )
     )
 

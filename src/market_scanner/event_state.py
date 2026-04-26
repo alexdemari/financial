@@ -153,14 +153,24 @@ def latest_event_by_priority(
     if historical.empty or "signal_context" not in historical.columns:
         return empty_event()
 
-    for bullish_context, bearish_context in priority_contexts:
-        matching = historical[
-            historical["signal_context"].isin([bullish_context, bearish_context])
-        ]
-        if not matching.empty:
-            return event_from_row(matching.iloc[-1], historical)
+    priority_rank: dict[str, int] = {}
+    for rank, (bullish_context, bearish_context) in enumerate(priority_contexts):
+        priority_rank[bullish_context] = rank
+        priority_rank[bearish_context] = rank
 
-    return empty_event()
+    matching = historical[
+        historical["signal_context"].isin(priority_rank.keys())
+    ].copy()
+    if matching.empty:
+        return empty_event()
+
+    matching["_event_date"] = pd.to_datetime(matching["date"])
+    matching["_priority_rank"] = matching["signal_context"].map(priority_rank)
+    matching = matching.sort_values(
+        ["_event_date", "_priority_rank"],
+        ascending=[False, True],
+    )
+    return event_from_row(matching.iloc[0], historical)
 
 
 def event_from_row(

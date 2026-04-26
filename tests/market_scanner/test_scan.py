@@ -151,14 +151,19 @@ def test_scan_universe_generates_csv_and_sorts_top_results(
     eligible = result_df[result_df["eligible"]]
     assert written_path == output_file
     assert output_file.exists()
-    assert eligible.iloc[0]["symbol"] == "AAPL"
-    assert eligible.iloc[0]["consistency_score"] == 4
-    assert eligible.iloc[0]["alignment"] == "bullish_aligned"
-    assert eligible.iloc[0]["market_state"] == "unknown"
-    assert eligible.iloc[0]["adjusted_alignment"] == "bullish_aligned"
-    assert eligible.iloc[0]["action_bucket"] == "needs_review"
-    assert eligible.iloc[0]["lux_last_event"] == "BUY"
-    assert eligible.iloc[0]["smc_last_event_options_hint"] == "CALL"
+    assert eligible.iloc[0]["symbol"] == "MSFT"
+    assert eligible.iloc[0]["alignment"] == "mixed"
+    assert eligible.iloc[0]["market_state"] == "pullback"
+    assert eligible.iloc[0]["adjusted_alignment"] == "bearish_watchlist"
+    assert eligible.iloc[0]["action_bucket"] == "watchlist"
+    aapl = result_df.loc[result_df["symbol"] == "AAPL"].iloc[0]
+    assert aapl["consistency_score"] == 4
+    assert aapl["alignment"] == "bullish_aligned"
+    assert aapl["market_state"] == "unknown"
+    assert aapl["adjusted_alignment"] == "bullish_aligned"
+    assert aapl["action_bucket"] == "needs_review"
+    assert aapl["lux_last_event"] == "BUY"
+    assert aapl["smc_last_event_options_hint"] == "CALL"
     assert (
         result_df.loc[result_df["symbol"] == "MISSING", "excluded_reason"].item()
         == "missing_csv"
@@ -330,17 +335,17 @@ def test_scan_universe_recent_event_mode_uses_watch_events_for_ranking(
     assert nvts["ranking_mode"] == "recent-event"
     assert nvts["lux_options_hint"] == "NO_TRADE"
     assert nvts["lux_last_event_options_hint"] == "PUT"
-    assert nvts["lux_active_event_options_hint"] == "CALL"
-    assert nvts["lux_active_event"] == "BUY"
+    assert nvts["lux_active_event_options_hint"] == "PUT"
+    assert nvts["lux_active_event"] == "SELL"
     assert nvts["smc_last_event_options_hint"] == "PUT_WATCH"
     assert nvts["smc_active_event_options_hint"] == "CALL_WATCH"
     assert nvts["smc_active_event"] == "HOLD"
     assert nvts["smc_days_since_active_event"] == 2
     assert nvts["market_state"] == "range"
-    assert nvts["adjusted_alignment"] == "bullish_watchlist"
+    assert nvts["adjusted_alignment"] == "range_watchlist"
     assert nvts["action_bucket"] == "watchlist"
-    assert nvts["alignment"] == "bullish_aligned"
-    assert nvts["consistency_score"] == 1
+    assert nvts["alignment"] == "mixed"
+    assert nvts["consistency_score"] == -1
     assert hood["alignment"] == "bearish_aligned"
     assert hood["market_state"] == "range"
     assert hood["adjusted_alignment"] == "bearish_watchlist"
@@ -448,6 +453,98 @@ def test_smc_active_event_prefers_latest_reversal_over_older_confluence(
     assert aapl["market_state"] == "unknown"
     assert aapl["adjusted_alignment"] == "mixed"
     assert aapl["action_bucket"] == "needs_review"
+
+
+def test_recent_event_prefers_most_recent_matching_context_over_older_higher_priority(
+    tmp_path, monkeypatch
+):
+    universe_file = tmp_path / "universe.csv"
+    pd.DataFrame(
+        {
+            "symbol": ["AAPL"],
+            "market_cap": [2_000_000_000],
+        }
+    ).to_csv(universe_file, index=False)
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    make_csv(data_dir / "AAPL.csv")
+
+    class FakeAnalyzer:
+        def __init__(self, config=None, signal_model="rsi-sma"):
+            self.signal_model = signal_model
+
+        def generate_signal(self, symbol, df):
+            if self.signal_model == "lux":
+                return SimpleNamespace(
+                    close_price=10.5,
+                    combined_signal=0,
+                    options_hint="NO_TRADE",
+                    trend="BULLISH",
+                    strength="NORMAL",
+                    adx=20.0,
+                    confirmation_signal=0,
+                    contrarian_signal=0,
+                )
+
+            return SimpleNamespace(
+                close_price=10.5,
+                combined_signal=0,
+                options_hint="NO_TRADE",
+                long_signal=False,
+                short_signal=False,
+                swing_low_marker=False,
+                swing_high_marker=False,
+                in_discount=False,
+                in_premium=False,
+                bullish_rejection=False,
+                bearish_rejection=False,
+                bias="NEUTRAL",
+                range_position_pct=50.0,
+                rsi=50.0,
+            )
+
+        def generate_historical_signals(self, symbol, df):
+            if self.signal_model == "lux":
+                return pd.DataFrame(
+                    {
+                        "date": pd.to_datetime(["2026-03-06", "2026-03-30"]),
+                        "combined_signal": [0, 0],
+                        "signal_context": ["no_trade", "no_trade"],
+                        "options_hint": ["NO_TRADE", "NO_TRADE"],
+                    }
+                )
+
+            return pd.DataFrame(
+                {
+                    "date": pd.to_datetime(["2026-03-06", "2026-04-20", "2026-04-21"]),
+                    "combined_signal": [1, 0, 0],
+                    "signal_context": [
+                        "bullish_confluence",
+                        "no_trade",
+                        "short_term_bullish_reversal",
+                    ],
+                    "options_hint": ["CALL", "NO_TRADE", "CALL_WATCH"],
+                }
+            )
+
+    monkeypatch.setattr("market_scanner.scan.StockDataAnalyzer", FakeAnalyzer)
+
+    result_df, _ = scan_universe(
+        universe_file=universe_file,
+        data_dir=data_dir,
+        min_market_cap=1_000_000_000,
+        min_avg_volume_20=1_000_000,
+        top=10,
+        output=tmp_path / "scan.csv",
+        ranking_mode="recent-event",
+    )
+
+    aapl = result_df.loc[result_df["symbol"] == "AAPL"].iloc[0]
+
+    assert aapl["smc_active_event_options_hint"] == "CALL_WATCH"
+    assert aapl["smc_active_event_context"] == "short_term_bullish_reversal"
+    assert aapl["smc_days_since_active_event"] == 0
 
 
 def test_smc_context_matches_historical_adapter_context():
@@ -625,3 +722,44 @@ def test_render_top_n_summary_uses_v2_decision_columns():
     assert "adjusted_alignment" in summary
     assert "market_state" in summary
     assert "action_bucket" in summary
+
+
+def test_render_top_n_summary_prioritizes_candidates_over_watchlists():
+    summary_df = pd.DataFrame(
+        [
+            {
+                "symbol": "ZZZ",
+                "close": 10.5,
+                "lux_trend": "BULLISH",
+                "lux_strength": "STRONG",
+                "smc_range_position_pct": 50.0,
+                "smc_rsi": 52.0,
+                "alignment": "bullish_aligned",
+                "adjusted_alignment": "bullish_watchlist",
+                "market_state": "range",
+                "action_bucket": "watchlist",
+                "consistency_score": 4,
+                "eligible": True,
+            },
+            {
+                "symbol": "AAA",
+                "close": 10.5,
+                "lux_trend": "BULLISH",
+                "lux_strength": "STRONG",
+                "smc_range_position_pct": 55.0,
+                "smc_rsi": 52.0,
+                "alignment": "bullish_aligned",
+                "adjusted_alignment": "bullish_aligned",
+                "market_state": "pullback",
+                "action_bucket": "candidate",
+                "consistency_score": 1,
+                "eligible": True,
+            },
+        ]
+    )
+
+    summary = render_top_n_summary(summary_df, top=10)
+    lines = [line for line in summary.splitlines() if line.strip()]
+
+    assert "AAA" in lines[2]
+    assert "ZZZ" in lines[3]

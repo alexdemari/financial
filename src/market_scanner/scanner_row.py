@@ -106,6 +106,8 @@ def _assemble_scanner_row(
     lux_active = active_lux_event(lux_historical)
     smc_event = latest_model_event(smc_historical)
     smc_active = active_smc_event(smc_historical)
+    selected_lux_event = _selected_state_event(ranking_mode, lux_event, lux_active)
+    selected_smc_event = _selected_state_event(ranking_mode, smc_event, smc_active)
 
     lux_signal_label = signal_to_label(lux_signal.combined_signal)
     smc_signal_label = signal_to_label(smc_signal.combined_signal)
@@ -132,13 +134,13 @@ def _assemble_scanner_row(
     state_inputs = {
         "lux_trend": lux_signal.trend,
         "lux_strength": lux_signal.strength,
-        "lux_last_event": lux_event["signal"],
-        "lux_days_since_last_event": lux_event["days_since"],
+        "lux_last_event": selected_lux_event["signal"],
+        "lux_days_since_last_event": selected_lux_event["days_since"],
         "smc_bias": smc_signal.bias,
         "smc_range_position_pct": smc_signal.range_position_pct,
         "smc_rsi": smc_signal.rsi,
-        "smc_last_event": smc_event["signal"],
-        "smc_last_event_context": smc_event["context"],
+        "smc_last_event": selected_smc_event["signal"],
+        "smc_last_event_context": selected_smc_event["context"],
         "alignment": alignment,
         "consistency_score": consistency_score,
     }
@@ -202,6 +204,16 @@ def _assemble_scanner_row(
             excluded_reason=None,
         )
     )
+
+
+def _selected_state_event(
+    ranking_mode: str,
+    latest_event: dict[str, str | int | None],
+    active_event: dict[str, str | int | None],
+) -> dict[str, str | int | None]:
+    if ranking_mode == "recent-event" and active_event["signal"] is not None:
+        return active_event
+    return latest_event
 
 
 _smc_context = smc_context

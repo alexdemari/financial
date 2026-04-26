@@ -103,6 +103,12 @@ download-all-us interval="1d" base_dir=justfile_directory():
 analyzer symbol="AAPL" model="rsi-sma":
     uv run python -m stock_analyzer.main -s {{symbol}} --model {{model}}
 
+market-scanner universe_file="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" output="reports/market_scanner/scan.csv" ranking_mode="snapshot" top="10":
+    uv run python -m market_scanner.scan --universe-file {{universe_file}} --data-dir {{data_dir}} --output {{output}} --ranking-mode {{ranking_mode}} --top {{top}}
+
+market-scanner-backtest universe_file="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" output_detailed_summary="reports/market_scanner/backtest_detailed_summary.csv" output_decision_summary="reports/market_scanner/backtest_decision_summary.csv" ranking_mode="recent-event":
+    uv run python -m market_scanner.backtest --universe-file {{universe_file}} --data-dir {{data_dir}} --output-detailed-summary {{output_detailed_summary}} --output-decision-summary {{output_decision_summary}} --ranking-mode {{ranking_mode}}
+
 ibkr-option-chain symbol expiration max_strikes="10" option-type="BOTH" strike-step="5":
     uv run python -m src.ibkr.main --symbol {{symbol}} --expiration {{expiration}} --max-strikes {{max_strikes}} --option-type {{option-type}} --strike-step {{strike-step}}
 
