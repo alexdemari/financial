@@ -3,30 +3,43 @@ from pathlib import Path
 
 import pandas as pd
 
-from options_tech_scanner.eligibility import load_symbol_csv
+from options_tech_scanner.eligibility import MIN_HISTORY_ROWS, load_symbol_csv
 from options_tech_scanner.report_writer import write_csv_report
-from options_tech_scanner.scanner_row import build_scanner_row
+from options_tech_scanner.scanner_row import build_scanner_row_from_history
 from options_tech_scanner.universe_loader import load_universe
 from stock_analyzer.analyzer import StockDataAnalyzer
 
 DEFAULT_HORIZONS = (3, 5, 10, 20)
 DEFAULT_MIN_BARS = 120
 DEFAULT_WIN_THRESHOLD = 0.01
-SUMMARY_GROUP_COLUMNS = [
+SCANNER_ROW_MIN_BARS = MIN_HISTORY_ROWS
+DETAILED_SUMMARY_GROUP_COLUMNS = [
+    "signal_side",
     "action_bucket",
     "market_state",
     "adjusted_alignment",
     "lux_strength",
     "ranking_mode",
 ]
+DECISION_SUMMARY_GROUP_COLUMNS = [
+    "signal_side",
+    "action_bucket",
+    "market_state",
+    "lux_strength",
+    "ranking_mode",
+]
 
 
-def infer_direction(adjusted_alignment: str | None) -> str:
+def infer_signal_side(adjusted_alignment: str | None) -> str:
     if str(adjusted_alignment or "").startswith("bullish"):
         return "bullish"
     if str(adjusted_alignment or "").startswith("bearish"):
         return "bearish"
     return "neutral"
+
+
+def infer_direction(adjusted_alignment: str | None) -> str:
+    return infer_signal_side(adjusted_alignment)
 
 
 def compute_forward_metrics(
@@ -75,7 +88,7 @@ def build_backtest_event(
     horizons: list[int],
     win_threshold: float,
 ) -> dict:
-    direction = infer_direction(row.get("adjusted_alignment"))
+    signal_side = infer_signal_side(row.get("adjusted_alignment"))
     event = {
         "symbol": symbol,
         "date": pd.Timestamp(date).isoformat(),
@@ -100,14 +113,15 @@ def build_backtest_event(
         "smc_bias": row.get("smc_bias"),
         "smc_range_position_pct": row.get("smc_range_position_pct"),
         "smc_rsi": row.get("smc_rsi"),
-        "direction": direction,
+        "signal_side": signal_side,
+        "direction": signal_side,
     }
     event.update(
         compute_forward_metrics(
             df=df,
             index=index,
             horizons=horizons,
-            direction=direction,
+            direction=signal_side,
             win_threshold=win_threshold,
         )
     )
@@ -125,22 +139,29 @@ def generate_symbol_events(
     lux_analyzer: StockDataAnalyzer | None = None,
     smc_analyzer: StockDataAnalyzer | None = None,
 ) -> list[dict]:
+    effective_min_bars = max(min_bars, SCANNER_ROW_MIN_BARS)
     max_horizon = max(horizons)
-    if len(df) < min_bars + max_horizon:
+    if len(df) < effective_min_bars + max_horizon:
         return []
 
     events: list[dict] = []
-    start_index = max(min_bars - 1, 0)
+    start_index = max(effective_min_bars - 1, 0)
+    lux_analyzer = lux_analyzer or StockDataAnalyzer(signal_model="lux")
+    smc_analyzer = smc_analyzer or StockDataAnalyzer(signal_model="smc")
+    lux_historical = lux_analyzer.generate_historical_signals(symbol, df)
+    smc_historical = smc_analyzer.generate_historical_signals(symbol, df)
+    close_column = _require_column(df, "close")
 
     for i in range(start_index, len(df) - max_horizon):
-        df_slice = df.iloc[: i + 1]
+        entry_close = float(df.iloc[i][close_column])
         for ranking_mode in ranking_modes:
-            row = build_scanner_row(
+            row = build_scanner_row_from_history(
                 symbol=symbol,
-                df_slice=df_slice,
+                close=entry_close,
+                lux_historical=lux_historical,
+                smc_historical=smc_historical,
+                index=i,
                 ranking_mode=ranking_mode,
-                lux_analyzer=lux_analyzer,
-                smc_analyzer=smc_analyzer,
             )
             events.append(
                 build_backtest_event(
@@ -158,67 +179,15 @@ def generate_symbol_events(
 
 
 def summarize_events(events: list[dict], horizons: list[int]) -> list[dict]:
-    if not events:
-        return []
+    return summarize_detailed_events(events, horizons)
 
-    events_df = pd.DataFrame(events)
-    rows: list[dict] = []
 
-    for horizon in horizons:
-        metric_df = events_df.copy()
-        metric_df["horizon"] = horizon
-        metric_df["return"] = pd.to_numeric(
-            metric_df[f"return_{horizon}"], errors="coerce"
-        )
-        metric_df["directional_return"] = pd.to_numeric(
-            metric_df[f"directional_return_{horizon}"], errors="coerce"
-        )
-        metric_df["mfe"] = pd.to_numeric(metric_df[f"mfe_{horizon}"], errors="coerce")
-        metric_df["mae"] = pd.to_numeric(metric_df[f"mae_{horizon}"], errors="coerce")
-        metric_df["win"] = metric_df[f"win_{horizon}"]
+def summarize_detailed_events(events: list[dict], horizons: list[int]) -> list[dict]:
+    return _summarize_events(events, horizons, DETAILED_SUMMARY_GROUP_COLUMNS)
 
-        grouped = metric_df.groupby(SUMMARY_GROUP_COLUMNS, dropna=False, sort=False)
-        for group_values, group in grouped:
-            directional = group["directional_return"].dropna()
-            wins = directional[directional > 0]
-            losses = directional[directional < 0]
-            directional_wins = group["win"].dropna()
-            win_rate = (
-                float(directional_wins.astype(float).mean())
-                if not directional_wins.empty
-                else None
-            )
-            avg_win = float(wins.mean()) if not wins.empty else None
-            avg_loss = float(abs(losses.mean())) if not losses.empty else None
-            expectancy = None
-            if win_rate is not None and avg_win is not None and avg_loss is not None:
-                expectancy = (win_rate * avg_win) - ((1.0 - win_rate) * avg_loss)
 
-            row = dict(zip(SUMMARY_GROUP_COLUMNS, group_values, strict=True))
-            row["group_key"] = " | ".join(
-                str(row[column]) for column in SUMMARY_GROUP_COLUMNS
-            )
-            row["horizon"] = horizon
-            row["count"] = int(len(group))
-            row["win_rate"] = win_rate
-            row["avg_return"] = float(group["return"].mean())
-            row["median_return"] = float(group["return"].median())
-            row["avg_mfe"] = (
-                float(group["mfe"].dropna().mean())
-                if group["mfe"].notna().any()
-                else None
-            )
-            row["avg_mae"] = (
-                float(group["mae"].dropna().mean())
-                if group["mae"].notna().any()
-                else None
-            )
-            row["avg_win"] = avg_win
-            row["avg_loss"] = avg_loss
-            row["expectancy"] = expectancy
-            rows.append(row)
-
-    return rows
+def summarize_decision_events(events: list[dict], horizons: list[int]) -> list[dict]:
+    return _summarize_events(events, horizons, DECISION_SUMMARY_GROUP_COLUMNS)
 
 
 def backtest_universe(
@@ -230,15 +199,27 @@ def backtest_universe(
     horizons: list[int] | None = None,
     win_threshold: float = DEFAULT_WIN_THRESHOLD,
     output_events: str | Path = "reports/options_scanner/backtest_v3_events.csv",
-    output_summary: str | Path = "reports/options_scanner/backtest_v3_summary.csv",
+    output_detailed_summary: str | Path = (
+        "reports/options_scanner/backtest_v3_detailed_summary.csv"
+    ),
+    output_decision_summary: str | Path = (
+        "reports/options_scanner/backtest_v3_decision_summary.csv"
+    ),
     symbols: list[str] | None = None,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+    start_date: str | None = None,
+    end_date: str | None = None,
+    max_bars: int | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     horizons = horizons or list(DEFAULT_HORIZONS)
     ranking_modes = _resolve_ranking_modes(ranking_mode)
     universe = load_universe(universe_file)
     selected_symbols = (
         {symbol.upper() for symbol in symbols} if symbols is not None else None
     )
+    if selected_symbols is not None:
+        universe = universe[universe["symbol"].isin(selected_symbols)].reset_index(
+            drop=True
+        )
 
     lux_analyzer = StockDataAnalyzer(signal_model="lux")
     smc_analyzer = StockDataAnalyzer(signal_model="smc")
@@ -246,18 +227,22 @@ def backtest_universe(
 
     for entry in universe.itertuples(index=False):
         symbol = str(entry.symbol).upper()
-        if selected_symbols is not None and symbol not in selected_symbols:
-            continue
-
         try:
             df = load_symbol_csv(data_dir, symbol)
         except FileNotFoundError:
             continue
 
+        df = prepare_backtest_df(
+            df=df.sort_index(),
+            start_date=start_date,
+            end_date=end_date,
+            max_bars=max_bars,
+        )
+
         events.extend(
             generate_symbol_events(
                 symbol=symbol,
-                df=df.sort_index(),
+                df=df,
                 ranking_modes=ranking_modes,
                 min_bars=min_bars,
                 horizons=horizons,
@@ -268,72 +253,63 @@ def backtest_universe(
         )
 
     events_df = pd.DataFrame(events)
-    summary_df = pd.DataFrame(summarize_events(events, horizons))
+    detailed_summary_df = pd.DataFrame(summarize_detailed_events(events, horizons))
+    decision_summary_df = pd.DataFrame(summarize_decision_events(events, horizons))
     write_csv_report(events_df, output_events)
-    write_csv_report(summary_df, output_summary)
+    write_csv_report(detailed_summary_df, output_detailed_summary)
+    write_csv_report(decision_summary_df, output_decision_summary)
 
-    terminal_summary = render_backtest_summary(summary_df)
+    terminal_summary = render_decision_summary(decision_summary_df)
     if terminal_summary:
         print(terminal_summary)
     print(f"\nExported events: {Path(output_events)}")
-    print(f"Exported summary: {Path(output_summary)}")
-    return events_df, summary_df
+    print(f"Exported detailed summary: {Path(output_detailed_summary)}")
+    print(f"Exported decision summary: {Path(output_decision_summary)}")
+    return events_df, detailed_summary_df, decision_summary_df
 
 
 def render_backtest_summary(summary_df: pd.DataFrame, limit: int = 12) -> str:
-    if summary_df.empty:
+    return render_decision_summary(summary_df, limit=limit)
+
+
+def render_decision_summary(
+    decision_summary_df: pd.DataFrame,
+    *,
+    limit: int = 12,
+    include_neutral: bool = False,
+) -> str:
+    if decision_summary_df.empty:
         return "No backtest events generated."
 
-    horizon_priority = {5: 0, 10: 1, 20: 2, 3: 3}
-    action_priority = {"candidate": 0, "watchlist": 1, "needs_review": 2, "avoid": 3}
-    state_priority = {
-        "early_trend": 0,
-        "pullback": 1,
-        "extended": 2,
-        "range": 3,
-        "unknown": 4,
-        "exhaustion": 5,
-    }
-    strength_priority = {"STRONG": 0, "NORMAL": 1}
+    summary_df = decision_summary_df.copy()
+    if not include_neutral:
+        summary_df = summary_df[summary_df["signal_side"] != "neutral"]
+    if summary_df.empty:
+        return "No directional backtest events generated."
 
-    ordered = (
-        summary_df.assign(
-            _action_rank=summary_df["action_bucket"].map(action_priority).fillna(999),
-            _strength_rank=summary_df["lux_strength"]
-            .map(strength_priority)
-            .fillna(999),
-            _state_rank=summary_df["market_state"].map(state_priority).fillna(999),
-            _horizon_rank=summary_df["horizon"].map(horizon_priority).fillna(999),
-        )
-        .sort_values(
-            by=[
-                "_action_rank",
-                "_strength_rank",
-                "_state_rank",
-                "_horizon_rank",
-                "count",
-            ],
-            ascending=[True, True, True, True, False],
-        )
-        .head(limit)
-    )
-
+    ordered = _ordered_summary(summary_df).head(limit)
     lines = []
     for row in ordered.itertuples(index=False):
+        signal_side = str(row.signal_side).upper()
         lines.append(
-            f"{row.action_bucket} | {row.market_state} | {row.lux_strength} | "
-            f"{row.ranking_mode} | h={row.horizon}"
+            f"{signal_side} signal | {row.action_bucket} | {row.market_state} | "
+            f"{row.lux_strength} | h={row.horizon}"
         )
-        win_rate = f"{row.win_rate * 100:.1f}%" if pd.notna(row.win_rate) else "n/a"
-        avg_return = (
-            f"{row.avg_return * 100:.1f}%" if pd.notna(row.avg_return) else "n/a"
+        success = (
+            f"{row.success_rate * 100:.1f}%" if pd.notna(row.success_rate) else "n/a"
         )
-        expectancy = (
-            f"{row.expectancy * 100:.1f}%" if pd.notna(row.expectancy) else "n/a"
+        failure = (
+            f"{row.failure_rate * 100:.1f}%" if pd.notna(row.failure_rate) else "n/a"
         )
+        avg_directional_return = (
+            f"{row.avg_directional_return:+.1%}"
+            if pd.notna(row.avg_directional_return)
+            else "n/a"
+        )
+        expectancy = f"{row.expectancy:+.1%}" if pd.notna(row.expectancy) else "n/a"
         lines.append(
-            f"count={row.count} | win_rate={win_rate} | "
-            f"avg_return={avg_return} | expectancy={expectancy}"
+            f"signals={row.signals} | success={success} | failure={failure} | "
+            f"avg_directional_return={avg_directional_return} | expectancy={expectancy}"
         )
     return "\n".join(lines)
 
@@ -356,19 +332,32 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--output-summary",
-        default="reports/options_scanner/backtest_v3_summary.csv",
+        default=None,
+        help="Deprecated alias for --output-detailed-summary",
+    )
+    parser.add_argument(
+        "--output-detailed-summary",
+        default="reports/options_scanner/backtest_v3_detailed_summary.csv",
+    )
+    parser.add_argument(
+        "--output-decision-summary",
+        default="reports/options_scanner/backtest_v3_decision_summary.csv",
     )
     parser.add_argument(
         "--symbols",
         default=None,
         help="Comma-separated symbol filter",
     )
+    parser.add_argument("--start-date", default=None)
+    parser.add_argument("--end-date", default=None)
+    parser.add_argument("--max-bars", type=int, default=None)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    detailed_summary_path = args.output_summary or args.output_detailed_summary
     backtest_universe(
         universe_file=args.universe_file,
         data_dir=args.data_dir,
@@ -377,10 +366,142 @@ def main(argv: list[str] | None = None) -> int:
         horizons=_parse_horizons(args.horizons),
         win_threshold=args.win_threshold,
         output_events=args.output_events,
-        output_summary=args.output_summary,
+        output_detailed_summary=detailed_summary_path,
+        output_decision_summary=args.output_decision_summary,
         symbols=_parse_symbols(args.symbols),
+        start_date=args.start_date,
+        end_date=args.end_date,
+        max_bars=args.max_bars,
     )
     return 0
+
+
+def prepare_backtest_df(
+    *,
+    df: pd.DataFrame,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    max_bars: int | None = None,
+) -> pd.DataFrame:
+    filtered = df.sort_index()
+    if start_date is not None:
+        filtered = filtered[filtered.index >= pd.Timestamp(start_date, tz="UTC")]
+    if end_date is not None:
+        filtered = filtered[filtered.index <= pd.Timestamp(end_date, tz="UTC")]
+    if max_bars is not None:
+        filtered = filtered.tail(max_bars)
+    return filtered.copy()
+
+
+def _summarize_events(
+    events: list[dict],
+    horizons: list[int],
+    group_columns: list[str],
+) -> list[dict]:
+    if not events:
+        return []
+
+    events_df = pd.DataFrame(events)
+    rows: list[dict] = []
+
+    for horizon in horizons:
+        metric_df = events_df.copy()
+        metric_df["horizon"] = horizon
+        metric_df["return"] = pd.to_numeric(
+            metric_df[f"return_{horizon}"], errors="coerce"
+        )
+        metric_df["directional_return"] = pd.to_numeric(
+            metric_df[f"directional_return_{horizon}"], errors="coerce"
+        )
+        metric_df["mfe"] = pd.to_numeric(metric_df[f"mfe_{horizon}"], errors="coerce")
+        metric_df["mae"] = pd.to_numeric(metric_df[f"mae_{horizon}"], errors="coerce")
+        metric_df["win"] = metric_df[f"win_{horizon}"]
+
+        grouped = metric_df.groupby(group_columns, dropna=False, sort=False)
+        for group_values, group in grouped:
+            rows.append(_build_summary_row(group_columns, group_values, group, horizon))
+
+    return rows
+
+
+def _build_summary_row(
+    group_columns: list[str],
+    group_values: tuple,
+    group: pd.DataFrame,
+    horizon: int,
+) -> dict:
+    directional = group["directional_return"].dropna()
+    wins = directional[directional > 0]
+    losses = directional[directional < 0]
+    directional_results = group["win"].dropna()
+    success_rate = (
+        float(directional_results.astype(float).mean())
+        if not directional_results.empty
+        else None
+    )
+    failure_rate = 1.0 - success_rate if success_rate is not None else None
+    avg_win = float(wins.mean()) if not wins.empty else None
+    avg_loss = float(abs(losses.mean())) if not losses.empty else None
+    expectancy = None
+    if success_rate is not None and avg_win is not None and avg_loss is not None:
+        expectancy = (success_rate * avg_win) - ((1.0 - success_rate) * avg_loss)
+
+    row = dict(zip(group_columns, group_values, strict=True))
+    row["group_key"] = " | ".join(str(row[column]) for column in group_columns)
+    row["horizon"] = horizon
+    row["signals"] = int(len(group))
+    row["count"] = row["signals"]
+    row["success_rate"] = success_rate
+    row["failure_rate"] = failure_rate
+    row["win_rate"] = success_rate
+    row["avg_return"] = float(group["return"].mean())
+    row["avg_directional_return"] = (
+        float(directional.mean()) if not directional.empty else None
+    )
+    row["median_return"] = float(group["return"].median())
+    row["avg_mfe"] = (
+        float(group["mfe"].dropna().mean()) if group["mfe"].notna().any() else None
+    )
+    row["avg_mae"] = (
+        float(group["mae"].dropna().mean()) if group["mae"].notna().any() else None
+    )
+    row["avg_win"] = avg_win
+    row["avg_loss"] = avg_loss
+    row["expectancy"] = expectancy
+    return row
+
+
+def _ordered_summary(summary_df: pd.DataFrame) -> pd.DataFrame:
+    horizon_priority = {5: 0, 10: 1, 20: 2, 3: 3}
+    action_priority = {"candidate": 0, "watchlist": 1, "needs_review": 2, "avoid": 3}
+    state_priority = {
+        "early_trend": 0,
+        "pullback": 1,
+        "extended": 2,
+        "range": 3,
+        "unknown": 4,
+        "exhaustion": 5,
+    }
+    strength_priority = {"STRONG": 0, "NORMAL": 1}
+    signal_priority = {"bullish": 0, "bearish": 1, "neutral": 2}
+
+    return summary_df.assign(
+        _signal_rank=summary_df["signal_side"].map(signal_priority).fillna(999),
+        _action_rank=summary_df["action_bucket"].map(action_priority).fillna(999),
+        _strength_rank=summary_df["lux_strength"].map(strength_priority).fillna(999),
+        _state_rank=summary_df["market_state"].map(state_priority).fillna(999),
+        _horizon_rank=summary_df["horizon"].map(horizon_priority).fillna(999),
+    ).sort_values(
+        by=[
+            "_signal_rank",
+            "_action_rank",
+            "_strength_rank",
+            "_state_rank",
+            "_horizon_rank",
+            "signals",
+        ],
+        ascending=[True, True, True, True, True, False],
+    )
 
 
 def _compute_excursions(

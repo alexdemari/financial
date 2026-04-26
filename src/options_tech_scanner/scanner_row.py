@@ -1,4 +1,5 @@
 from dataclasses import asdict, dataclass
+from types import SimpleNamespace
 
 import pandas as pd
 
@@ -85,6 +86,60 @@ def build_scanner_row(
     if lux_signal is None or smc_signal is None:
         raise ValueError(f"Signal generation failed for {symbol}")
 
+    return _assemble_scanner_row(
+        symbol=symbol,
+        lux_signal=lux_signal,
+        smc_signal=smc_signal,
+        lux_historical=lux_historical,
+        smc_historical=smc_historical,
+        ranking_mode=ranking_mode,
+        close=close,
+        avg_volume_20=avg_volume_20,
+        market_cap=market_cap,
+    )
+
+
+def build_scanner_row_from_history(
+    symbol: str,
+    *,
+    close: float,
+    lux_historical: pd.DataFrame,
+    smc_historical: pd.DataFrame,
+    index: int,
+    ranking_mode: str,
+    avg_volume_20: float | None = None,
+    market_cap: float | None = None,
+) -> dict:
+    lux_slice = lux_historical.iloc[: index + 1]
+    smc_slice = smc_historical.iloc[: index + 1]
+    lux_signal = _lux_signal_from_history(symbol, lux_slice.iloc[-1])
+    smc_signal = _smc_signal_from_history(symbol, smc_slice.iloc[-1])
+
+    return _assemble_scanner_row(
+        symbol=symbol,
+        lux_signal=lux_signal,
+        smc_signal=smc_signal,
+        lux_historical=lux_slice,
+        smc_historical=smc_slice,
+        ranking_mode=ranking_mode,
+        close=close,
+        avg_volume_20=avg_volume_20,
+        market_cap=market_cap,
+    )
+
+
+def _assemble_scanner_row(
+    *,
+    symbol: str,
+    lux_signal,
+    smc_signal,
+    lux_historical: pd.DataFrame,
+    smc_historical: pd.DataFrame,
+    ranking_mode: str,
+    close: float | None,
+    avg_volume_20: float | None,
+    market_cap: float | None,
+) -> dict:
     lux_event = _latest_model_event(lux_historical)
     lux_active_event = _active_lux_event(lux_historical)
     smc_event = _latest_model_event(smc_historical)
@@ -184,6 +239,48 @@ def build_scanner_row(
             excluded_reason=None,
         )
     )
+
+
+def _lux_signal_from_history(symbol: str, row: pd.Series):
+    return SimpleNamespace(
+        symbol=symbol,
+        date=pd.Timestamp(row["date"]),
+        close_price=float(row["close"]),
+        trend=str(row["trend"]),
+        strength=str(row["strength"]),
+        options_hint=str(row["options_hint"]),
+        adx=_optional_float(row.get("adx")),
+        confirmation_signal=int(row.get("confirmation_signal", 0)),
+        contrarian_signal=int(row.get("contrarian_signal", 0)),
+        combined_signal=int(row["combined_signal"]),
+    )
+
+
+def _smc_signal_from_history(symbol: str, row: pd.Series):
+    return SimpleNamespace(
+        symbol=symbol,
+        date=pd.Timestamp(row["date"]),
+        close_price=float(row["close"]),
+        combined_signal=int(row["combined_signal"]),
+        bias=str(row.get("signal_bias", "NEUTRAL")),
+        range_position_pct=_optional_float(row.get("range_position_pct")),
+        rsi=_optional_float(row.get("rsi")),
+        options_hint=str(row.get("options_hint", "NO_TRADE")),
+        swing_high_marker=bool(row.get("swing_high_marker", False)),
+        swing_low_marker=bool(row.get("swing_low_marker", False)),
+        in_premium=bool(row.get("in_premium", False)),
+        in_discount=bool(row.get("in_discount", False)),
+        bullish_rejection=bool(row.get("bullish_rejection", False)),
+        bearish_rejection=bool(row.get("bearish_rejection", False)),
+        long_signal=bool(row.get("long_signal", False)),
+        short_signal=bool(row.get("short_signal", False)),
+    )
+
+
+def _optional_float(value) -> float | None:
+    if value is None or pd.isna(value):
+        return None
+    return float(value)
 
 
 def _lux_context(signal) -> str:
