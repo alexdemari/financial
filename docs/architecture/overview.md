@@ -25,7 +25,7 @@ Local CSV data
     ->
 stock_analyzer
     ->
-options_tech_scanner (V3)
+market_scanner
     ->
 decision layer
     ->
@@ -42,7 +42,7 @@ stock_analyzer
   -> generates current and historical per-symbol signals
   -> supports rsi-sma, lux, and smc
 
-options_tech_scanner
+market_scanner
   -> evaluates many symbols
   -> builds Scanner V3 rows
   -> applies market_state, adjusted_alignment, action_bucket
@@ -81,7 +81,7 @@ Owns low-level technical logic.
 - Lux logic
 - SMC logic
 
-### `options_tech_scanner`
+### `market_scanner`
 
 Owns multi-symbol orchestration and decision logic.
 
@@ -93,8 +93,8 @@ Owns multi-symbol orchestration and decision logic.
 
 See:
 
-- `current-options-scanner.md`
-- `current-options-scanner-decision-layer.md`
+- `market-scanner.md`
+- `market-scanner-decision-layer.md`
 - `legacy-options-scanner.md`
 
 ### Current Backtest
@@ -129,7 +129,7 @@ This means:
 
 The most important shared artifact today is the Scanner V3 row.
 
-`options_tech_scanner.scanner_row` is the bridge between:
+`market_scanner.scanner_row` is the bridge between:
 
 - per-symbol Lux/SMC analysis from `stock_analyzer`
 - Scanner V3 decision logic
@@ -148,7 +148,7 @@ The current architecture should be understood in this order:
 
 1. `stock_data_manager` keeps local data healthy
 2. `stock_analyzer` produces reusable single-symbol signals
-3. `options_tech_scanner` turns those signals into Scanner V3 decisions
+3. `market_scanner` turns those signals into scanner decisions
 4. the current backtest validates whether those decisions have directional edge
 
 ---

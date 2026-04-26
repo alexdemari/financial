@@ -2,6 +2,11 @@
 
 ## Purpose
 
+The current scanner backtest is implemented in `market_scanner.backtest`.
+
+The compatibility entrypoint `options_tech_scanner.backtest_v3` still exists
+temporarily, but it should no longer be treated as the canonical module name.
+
 The current backtest validates current scanner signal quality.
 
 It does NOT simulate options trades or options PnL.
@@ -35,6 +40,7 @@ for each symbol
 The current backtest uses:
 
 - local OHLC CSV data
+- shared scanner pipeline orchestration
 - shared current scanner row logic
 - Lux and SMC historical signal outputs
 
@@ -116,6 +122,14 @@ That means:
 - one shared decision source
 - less duplication
 - better auditability
+
+After the recent refactor, it also shares the same pipeline layer used by the
+live scanner for:
+
+- analyzer creation
+- universe loading
+- symbol iteration
+- local dataset preparation
 
 Rule:
 

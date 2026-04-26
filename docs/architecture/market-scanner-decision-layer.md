@@ -1,8 +1,8 @@
-# Current Options Scanner Decision Layer
+# Market Scanner Decision Layer
 
 ## Purpose
 
-This document describes the decision layer used by the current options scanner.
+This document describes the decision layer used by `market_scanner`.
 
 Its job is not just to show model outputs. Its job is to answer:
 

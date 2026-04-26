@@ -1,8 +1,8 @@
-# Current Options Scanner
+# Market Scanner
 
 ## Purpose
 
-`options_tech_scanner` is the current multi-symbol orchestration and decision
+`market_scanner` is the current multi-symbol orchestration and decision
 layer of the project.
 
 Its core question is:
@@ -16,7 +16,7 @@ data layer.
 
 ## Architectural Role
 
-`options_tech_scanner` sits above `stock_analyzer` and below reporting and
+`market_scanner` sits above `stock_analyzer` and below reporting and
 historical validation.
 
 ```text
@@ -35,11 +35,12 @@ reports and backtest
 
 ## What It Owns
 
-`options_tech_scanner` owns:
+`market_scanner` owns:
 
 - universe loading
 - eligibility filtering
 - multi-symbol orchestration
+- shared analyzer orchestration for Lux and SMC
 - shared scanner row construction
 - current scanner decision logic
 - scanner reporting
@@ -53,11 +54,26 @@ In practice, this includes:
 - `adjusted_alignment`
 - `action_bucket`
 
+Internally, the package is now organized around a small set of roles:
+
+- `pipeline.py`
+  - shared universe and symbol iteration orchestration
+- `event_state.py`
+  - Lux/SMC event extraction and ranking-mode state helpers
+- `models.py`
+  - shared scanner data models
+- `scanner_row.py`
+  - shared decision row assembly
+- `scan.py`
+  - current live scan orchestration
+- `backtest.py`
+  - historical replay and signal validation
+
 ---
 
 ## What It Does Not Own
 
-`options_tech_scanner` should NOT own:
+`market_scanner` should NOT own:
 
 - raw OHLC data download
 - low-level Lux implementation logic
@@ -73,7 +89,7 @@ These belong elsewhere:
 
 Hard rule:
 
-- `options_tech_scanner` MUST NOT implement indicator logic.
+- `market_scanner` MUST NOT implement indicator logic.
 
 ---
 
@@ -111,7 +127,7 @@ This is the most important boundary.
 - what does one asset signal now?
 - what is the recent signal history for one symbol?
 
-`options_tech_scanner` answers:
+`market_scanner` answers:
 
 - which symbols deserve attention now?
 - which are candidates, watchlist setups, avoid cases, or unclear cases?
@@ -119,7 +135,7 @@ This is the most important boundary.
 Rule of thumb:
 
 - per-symbol interpretation -> `stock_analyzer`
-- multi-symbol selection and decision -> `options_tech_scanner`
+- multi-symbol selection and decision -> `market_scanner`
 
 ---
 
@@ -136,11 +152,18 @@ That is why the scanner row is shared between:
 This is one of the most important architectural constraints in the current
 system.
 
+The scan and backtest now also share a pipeline layer for:
+
+- universe loading
+- optional symbol selection
+- analyzer creation
+- symbol-by-symbol local CSV iteration
+
 ---
 
 ## Current Assessment
 
-`options_tech_scanner` is currently the most architecturally sensitive part of
+`market_scanner` is currently the most architecturally sensitive part of
 the project.
 
 Why:
@@ -151,3 +174,9 @@ Why:
 
 Because of that, it is also the package most likely to benefit from further
 documentation review and selective refactoring.
+
+`options_tech_scanner` still exists in the repository, but it should now be
+read as:
+
+- the legacy scanner package
+- a compatibility namespace for migrated current-scanner modules

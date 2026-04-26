@@ -1,6 +1,6 @@
 import pandas as pd
 
-from options_tech_scanner.eligibility import (
+from market_scanner.eligibility import (
     calculate_avg_volume_20,
     evaluate_symbol_eligibility,
 )

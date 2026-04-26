@@ -83,7 +83,41 @@ Responsibilities:
 
 ## Scanner Components
 
-### `options_tech_scanner.scanner_row`
+### `market_scanner.pipeline`
+
+Responsibilities:
+
+- load the selected universe
+- create shared Lux and SMC analyzers
+- iterate local symbol datasets consistently for scan and backtest
+
+This is the shared orchestration layer for the current scanner package.
+
+---
+
+### `market_scanner.event_state`
+
+Responsibilities:
+
+- derive Lux and SMC context labels
+- extract latest and active events from historical model output
+- adapt ranking inputs for `snapshot` vs `recent-event`
+
+This keeps event interpretation separate from the final row assembly.
+
+---
+
+### `market_scanner.models`
+
+Responsibilities:
+
+- define shared scanner-facing data structures
+
+At the moment, this is primarily the `ScannerRow` model.
+
+---
+
+### `market_scanner.scanner_row`
 
 Responsibilities:
 
@@ -91,11 +125,12 @@ Responsibilities:
 - normalize Lux and SMC outputs into one row
 - derive decision inputs reused by scan and backtest
 
-This is the current shared decision component of the scanner architecture.
+This is the current shared decision assembly component of the scanner
+architecture.
 
 ---
 
-### `options_tech_scanner.scan`
+### `market_scanner.scan`
 
 Responsibilities:
 
@@ -104,11 +139,13 @@ Responsibilities:
 - build one scanner row per symbol
 - export scanner reports
 
+This module is now primarily the live-scan entrypoint and output orchestrator.
+
 ---
 
 ### Decision Layer
 
-Owned by `options_tech_scanner` through:
+Owned by `market_scanner` through:
 
 - `ranking.py`
 - `market_state.py`
@@ -136,6 +173,12 @@ Responsibilities:
 - export detailed and decision summaries
 
 This component validates signal quality. It is not an options PnL engine.
+
+It reuses:
+
+- `pipeline.py` for per-symbol orchestration
+- `scanner_row.py` for shared scanner decisions
+- `event_state.py` indirectly through scanner row assembly
 
 ---
 

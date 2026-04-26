@@ -1,4 +1,4 @@
-from options_tech_scanner.ranking import classify_alignment, compute_consistency_score
+from market_scanner.ranking import classify_alignment, compute_consistency_score
 
 
 def test_classify_alignment_bullish_and_bearish():

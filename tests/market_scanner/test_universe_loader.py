@@ -2,7 +2,7 @@ import json
 
 import pandas as pd
 
-from options_tech_scanner.universe_loader import load_universe
+from market_scanner.universe_loader import load_universe
 
 
 def test_load_universe_from_tradingview_json_extracts_market_cap(tmp_path):

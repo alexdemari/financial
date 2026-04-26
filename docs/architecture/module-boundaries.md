@@ -22,7 +22,7 @@ stock_analyzer
 trading_indicators
   -> low-level technical logic
 
-options_tech_scanner
+market_scanner
   -> multi-symbol orchestration and decision logic
 
 backtest
@@ -98,7 +98,7 @@ Rule:
 
 ---
 
-## `options_tech_scanner`
+## `market_scanner`
 
 Owns:
 
@@ -118,7 +118,12 @@ Does not own:
 
 Hard rule:
 
-- `options_tech_scanner` MUST NOT implement indicator logic.
+- `market_scanner` MUST NOT implement indicator logic.
+
+`options_tech_scanner` remains in the repository as:
+
+- the legacy scanner namespace
+- a temporary compatibility layer for migrated current-scanner modules
 
 It may compose Lux and SMC outputs, but the underlying technical calculations
 must remain in `trading_indicators` and be surfaced through `stock_analyzer`

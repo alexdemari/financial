@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from options_tech_scanner.backtest_v3 import (
+from market_scanner.backtest import (
     build_backtest_event,
     compute_forward_metrics,
     generate_symbol_events,
@@ -307,7 +307,7 @@ def test_generate_symbol_events_uses_only_slice_up_to_current_bar(monkeypatch):
         return make_row(ranking_mode=ranking_mode)
 
     monkeypatch.setattr(
-        "options_tech_scanner.backtest_v3.build_scanner_row_from_history",
+        "market_scanner.backtest.build_scanner_row_from_history",
         fake_build_scanner_row_from_history,
     )
 
@@ -379,7 +379,7 @@ def test_generate_symbol_events_respects_scanner_history_floor(monkeypatch):
         return make_row(ranking_mode=ranking_mode)
 
     monkeypatch.setattr(
-        "options_tech_scanner.backtest_v3.build_scanner_row_from_history",
+        "market_scanner.backtest.build_scanner_row_from_history",
         fake_build_scanner_row_from_history,
     )
 

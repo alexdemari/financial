@@ -32,7 +32,7 @@ The package is used in two ways:
 
 - directly, through its CLI for manual symbol inspection
 - indirectly, as the per-symbol signal provider used by
-  `options_tech_scanner`
+  `market_scanner`
 
 ---
 
@@ -41,6 +41,7 @@ The package is used in two ways:
 `stock_analyzer` should own:
 
 - single-symbol analysis
+- single-symbol signal generation
 - signal model selection
 - current signal generation
 - historical signal generation
@@ -52,6 +53,35 @@ In practice, the important models today are:
 - `rsi-sma`
 - `lux`
 - `smc`
+
+---
+
+## Signal Engine Role
+
+`stock_analyzer` can be used as a per-symbol signal generator.
+
+For the supported models, it exposes a normalized current signal:
+
+- `BUY`
+- `SELL`
+- `HOLD`
+
+This makes it appropriate for questions like:
+
+- "What does `AAPL` signal now?"
+- "Does `NVDA` currently have a Lux buy or sell?"
+- "Show me the recent SMC signal history for `HOOD`."
+
+Important limit:
+
+- `stock_analyzer` generates the signal for one asset
+- it does not decide whether that asset should be prioritized relative to other
+  symbols
+- it does not classify assets into scanner decision buckets like `candidate` or
+  `watchlist`
+
+That higher-level selection and actionability decision belongs to
+`market_scanner`.
 
 ---
 
@@ -68,7 +98,7 @@ In practice, the important models today are:
 
 These belong elsewhere:
 
-- multi-symbol orchestration -> `options_tech_scanner`
+- multi-symbol orchestration -> `market_scanner`
 - data ingestion and persistence -> `stock_data_manager`
 - low-level indicator logic -> `trading_indicators`
 
@@ -113,7 +143,7 @@ Contains legacy strategy backtests local to this package.
 
 This file exists, but it should not be treated as the main validation path for
 the current scanner. That role now belongs to the current backtest in
-`options_tech_scanner`.
+`market_scanner`.
 
 ---
 
@@ -130,7 +160,7 @@ For Scanner V3, the most important behavior is:
 
 - Lux historical output is available
 - SMC historical output is available
-- those histories can be consumed by `options_tech_scanner` to build a shared
+- those histories can be consumed by `market_scanner` to build a shared
   scanner row
 
 ---
@@ -171,4 +201,4 @@ If the question is:
 - "Which assets are candidates or watchlist setups?"
 - "Do Scanner V3 signals have edge historically?"
 
-then it belongs in `options_tech_scanner`.
+then it belongs in `market_scanner`.

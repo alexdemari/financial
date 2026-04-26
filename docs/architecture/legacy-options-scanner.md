@@ -63,8 +63,8 @@ shared path for:
 
 That newer path is:
 
-- [current-options-scanner.md](/abs/path/C:/Users/alexa/Documents/development/financial/docs/architecture/current-options-scanner.md:1)
-- [current-options-scanner-decision-layer.md](/abs/path/C:/Users/alexa/Documents/development/financial/docs/architecture/current-options-scanner-decision-layer.md:1)
+- [market-scanner.md](/abs/path/C:/Users/alexa/Documents/development/financial/docs/architecture/market-scanner.md:1)
+- [market-scanner-decision-layer.md](/abs/path/C:/Users/alexa/Documents/development/financial/docs/architecture/market-scanner-decision-layer.md:1)
 - [backtest.md](/abs/path/C:/Users/alexa/Documents/development/financial/docs/architecture/backtest.md:1)
 
 ---

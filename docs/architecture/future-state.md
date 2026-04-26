@@ -31,7 +31,7 @@ infrastructure.
 
 ### 2. Scanner Architecture Review
 
-- review `options_tech_scanner` package boundaries
+- review `market_scanner` package boundaries
 - reduce ambiguity between orchestration, ranking, and reporting
 - refactor only where responsibilities are currently blurred
 

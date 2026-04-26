@@ -1,5 +1,14 @@
 # Options Tech Scanner
 
+This package is no longer the canonical home of the current scanner.
+
+Today:
+
+- the current scanner lives in `market_scanner`
+- `options_tech_scanner` remains as the legacy scanner package
+- some current-scanner module paths are temporarily re-exported here for
+  compatibility
+
 `options_tech_scanner` scans OHLCV stock data to detect bullish pullback setups (focused on `BULL_PUT_SPREAD`) using market regime, timing, price action, volume, relative strength, and multi-timeframe trend hierarchy.
 
 It also includes a separate local-first Scanner V1 flow for multi-asset Lux + SMC ranking built on top of `stock_analyzer`.

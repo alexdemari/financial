@@ -15,7 +15,7 @@ stock_analyzer
   ->
 per-symbol signal history
   ->
-options_tech_scanner
+market_scanner
   ->
 Scanner V3 decisions
   ->
@@ -75,7 +75,7 @@ Role:
 
 Module:
 
-- `options_tech_scanner`
+- `market_scanner`
 
 Role:
 

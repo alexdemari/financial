@@ -1,4 +1,4 @@
-from options_tech_scanner.market_state import (
+from market_scanner.market_state import (
     EXHAUSTION,
     EXTENDED,
     PULLBACK,

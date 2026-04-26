@@ -2,8 +2,8 @@ from types import SimpleNamespace
 
 import pandas as pd
 
-from options_tech_scanner.scan import _smc_context, scan_universe
-from options_tech_scanner.report_writer import render_top_n_summary
+from market_scanner.scan import _smc_context, scan_universe
+from market_scanner.report_writer import render_top_n_summary
 from stock_analyzer.signals.smc import SMCSignalGenerator
 
 
@@ -136,7 +136,7 @@ def test_scan_universe_generates_csv_and_sorts_top_results(
                 }
             )
 
-    monkeypatch.setattr("options_tech_scanner.scan.StockDataAnalyzer", FakeAnalyzer)
+    monkeypatch.setattr("market_scanner.scan.StockDataAnalyzer", FakeAnalyzer)
 
     output_file = tmp_path / "scan.csv"
     result_df, written_path = scan_universe(
@@ -311,7 +311,7 @@ def test_scan_universe_recent_event_mode_uses_watch_events_for_ranking(
                 }
             )
 
-    monkeypatch.setattr("options_tech_scanner.scan.StockDataAnalyzer", FakeAnalyzer)
+    monkeypatch.setattr("market_scanner.scan.StockDataAnalyzer", FakeAnalyzer)
 
     output_file = tmp_path / "scan_recent_event.csv"
     result_df, _ = scan_universe(
@@ -426,7 +426,7 @@ def test_smc_active_event_prefers_latest_reversal_over_older_confluence(
                 }
             )
 
-    monkeypatch.setattr("options_tech_scanner.scan.StockDataAnalyzer", FakeAnalyzer)
+    monkeypatch.setattr("market_scanner.scan.StockDataAnalyzer", FakeAnalyzer)
 
     result_df, _ = scan_universe(
         universe_file=universe_file,
@@ -571,7 +571,7 @@ def test_recent_event_mode_falls_back_to_no_trade_without_active_directional_eve
                 }
             )
 
-    monkeypatch.setattr("options_tech_scanner.scan.StockDataAnalyzer", FakeAnalyzer)
+    monkeypatch.setattr("market_scanner.scan.StockDataAnalyzer", FakeAnalyzer)
 
     result_df, _ = scan_universe(
         universe_file=universe_file,
