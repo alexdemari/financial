@@ -1,3 +1,10 @@
+"""Legacy market regime helpers.
+
+This module belongs to the legacy options scanner and is currently outside the
+active `market_scanner` flow. It is a cleanup candidate unless the legacy
+strategy path still depends on it operationally.
+"""
+
 from options_tech_scanner.indicators import ema_cloud, sma
 
 

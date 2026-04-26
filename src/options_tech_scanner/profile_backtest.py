@@ -1,3 +1,10 @@
+"""Legacy profiling entrypoint for the old options backtest.
+
+This module is outside the active `market_scanner` flow and appears to be a
+historical utility. Keep it only while the legacy backtest still needs manual
+profiling support.
+"""
+
 import cProfile
 import pstats
 

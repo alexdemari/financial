@@ -82,6 +82,147 @@ decision system.
 
 ---
 
+## Legacy Inventory
+
+The remaining files under `options_tech_scanner` now fall into three groups.
+
+### 1. Compatibility Re-exports
+
+These are not the legacy scanner core anymore. They are temporary shims for the
+current scanner namespace migration:
+
+- `scan.py`
+- `scanner_row.py`
+- `market_state.py`
+- `eligibility.py`
+- `ranking.py`
+- `report_writer.py`
+- `universe_loader.py`
+- `backtest_v3.py`
+
+Recommended destination:
+
+- keep temporarily as compatibility imports
+- remove only after old imports and commands are no longer needed
+
+---
+
+### 2. Strategy-Specific Legacy Core
+
+These files are the real legacy scanner core:
+
+- `main.py`
+- `setups.py`
+- `events.py`
+- `backtest.py`
+- `metrics.py`
+- `worker.py`
+- `scorer.py`
+
+What they represent:
+
+- setup-stage filtering
+- `BULL_PUT_SPREAD`-oriented logic
+- strategy-specific backtesting
+- execution-oriented scoring
+
+Recommended destination:
+
+- do not absorb into the `market_scanner` core
+- keep as legacy, or move later into a dedicated strategy/execution package
+
+---
+
+### 3. Legacy Support Modules
+
+These are supporting files for the older scanner path:
+
+- `context.py`
+- `indicators.py`
+- `loader.py`
+- `cache_utils.py`
+- `regimes.py`
+- `structure.py`
+- `volatility.py`
+- `config.py`
+
+Assessment:
+
+- some parts are generic in appearance
+- many are still tightly coupled to the legacy strategy scanner
+- some duplicate behavior that belongs more naturally in
+  `trading_indicators` or a future execution-layer package
+
+Recommended treatment:
+
+- migrate only after explicit review
+- do not move them into `market_scanner` by default
+
+---
+
+### 4. Likely Obsolete Files
+
+These do not look like part of the active architecture:
+
+- `options_analyzer.py`
+- `profile_backtest.py`
+
+Recommended treatment:
+
+- keep only if there is still active operational use
+- otherwise retire them in a later cleanup pass
+
+---
+
+## Current Reference Status
+
+The repository currently suggests this practical status:
+
+### Actively Used Inside The Legacy Flow
+
+- `main.py`
+- `backtest.py`
+- `events.py`
+- `metrics.py`
+- `worker.py`
+- `setups.py`
+- `context.py`
+- `indicators.py`
+- `cache_utils.py`
+- `loader.py`
+- `scorer.py`
+
+These still appear in direct imports used by the legacy scan/backtest path.
+
+### Present But Not Referenced By The Current Repository Flow
+
+- `config.py`
+- `regimes.py`
+- `structure.py`
+- `volatility.py`
+- `options_analyzer.py`
+- `profile_backtest.py`
+
+This does not prove they are safe to delete immediately, but it does mean they
+should be treated as cleanup candidates rather than core dependencies.
+
+---
+
+## Migration Rule
+
+Do not migrate the legacy scanner as a block.
+
+Use this filter instead:
+
+- generic multi-symbol decision logic -> `market_scanner`
+- strategy-specific options execution logic -> keep outside the scanner core
+- unclear / partially useful support modules -> review case by case
+
+That keeps `market_scanner` clean as a generic decision engine instead of
+turning it into an execution-strategy package.
+
+---
+
 ## Rule Of Thumb
 
 If the workflow depends on:

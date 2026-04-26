@@ -9,9 +9,19 @@ Today:
 - some current-scanner module paths are temporarily re-exported here for
   compatibility
 
+Practical interpretation:
+
+- current multi-symbol decision logic belongs in `market_scanner`
+- legacy `BULL_PUT_SPREAD` workflows remain here
+- this package should not absorb new generic scanner logic going forward
+
 `options_tech_scanner` scans OHLCV stock data to detect bullish pullback setups (focused on `BULL_PUT_SPREAD`) using market regime, timing, price action, volume, relative strength, and multi-timeframe trend hierarchy.
 
 It also includes a separate local-first Scanner V1 flow for multi-asset Lux + SMC ranking built on top of `stock_analyzer`.
+
+That Lux + SMC flow is now canonical in `market_scanner`. The paths under
+`options_tech_scanner` remain available only for compatibility during the
+transition.
 
 ## Goal
 
