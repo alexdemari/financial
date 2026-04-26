@@ -10,7 +10,7 @@ Its current goal is:
 - maintain local OHLC datasets
 - analyze one symbol at a time with reusable signal models
 - scan many symbols with Scanner V3 decision logic
-- validate signal quality with `backtest_v3`
+- validate signal quality with the current backtest
 
 The codebase is synchronous, CLI-driven, and file-based. There is no required
 cloud infrastructure, queue, worker fleet, or distributed runtime in the
@@ -29,7 +29,7 @@ options_tech_scanner (V3)
     ->
 decision layer
     ->
-backtest_v3
+backtest
 ```
 
 Expanded view:
@@ -47,7 +47,7 @@ options_tech_scanner
   -> builds Scanner V3 rows
   -> applies market_state, adjusted_alignment, action_bucket
 
-backtest_v3
+backtest
   -> replays Scanner V3 historically
   -> measures signal quality, not options PnL
 ```
@@ -91,7 +91,13 @@ Owns multi-symbol orchestration and decision logic.
 - applies Scanner V3 decision fields
 - exports ranked scanner outputs
 
-### `backtest_v3`
+See:
+
+- `current-options-scanner.md`
+- `current-options-scanner-decision-layer.md`
+- `legacy-options-scanner.md`
+
+### Current Backtest
 
 Owns Scanner V3 signal validation.
 
@@ -128,7 +134,7 @@ The most important shared artifact today is the Scanner V3 row.
 - per-symbol Lux/SMC analysis from `stock_analyzer`
 - Scanner V3 decision logic
 - scanner execution
-- `backtest_v3`
+- current backtest
 
 This shared row is the current source of truth for multi-asset decision logic.
 
@@ -143,7 +149,7 @@ The current architecture should be understood in this order:
 1. `stock_data_manager` keeps local data healthy
 2. `stock_analyzer` produces reusable single-symbol signals
 3. `options_tech_scanner` turns those signals into Scanner V3 decisions
-4. `backtest_v3` validates whether those decisions have directional edge
+4. the current backtest validates whether those decisions have directional edge
 
 ---
 

@@ -112,7 +112,8 @@ It is intentionally local and manual:
 Contains legacy strategy backtests local to this package.
 
 This file exists, but it should not be treated as the main validation path for
-Scanner V3. That role now belongs to `options_tech_scanner.backtest_v3`.
+the current scanner. That role now belongs to the current backtest in
+`options_tech_scanner`.
 
 ---
 

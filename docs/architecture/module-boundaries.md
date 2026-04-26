@@ -25,7 +25,7 @@ trading_indicators
 options_tech_scanner
   -> multi-symbol orchestration and decision logic
 
-backtest_v3
+backtest
   -> signal validation for Scanner V3
 ```
 
@@ -126,7 +126,7 @@ adapters.
 
 ---
 
-## `backtest_v3`
+## Current Backtest
 
 Owns:
 
@@ -144,7 +144,7 @@ Does not own:
 
 Rule:
 
-- `backtest_v3` validates signal quality, not options strategy economics.
+- the current backtest validates signal quality, not options strategy economics.
 
 ---
 
