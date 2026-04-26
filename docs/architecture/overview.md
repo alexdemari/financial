@@ -125,6 +125,24 @@ This means:
 
 ---
 
+## Operating Sequence
+
+The current operating sequence is:
+
+```text
+Data -> Analysis -> Decision -> Validation -> Execution
+```
+
+Meaning:
+
+- `stock_data_manager` owns data
+- `stock_analyzer` owns per-symbol analysis
+- `market_scanner` owns multi-symbol decision
+- the current backtest owns signal validation
+- execution remains downstream and optional
+
+---
+
 ## Current Architectural Center
 
 The most important shared artifact today is the Scanner V3 row.
@@ -165,3 +183,8 @@ The current system is not trying to be:
 
 If LLM features are added later, they should remain optional and explanatory,
 not part of the deterministic decision engine.
+
+The same applies to execution layers such as options strategy selection:
+
+- they may consume scanner outputs
+- they should not redefine the scanner decision engine
