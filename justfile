@@ -17,7 +17,7 @@ install:
 
 # Run tests
 test:
-    uv run pytest
+    uv run pytest -n 2
 
 test-stock-data-manager:
     .venv/bin/python -m pytest tests/stock_data_manager -q

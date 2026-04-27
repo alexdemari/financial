@@ -803,9 +803,7 @@ if __name__ == "__main__":
         print("\nAlpha Split")
         for name, stats in report["alpha_split"].items():
             print(
-                f"{name}: "
-                f"{stats['trades']} trades | "
-                f"Win Rate = {stats['win_rate']:.2%}"
+                f"{name}: {stats['trades']} trades | Win Rate = {stats['win_rate']:.2%}"
             )
 
         print("\nPrice Action Breakdown")
