@@ -111,8 +111,32 @@ analyzer symbol="AAPL" model="rsi-sma":
 market-scanner universe_file="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" output="reports/market_scanner/scan.csv" ranking_mode="snapshot" top="10":
     uv run python -m market_scanner.scan --universe-file {{universe_file}} --data-dir {{data_dir}} --output {{output}} --ranking-mode {{ranking_mode}} --top {{top}}
 
-market-scanner-backtest universe_file="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" output_detailed_summary="reports/market_scanner/backtest_detailed_summary.csv" output_decision_summary="reports/market_scanner/backtest_decision_summary.csv" ranking_mode="recent-event":
-    uv run python -m market_scanner.backtest --universe-file {{universe_file}} --data-dir {{data_dir}} --output-detailed-summary {{output_detailed_summary}} --output-decision-summary {{output_decision_summary}} --ranking-mode {{ranking_mode}}
+market-scanner-backtest universe_file="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" output_detailed_summary="reports/market_scanner/backtest_detailed_summary.csv" output_decision_summary="reports/market_scanner/backtest_decision_summary.csv" output_lux_summary="reports/market_scanner/backtest_lux_summary.csv" output_smc_summary="reports/market_scanner/backtest_smc_summary.csv" ranking_mode="recent-event":
+    uv run python -m market_scanner.backtest --universe-file {{universe_file}} --data-dir {{data_dir}} --output-detailed-summary {{output_detailed_summary}} --output-decision-summary {{output_decision_summary}} --output-lux-summary {{output_lux_summary}} --output-smc-summary {{output_smc_summary}} --ranking-mode {{ranking_mode}}
+
+market-scanner-execution-backtest universe_file="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" output_trades="reports/market_scanner/execution_trades.csv" output_summary="reports/market_scanner/execution_summary.csv" ranking_mode="recent-event" exit_rule="bucket_downgrade":
+    uv run python -m market_scanner.backtest_execution --universe-file {{universe_file}} --data-dir {{data_dir}} --output-trades {{output_trades}} --output-summary {{output_summary}} --ranking-mode {{ranking_mode}} --exit-rule {{exit_rule}}
+
+market-scanner-execution-backtest-bucket-downgrade universe_file="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" output_trades="reports/market_scanner/execution_trades_bucket_downgrade.csv" output_summary="reports/market_scanner/execution_summary_bucket_downgrade.csv" ranking_mode="recent-event":
+    uv run python -m market_scanner.backtest_execution --universe-file {{universe_file}} --data-dir {{data_dir}} --output-trades {{output_trades}} --output-summary {{output_summary}} --ranking-mode {{ranking_mode}} --exit-rule bucket_downgrade
+
+market-scanner-execution-backtest-bars-5 universe_file="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" output_trades="reports/market_scanner/execution_trades_bars_5.csv" output_summary="reports/market_scanner/execution_summary_bars_5.csv" ranking_mode="recent-event":
+    uv run python -m market_scanner.backtest_execution --universe-file {{universe_file}} --data-dir {{data_dir}} --output-trades {{output_trades}} --output-summary {{output_summary}} --ranking-mode {{ranking_mode}} --exit-rule bars_5
+
+market-scanner-execution-backtest-bars-10 universe_file="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" output_trades="reports/market_scanner/execution_trades_bars_10.csv" output_summary="reports/market_scanner/execution_summary_bars_10.csv" ranking_mode="recent-event":
+    uv run python -m market_scanner.backtest_execution --universe-file {{universe_file}} --data-dir {{data_dir}} --output-trades {{output_trades}} --output-summary {{output_summary}} --ranking-mode {{ranking_mode}} --exit-rule bars_10
+
+market-scanner-execution-backtest-bars-20 universe_file="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" output_trades="reports/market_scanner/execution_trades_bars_20.csv" output_summary="reports/market_scanner/execution_summary_bars_20.csv" ranking_mode="recent-event":
+    uv run python -m market_scanner.backtest_execution --universe-file {{universe_file}} --data-dir {{data_dir}} --output-trades {{output_trades}} --output-summary {{output_summary}} --ranking-mode {{ranking_mode}} --exit-rule bars_20
+
+market-scanner-execution-backtest-alignment-break universe_file="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" output_trades="reports/market_scanner/execution_trades_alignment_break.csv" output_summary="reports/market_scanner/execution_summary_alignment_break.csv" ranking_mode="recent-event":
+    uv run python -m market_scanner.backtest_execution --universe-file {{universe_file}} --data-dir {{data_dir}} --output-trades {{output_trades}} --output-summary {{output_summary}} --ranking-mode {{ranking_mode}} --exit-rule alignment_break
+
+market-scanner-execution-backtest-late-state universe_file="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" output_trades="reports/market_scanner/execution_trades_late_state.csv" output_summary="reports/market_scanner/execution_summary_late_state.csv" ranking_mode="recent-event":
+    uv run python -m market_scanner.backtest_execution --universe-file {{universe_file}} --data-dir {{data_dir}} --output-trades {{output_trades}} --output-summary {{output_summary}} --ranking-mode {{ranking_mode}} --exit-rule late_state
+
+market-scanner-execution-backtest-opposite-signal universe_file="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" output_trades="reports/market_scanner/execution_trades_opposite_signal.csv" output_summary="reports/market_scanner/execution_summary_opposite_signal.csv" ranking_mode="recent-event":
+    uv run python -m market_scanner.backtest_execution --universe-file {{universe_file}} --data-dir {{data_dir}} --output-trades {{output_trades}} --output-summary {{output_summary}} --ranking-mode {{ranking_mode}} --exit-rule opposite_signal
 
 ibkr-option-chain symbol expiration max_strikes="10" option-type="BOTH" strike-step="5":
     uv run python -m src.ibkr.main --symbol {{symbol}} --expiration {{expiration}} --max-strikes {{max_strikes}} --option-type {{option-type}} --strike-step {{strike-step}}

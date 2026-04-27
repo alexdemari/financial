@@ -183,6 +183,19 @@ PYTHONPATH=src uv run python -m market_scanner.backtest \
   --max-bars 260
 ```
 
+### Execution Backtest
+
+```bash
+PYTHONPATH=src uv run python -m market_scanner.backtest_execution \
+  --universe-file data/scanner_universe_sample.csv \
+  --data-dir data/stocks/1D \
+  --ranking-mode recent-event \
+  --exit-rule bucket_downgrade \
+  --symbols AAPL \
+  --output-trades reports/market_scanner/execution_trades.csv \
+  --output-summary reports/market_scanner/execution_summary.csv
+```
+
 ---
 
 ## Current Project Status

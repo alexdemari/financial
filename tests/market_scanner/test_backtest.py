@@ -5,11 +5,15 @@ from market_scanner.backtest import (
     build_backtest_event,
     compute_forward_metrics,
     generate_symbol_events,
+    infer_lux_signal_side,
     infer_signal_side,
+    infer_smc_signal_side,
     prepare_backtest_df,
     render_decision_summary,
     summarize_decision_events,
     summarize_events,
+    summarize_lux_indicator_events,
+    summarize_smc_indicator_events,
 )
 
 
@@ -61,6 +65,58 @@ def test_infer_signal_side_returns_expected_labels():
     assert infer_signal_side("bearish_watchlist") == "bearish"
     assert infer_signal_side("mixed") == "neutral"
     assert infer_signal_side(None) == "neutral"
+
+
+def test_infer_lux_signal_side_uses_lux_fields():
+    assert infer_lux_signal_side(make_row()) == "bullish"
+    assert (
+        infer_lux_signal_side(
+            make_row(
+                lux_role="bearish_trend",
+                lux_context="trend_confirmation_sell",
+                lux_options_hint="PUT",
+                lux_trend="BEARISH",
+            )
+        )
+        == "bearish"
+    )
+    assert (
+        infer_lux_signal_side(
+            make_row(
+                lux_role="neutral",
+                lux_context="no_trade",
+                lux_options_hint="NO_TRADE",
+                lux_trend="SIDEWAYS",
+            )
+        )
+        == "neutral"
+    )
+
+
+def test_infer_smc_signal_side_uses_smc_fields():
+    assert infer_smc_signal_side(make_row()) == "bullish"
+    assert (
+        infer_smc_signal_side(
+            make_row(
+                smc_role="bearish_watch",
+                smc_context="bearish_confluence",
+                smc_options_hint="PUT_WATCH",
+                smc_bias="BEARISH",
+            )
+        )
+        == "bearish"
+    )
+    assert (
+        infer_smc_signal_side(
+            make_row(
+                smc_role="neutral",
+                smc_context="no_trade",
+                smc_options_hint="NO_TRADE",
+                smc_bias="NEUTRAL",
+            )
+        )
+        == "neutral"
+    )
 
 
 def test_compute_forward_metrics_handles_bullish_and_bearish_returns():
@@ -251,6 +307,99 @@ def test_summarize_decision_events_groups_by_signal_side():
 
     assert len(summary) == 2
     assert {row["signal_side"] for row in summary} == {"bullish", "bearish"}
+
+
+def test_summarize_lux_indicator_events_groups_by_lux_fields():
+    events = [
+        {
+            **make_row(),
+            "symbol": "AAPL",
+            "date": "2026-01-01T00:00:00+00:00",
+            "signal_side": "bullish",
+            "direction": "bullish",
+            "entry_close": 100.0,
+            "return_3": 0.04,
+            "directional_return_3": 0.04,
+            "mfe_3": 0.06,
+            "mae_3": -0.01,
+            "win_3": True,
+        },
+        {
+            **make_row(
+                lux_role="bearish_trend",
+                lux_signal="SELL",
+                lux_options_hint="PUT",
+                lux_context="trend_confirmation_sell",
+                lux_trend="BEARISH",
+                lux_strength="NORMAL",
+            ),
+            "symbol": "MSFT",
+            "date": "2026-01-02T00:00:00+00:00",
+            "signal_side": "bearish",
+            "direction": "bearish",
+            "entry_close": 100.0,
+            "return_3": -0.02,
+            "directional_return_3": 0.02,
+            "mfe_3": 0.03,
+            "mae_3": -0.01,
+            "win_3": True,
+        },
+    ]
+
+    summary = summarize_lux_indicator_events(events, horizons=[3])
+
+    assert len(summary) == 2
+    assert {row["indicator"] for row in summary} == {"lux"}
+    assert {row["indicator_signal_side"] for row in summary} == {
+        "bullish",
+        "bearish",
+    }
+
+
+def test_summarize_smc_indicator_events_groups_by_smc_fields():
+    events = [
+        {
+            **make_row(),
+            "symbol": "AAPL",
+            "date": "2026-01-01T00:00:00+00:00",
+            "signal_side": "bullish",
+            "direction": "bullish",
+            "entry_close": 100.0,
+            "return_3": 0.04,
+            "directional_return_3": 0.04,
+            "mfe_3": 0.06,
+            "mae_3": -0.01,
+            "win_3": True,
+        },
+        {
+            **make_row(
+                smc_role="bearish_watch",
+                smc_signal="SELL",
+                smc_options_hint="PUT_WATCH",
+                smc_context="bearish_confluence",
+                smc_bias="BEARISH",
+            ),
+            "symbol": "MSFT",
+            "date": "2026-01-02T00:00:00+00:00",
+            "signal_side": "bearish",
+            "direction": "bearish",
+            "entry_close": 100.0,
+            "return_3": -0.02,
+            "directional_return_3": 0.02,
+            "mfe_3": 0.03,
+            "mae_3": -0.01,
+            "win_3": True,
+        },
+    ]
+
+    summary = summarize_smc_indicator_events(events, horizons=[3])
+
+    assert len(summary) == 2
+    assert {row["indicator"] for row in summary} == {"smc"}
+    assert {row["indicator_signal_side"] for row in summary} == {
+        "bullish",
+        "bearish",
+    }
 
 
 def test_prepare_backtest_df_applies_date_filters_and_max_bars():

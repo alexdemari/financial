@@ -26,6 +26,27 @@ DETAILED_SUMMARY_GROUP_COLUMNS = [
     "lux_strength",
     "ranking_mode",
 ]
+LUX_SUMMARY_GROUP_COLUMNS = [
+    "indicator",
+    "indicator_signal_side",
+    "lux_role",
+    "lux_signal",
+    "lux_options_hint",
+    "lux_context",
+    "lux_trend",
+    "lux_strength",
+    "ranking_mode",
+]
+SMC_SUMMARY_GROUP_COLUMNS = [
+    "indicator",
+    "indicator_signal_side",
+    "smc_role",
+    "smc_signal",
+    "smc_options_hint",
+    "smc_context",
+    "smc_bias",
+    "ranking_mode",
+]
 DECISION_SUMMARY_GROUP_COLUMNS = [
     "signal_side",
     "action_bucket",
@@ -45,6 +66,34 @@ def infer_signal_side(adjusted_alignment: str | None) -> str:
 
 def infer_direction(adjusted_alignment: str | None) -> str:
     return infer_signal_side(adjusted_alignment)
+
+
+def infer_indicator_signal_side(*values: str | None) -> str:
+    for value in values:
+        lowered = str(value or "").lower()
+        if lowered.startswith("bullish"):
+            return "bullish"
+        if lowered.startswith("bearish"):
+            return "bearish"
+    return "neutral"
+
+
+def infer_lux_signal_side(row: dict) -> str:
+    return infer_indicator_signal_side(
+        row.get("lux_role"),
+        row.get("lux_context"),
+        row.get("lux_options_hint"),
+        row.get("lux_trend"),
+    )
+
+
+def infer_smc_signal_side(row: dict) -> str:
+    return infer_indicator_signal_side(
+        row.get("smc_role"),
+        row.get("smc_context"),
+        row.get("smc_options_hint"),
+        row.get("smc_bias"),
+    )
 
 
 def compute_forward_metrics(
@@ -197,6 +246,30 @@ def summarize_decision_events(events: list[dict], horizons: list[int]) -> list[d
     return _summarize_events(events, horizons, DECISION_SUMMARY_GROUP_COLUMNS)
 
 
+def summarize_lux_indicator_events(
+    events: list[dict], horizons: list[int]
+) -> list[dict]:
+    prepared_events = []
+    for event in events:
+        enriched = dict(event)
+        enriched["indicator"] = "lux"
+        enriched["indicator_signal_side"] = infer_lux_signal_side(enriched)
+        prepared_events.append(enriched)
+    return _summarize_events(prepared_events, horizons, LUX_SUMMARY_GROUP_COLUMNS)
+
+
+def summarize_smc_indicator_events(
+    events: list[dict], horizons: list[int]
+) -> list[dict]:
+    prepared_events = []
+    for event in events:
+        enriched = dict(event)
+        enriched["indicator"] = "smc"
+        enriched["indicator_signal_side"] = infer_smc_signal_side(enriched)
+        prepared_events.append(enriched)
+    return _summarize_events(prepared_events, horizons, SMC_SUMMARY_GROUP_COLUMNS)
+
+
 def backtest_universe(
     *,
     universe_file: str | Path,
@@ -212,11 +285,13 @@ def backtest_universe(
     output_decision_summary: str | Path = (
         f"{DEFAULT_REPORTS_DIR}/backtest_decision_summary.csv"
     ),
+    output_lux_summary: str | Path = f"{DEFAULT_REPORTS_DIR}/backtest_lux_summary.csv",
+    output_smc_summary: str | Path = f"{DEFAULT_REPORTS_DIR}/backtest_smc_summary.csv",
     symbols: list[str] | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
     max_bars: int | None = None,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     horizons = horizons or list(DEFAULT_HORIZONS)
     ranking_modes = _resolve_ranking_modes(ranking_mode)
     universe = load_selected_universe(universe_file, symbols=symbols)
@@ -254,9 +329,13 @@ def backtest_universe(
     events_df = pd.DataFrame(events)
     detailed_summary_df = pd.DataFrame(summarize_detailed_events(events, horizons))
     decision_summary_df = pd.DataFrame(summarize_decision_events(events, horizons))
+    lux_summary_df = pd.DataFrame(summarize_lux_indicator_events(events, horizons))
+    smc_summary_df = pd.DataFrame(summarize_smc_indicator_events(events, horizons))
     write_csv_report(events_df, output_events)
     write_csv_report(detailed_summary_df, output_detailed_summary)
     write_csv_report(decision_summary_df, output_decision_summary)
+    write_csv_report(lux_summary_df, output_lux_summary)
+    write_csv_report(smc_summary_df, output_smc_summary)
 
     terminal_summary = render_decision_summary(decision_summary_df)
     if terminal_summary:
@@ -264,7 +343,15 @@ def backtest_universe(
     print(f"\nExported events: {Path(output_events)}")
     print(f"Exported detailed summary: {Path(output_detailed_summary)}")
     print(f"Exported decision summary: {Path(output_decision_summary)}")
-    return events_df, detailed_summary_df, decision_summary_df
+    print(f"Exported Lux summary: {Path(output_lux_summary)}")
+    print(f"Exported SMC summary: {Path(output_smc_summary)}")
+    return (
+        events_df,
+        detailed_summary_df,
+        decision_summary_df,
+        lux_summary_df,
+        smc_summary_df,
+    )
 
 
 def render_backtest_summary(summary_df: pd.DataFrame, limit: int = 12) -> str:
@@ -343,6 +430,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=f"{DEFAULT_REPORTS_DIR}/backtest_decision_summary.csv",
     )
     parser.add_argument(
+        "--output-lux-summary",
+        default=f"{DEFAULT_REPORTS_DIR}/backtest_lux_summary.csv",
+    )
+    parser.add_argument(
+        "--output-smc-summary",
+        default=f"{DEFAULT_REPORTS_DIR}/backtest_smc_summary.csv",
+    )
+    parser.add_argument(
         "--symbols",
         default=None,
         help="Comma-separated symbol filter",
@@ -367,6 +462,8 @@ def main(argv: list[str] | None = None) -> int:
         output_events=args.output_events,
         output_detailed_summary=detailed_summary_path,
         output_decision_summary=args.output_decision_summary,
+        output_lux_summary=args.output_lux_summary,
+        output_smc_summary=args.output_smc_summary,
         symbols=_parse_symbols(args.symbols),
         start_date=args.start_date,
         end_date=args.end_date,
