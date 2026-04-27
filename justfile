@@ -78,6 +78,11 @@ audit:
 pre-commit:
     uv run pre-commit run --all-files
 
+pre-commit-ready:
+    uv run ruff format src tests
+    uv run ruff check src tests
+    uv run pre-commit run --all-files
+
 # Download commands
 download symbol interval="1d":
     uv run python -m src.stock_data_manager.main -s {{symbol}} -i {{interval}}
