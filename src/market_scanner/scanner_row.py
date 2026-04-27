@@ -21,6 +21,8 @@ from market_scanner.models import ScannerRow
 from market_scanner.ranking import (
     classify_alignment,
     compute_consistency_score,
+    infer_lux_role,
+    infer_smc_role,
     signal_to_label,
 )
 from stock_analyzer.analyzer import StockDataAnalyzer
@@ -123,11 +125,27 @@ def _assemble_scanner_row(
         current_signal=smc_signal_label,
         latest_event=smc_active,
     )
-
-    alignment = classify_alignment(ranked_lux_hint, ranked_smc_hint)
-    consistency_score = compute_consistency_score(
+    ranked_smc_context = _selected_rank_context(
+        ranking_mode=ranking_mode,
+        current_context=smc_context(smc_signal),
+        latest_event=smc_active,
+    )
+    lux_role = infer_lux_role(
+        lux_signal=ranked_lux_signal,
         lux_options_hint=ranked_lux_hint,
+        lux_trend=lux_signal.trend,
+    )
+    smc_role = infer_smc_role(
+        smc_signal=ranked_smc_signal,
         smc_options_hint=ranked_smc_hint,
+        smc_context=ranked_smc_context,
+        smc_bias=smc_signal.bias,
+    )
+
+    alignment = classify_alignment(lux_role, smc_role)
+    consistency_score = compute_consistency_score(
+        lux_role=lux_role,
+        smc_role=smc_role,
         lux_signal=ranked_lux_signal,
         smc_signal=ranked_smc_signal,
     )
@@ -142,6 +160,8 @@ def _assemble_scanner_row(
         "smc_last_event": selected_smc_event["signal"],
         "smc_last_event_context": selected_smc_event["context"],
         "alignment": alignment,
+        "lux_role": lux_role,
+        "smc_role": smc_role,
         "consistency_score": consistency_score,
     }
     market_state = classify_market_state(state_inputs)
@@ -153,6 +173,9 @@ def _assemble_scanner_row(
     action_bucket = classify_action_bucket(
         adjusted_alignment,
         market_state,
+        alignment=alignment,
+        lux_role=lux_role,
+        smc_role=smc_role,
         consistency_score=consistency_score,
     )
 
@@ -163,6 +186,7 @@ def _assemble_scanner_row(
             avg_volume_20=avg_volume_20,
             market_cap=market_cap,
             ranking_mode=ranking_mode,
+            lux_role=lux_role,
             lux_signal=lux_signal_label,
             lux_options_hint=lux_signal.options_hint,
             lux_context=lux_context(lux_signal),
@@ -179,6 +203,7 @@ def _assemble_scanner_row(
             lux_active_event_context=lux_active["context"],
             lux_active_event_date=lux_active["date"],
             lux_days_since_active_event=lux_active["days_since"],
+            smc_role=smc_role,
             smc_signal=smc_signal_label,
             smc_options_hint=smc_signal.options_hint,
             smc_context=smc_context(smc_signal),
@@ -214,6 +239,17 @@ def _selected_state_event(
     if ranking_mode == "recent-event" and active_event["signal"] is not None:
         return active_event
     return latest_event
+
+
+def _selected_rank_context(
+    *,
+    ranking_mode: str,
+    current_context: str,
+    latest_event: dict[str, str | int | None],
+) -> str:
+    if ranking_mode == "recent-event" and latest_event["context"] is not None:
+        return str(latest_event["context"])
+    return current_context
 
 
 _smc_context = smc_context

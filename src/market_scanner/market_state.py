@@ -109,8 +109,11 @@ def adjust_alignment_for_market_state(
     row: Mapping[str, Any],
     market_state: str,
 ) -> str:
-    if alignment == "bullish_aligned" and market_state in {EXTENDED, EXHAUSTION}:
-        return BULLISH_WATCHLIST
+    lux_role = str(row.get("lux_role") or _fallback_lux_role(row) or "")
+    smc_role = str(row.get("smc_role") or "")
+
+    if alignment == "conflicted":
+        return "conflicted"
 
     if alignment == "mixed":
         if row.get("lux_trend") == "BEARISH" and row.get("lux_last_event") == "SELL":
@@ -123,25 +126,57 @@ def adjust_alignment_for_market_state(
                 return "bullish_aligned"
             return BULLISH_WATCHLIST
 
+    if alignment == "bullish_aligned" and market_state in {EXTENDED, EXHAUSTION}:
+        return BULLISH_WATCHLIST
+
+    if alignment == "bullish_aligned":
+        return "bullish_aligned"
+
     if alignment == "bearish_aligned" and market_state in {EXTENDED, EXHAUSTION}:
         return BEARISH_WATCHLIST
 
+    if alignment == "bearish_aligned":
+        return "bearish_aligned"
+
+    if alignment in {"early_bullish", "bullish_watch"}:
+        if lux_role.startswith("bearish"):
+            return "conflicted"
+        return BULLISH_WATCHLIST
+
+    if alignment in {"early_bearish", "bearish_watch"}:
+        if lux_role.startswith("bullish"):
+            return "conflicted"
+        return BEARISH_WATCHLIST
+
+    if alignment == "bullish_trend":
+        return "trend_only"
+
+    if alignment == "bearish_trend":
+        return "trend_only"
+
     if market_state == RANGE:
-        if alignment in {"bullish_aligned", "bearish_aligned"}:
-            return f"{alignment.split('_')[0]}_watchlist"
+        if smc_role.startswith("bullish") or lux_role.startswith("bullish"):
+            return BULLISH_WATCHLIST
+        if smc_role.startswith("bearish") or lux_role.startswith("bearish"):
+            return BEARISH_WATCHLIST
         return RANGE_WATCHLIST
 
-    return alignment
+    return "no_trade"
 
 
 def classify_action_bucket(
     adjusted_alignment: str,
     market_state: str,
+    alignment: str | None = None,
+    lux_role: str | None = None,
+    smc_role: str | None = None,
     consistency_score: Any = None,
 ) -> str:
     if adjusted_alignment in {"bullish_aligned", "bearish_aligned"}:
         if market_state in {EARLY_TREND, PULLBACK}:
-            if _consistency_allows_candidate(consistency_score):
+            if (
+                smc_role in {"bullish_trigger", "bearish_trigger"} or smc_role is None
+            ) and _consistency_allows_candidate(consistency_score):
                 return CANDIDATE
             return WATCHLIST
 
@@ -152,10 +187,34 @@ def classify_action_bucket(
     }:
         return WATCHLIST
 
+    if adjusted_alignment == "conflicted":
+        return NEEDS_REVIEW
+
+    if adjusted_alignment == "trend_only":
+        return AVOID
+
     if market_state in {EXTENDED, EXHAUSTION, RANGE}:
         return WATCHLIST
 
     if adjusted_alignment == "no_trade":
         return AVOID
 
+    if alignment in {"early_bullish", "early_bearish"}:
+        return WATCHLIST
+
     return NEEDS_REVIEW
+
+
+def _fallback_lux_role(row: Mapping[str, Any]) -> str | None:
+    lux_trend = str(row.get("lux_trend") or "")
+    lux_last_event = str(row.get("lux_last_event") or "")
+
+    if lux_trend == "BULLISH" and lux_last_event == "BUY":
+        return "bullish_trigger"
+    if lux_trend == "BEARISH" and lux_last_event == "SELL":
+        return "bearish_trigger"
+    if lux_trend == "BULLISH":
+        return "bullish_trend"
+    if lux_trend == "BEARISH":
+        return "bearish_trend"
+    return None

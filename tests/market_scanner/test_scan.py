@@ -151,19 +151,20 @@ def test_scan_universe_generates_csv_and_sorts_top_results(
     eligible = result_df[result_df["eligible"]]
     assert written_path == output_file
     assert output_file.exists()
-    assert eligible.iloc[0]["symbol"] == "MSFT"
-    assert eligible.iloc[0]["alignment"] == "mixed"
-    assert eligible.iloc[0]["market_state"] == "pullback"
-    assert eligible.iloc[0]["adjusted_alignment"] == "bearish_watchlist"
-    assert eligible.iloc[0]["action_bucket"] == "watchlist"
+    assert eligible.iloc[0]["symbol"] == "AAPL"
     aapl = result_df.loc[result_df["symbol"] == "AAPL"].iloc[0]
-    assert aapl["consistency_score"] == 4
+    assert aapl["consistency_score"] == 6
     assert aapl["alignment"] == "bullish_aligned"
     assert aapl["market_state"] == "unknown"
     assert aapl["adjusted_alignment"] == "bullish_aligned"
     assert aapl["action_bucket"] == "needs_review"
     assert aapl["lux_last_event"] == "BUY"
     assert aapl["smc_last_event_options_hint"] == "CALL"
+    msft = result_df.loc[result_df["symbol"] == "MSFT"].iloc[0]
+    assert msft["alignment"] == "bearish_trend"
+    assert msft["market_state"] == "pullback"
+    assert msft["adjusted_alignment"] == "trend_only"
+    assert msft["action_bucket"] == "avoid"
     assert (
         result_df.loc[result_df["symbol"] == "MISSING", "excluded_reason"].item()
         == "missing_csv"
@@ -342,15 +343,15 @@ def test_scan_universe_recent_event_mode_uses_watch_events_for_ranking(
     assert nvts["smc_active_event"] == "HOLD"
     assert nvts["smc_days_since_active_event"] == 2
     assert nvts["market_state"] == "range"
-    assert nvts["adjusted_alignment"] == "range_watchlist"
-    assert nvts["action_bucket"] == "watchlist"
-    assert nvts["alignment"] == "mixed"
-    assert nvts["consistency_score"] == -1
+    assert nvts["adjusted_alignment"] == "conflicted"
+    assert nvts["action_bucket"] == "needs_review"
+    assert nvts["alignment"] == "conflicted"
+    assert nvts["consistency_score"] == -2
     assert hood["alignment"] == "bearish_aligned"
     assert hood["market_state"] == "range"
-    assert hood["adjusted_alignment"] == "bearish_watchlist"
+    assert hood["adjusted_alignment"] == "bearish_aligned"
     assert hood["action_bucket"] == "watchlist"
-    assert hood["consistency_score"] == 1
+    assert hood["consistency_score"] == 5
 
     stdout = capsys.readouterr().out
     assert "lux_trend" in stdout
@@ -451,7 +452,7 @@ def test_smc_active_event_prefers_latest_reversal_over_older_confluence(
     assert aapl["smc_active_event_context"] == "short_term_bullish_reversal"
     assert aapl["smc_days_since_active_event"] == 22
     assert aapl["market_state"] == "unknown"
-    assert aapl["adjusted_alignment"] == "mixed"
+    assert aapl["adjusted_alignment"] == "bullish_aligned"
     assert aapl["action_bucket"] == "needs_review"
 
 
@@ -688,10 +689,10 @@ def test_recent_event_mode_falls_back_to_no_trade_without_active_directional_eve
     assert aapl["smc_active_event"] is None
     assert aapl["smc_active_event_options_hint"] is None
     assert aapl["market_state"] == "unknown"
-    assert aapl["adjusted_alignment"] == "no_trade"
+    assert aapl["adjusted_alignment"] == "trend_only"
     assert aapl["action_bucket"] == "avoid"
-    assert aapl["alignment"] == "no_trade"
-    assert aapl["consistency_score"] == 0
+    assert aapl["alignment"] == "bullish_trend"
+    assert aapl["consistency_score"] == 1
 
 
 def test_render_top_n_summary_uses_v2_decision_columns():

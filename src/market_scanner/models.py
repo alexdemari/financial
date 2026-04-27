@@ -8,6 +8,7 @@ class ScannerRow:
     avg_volume_20: float | None
     market_cap: float | None
     ranking_mode: str | None
+    lux_role: str | None
     lux_signal: str | None
     lux_options_hint: str | None
     lux_context: str | None
@@ -24,6 +25,7 @@ class ScannerRow:
     lux_active_event_context: str | None
     lux_active_event_date: str | None
     lux_days_since_active_event: int | None
+    smc_role: str | None
     smc_signal: str | None
     smc_options_hint: str | None
     smc_context: str | None

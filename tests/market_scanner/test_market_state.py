@@ -85,6 +85,26 @@ def test_nu_like_case_is_not_promoted_to_bullish_candidate():
     assert action_bucket in {"watchlist", "avoid", "needs_review"}
 
 
+def test_conflicted_alignment_becomes_needs_review():
+    row = {
+        "lux_trend": "BEARISH",
+        "lux_strength": "NORMAL",
+        "lux_last_event": "SELL",
+        "lux_days_since_last_event": 1,
+        "smc_bias": "NEUTRAL",
+        "smc_range_position_pct": 26,
+        "smc_rsi": 45,
+        "alignment": "conflicted",
+        "consistency_score": -2,
+    }
+
+    market_state, adjusted_alignment, action_bucket = _evaluate(row)
+
+    assert market_state in {RANGE, PULLBACK, UNKNOWN}
+    assert adjusted_alignment == "conflicted"
+    assert action_bucket == "needs_review"
+
+
 def test_baba_like_case_becomes_bearish_watchlist_not_candidate():
     row = {
         "lux_trend": "BEARISH",
@@ -168,7 +188,7 @@ def test_range_case_becomes_range_watchlist():
     market_state, adjusted_alignment, action_bucket = _evaluate(row)
 
     assert market_state == RANGE
-    assert adjusted_alignment == "range_watchlist"
+    assert adjusted_alignment == "bullish_watchlist"
     assert action_bucket == "watchlist"
 
 
