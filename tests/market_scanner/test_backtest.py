@@ -2,6 +2,7 @@ import pandas as pd
 import pytest
 
 from market_scanner.backtest import (
+    BacktestProfiler,
     build_backtest_event,
     compute_forward_metrics,
     generate_symbol_events,
@@ -9,6 +10,7 @@ from market_scanner.backtest import (
     infer_signal_side,
     infer_smc_signal_side,
     prepare_backtest_df,
+    render_profile_report,
     render_decision_summary,
     summarize_decision_events,
     summarize_events,
@@ -402,7 +404,7 @@ def test_summarize_smc_indicator_events_groups_by_smc_fields():
     }
 
 
-def test_prepare_backtest_df_applies_date_filters_and_max_bars():
+def test_prepare_backtest_df_applies_end_date_only_and_preserves_warmup_history():
     df = make_ohlc_df(
         closes=[100, 101, 102, 103, 104, 105],
         highs=[101, 102, 103, 104, 105, 106],
@@ -411,12 +413,10 @@ def test_prepare_backtest_df_applies_date_filters_and_max_bars():
 
     filtered = prepare_backtest_df(
         df=df,
-        start_date="2026-01-02",
         end_date="2026-01-06",
-        max_bars=3,
     )
 
-    assert list(filtered.index) == list(df.index[3:6])
+    assert list(filtered.index) == list(df.index)
 
 
 def test_generate_symbol_events_returns_no_events_for_short_series():
@@ -573,6 +573,214 @@ def test_generate_symbol_events_respects_scanner_history_floor(monkeypatch):
 
     assert len(events) == 3
     assert observed_indexes == [199, 200, 201]
+
+
+def test_generate_symbol_events_applies_start_date_without_cutting_warmup(monkeypatch):
+    total_rows = 210
+    df = make_ohlc_df(
+        closes=[100 + index for index in range(total_rows)],
+        highs=[101 + index for index in range(total_rows)],
+        lows=[99 + index for index in range(total_rows)],
+    )
+    observed_indexes: list[int] = []
+
+    def fake_build_scanner_row_from_history(
+        symbol, *, close, lux_historical, smc_historical, index, ranking_mode, **kwargs
+    ):
+        observed_indexes.append(index)
+        return make_row(ranking_mode=ranking_mode)
+
+    monkeypatch.setattr(
+        "market_scanner.backtest.build_scanner_row_from_history",
+        fake_build_scanner_row_from_history,
+    )
+
+    class FakeAnalyzer:
+        def generate_historical_signals(self, symbol, frame):
+            return pd.DataFrame(
+                {
+                    "date": frame.index,
+                    "close": frame["Close"].to_numpy(),
+                    "trend": ["BULLISH"] * len(frame),
+                    "strength": ["STRONG"] * len(frame),
+                    "adx": [25.0] * len(frame),
+                    "confirmation_signal": [1] * len(frame),
+                    "contrarian_signal": [0] * len(frame),
+                    "combined_signal": [1] * len(frame),
+                    "options_hint": ["CALL"] * len(frame),
+                    "signal_context": ["trend_confirmation_buy"] * len(frame),
+                    "signal_bias": ["BULLISH"] * len(frame),
+                    "range_position_pct": [45.0] * len(frame),
+                    "rsi": [52.0] * len(frame),
+                    "long_signal": [True] * len(frame),
+                    "short_signal": [False] * len(frame),
+                    "swing_high_marker": [False] * len(frame),
+                    "swing_low_marker": [False] * len(frame),
+                    "in_premium": [False] * len(frame),
+                    "in_discount": [True] * len(frame),
+                    "bullish_rejection": [False] * len(frame),
+                    "bearish_rejection": [False] * len(frame),
+                }
+            )
+
+    start_date = str(df.index[205].date())
+    events = generate_symbol_events(
+        symbol="AAPL",
+        df=df,
+        ranking_modes=["recent-event"],
+        min_bars=120,
+        horizons=[3],
+        win_threshold=0.01,
+        start_date=start_date,
+        lux_analyzer=FakeAnalyzer(),
+        smc_analyzer=FakeAnalyzer(),
+    )
+
+    assert len(events) == 2
+    assert observed_indexes == [205, 206]
+
+
+def test_generate_symbol_events_applies_max_bars_after_history_floor(monkeypatch):
+    total_rows = 210
+    df = make_ohlc_df(
+        closes=[100 + index for index in range(total_rows)],
+        highs=[101 + index for index in range(total_rows)],
+        lows=[99 + index for index in range(total_rows)],
+    )
+    observed_indexes: list[int] = []
+
+    def fake_build_scanner_row_from_history(
+        symbol, *, close, lux_historical, smc_historical, index, ranking_mode, **kwargs
+    ):
+        observed_indexes.append(index)
+        return make_row(ranking_mode=ranking_mode)
+
+    monkeypatch.setattr(
+        "market_scanner.backtest.build_scanner_row_from_history",
+        fake_build_scanner_row_from_history,
+    )
+
+    class FakeAnalyzer:
+        def generate_historical_signals(self, symbol, frame):
+            return pd.DataFrame(
+                {
+                    "date": frame.index,
+                    "close": frame["Close"].to_numpy(),
+                    "trend": ["BULLISH"] * len(frame),
+                    "strength": ["STRONG"] * len(frame),
+                    "adx": [25.0] * len(frame),
+                    "confirmation_signal": [1] * len(frame),
+                    "contrarian_signal": [0] * len(frame),
+                    "combined_signal": [1] * len(frame),
+                    "options_hint": ["CALL"] * len(frame),
+                    "signal_context": ["trend_confirmation_buy"] * len(frame),
+                    "signal_bias": ["BULLISH"] * len(frame),
+                    "range_position_pct": [45.0] * len(frame),
+                    "rsi": [52.0] * len(frame),
+                    "long_signal": [True] * len(frame),
+                    "short_signal": [False] * len(frame),
+                    "swing_high_marker": [False] * len(frame),
+                    "swing_low_marker": [False] * len(frame),
+                    "in_premium": [False] * len(frame),
+                    "in_discount": [True] * len(frame),
+                    "bullish_rejection": [False] * len(frame),
+                    "bearish_rejection": [False] * len(frame),
+                }
+            )
+
+    events = generate_symbol_events(
+        symbol="AAPL",
+        df=df,
+        ranking_modes=["recent-event"],
+        min_bars=120,
+        horizons=[3],
+        win_threshold=0.01,
+        max_bars=2,
+        lux_analyzer=FakeAnalyzer(),
+        smc_analyzer=FakeAnalyzer(),
+    )
+
+    assert len(events) == 2
+    assert observed_indexes == [205, 206]
+
+
+def test_generate_symbol_events_profiles_timings(monkeypatch):
+    total_rows = 205
+    df = make_ohlc_df(
+        closes=[100 + index for index in range(total_rows)],
+        highs=[101 + index for index in range(total_rows)],
+        lows=[99 + index for index in range(total_rows)],
+    )
+
+    def fake_build_scanner_row_from_history(
+        symbol, *, close, lux_historical, smc_historical, index, ranking_mode, **kwargs
+    ):
+        return make_row(ranking_mode=ranking_mode)
+
+    monkeypatch.setattr(
+        "market_scanner.backtest.build_scanner_row_from_history",
+        fake_build_scanner_row_from_history,
+    )
+
+    class FakeAnalyzer:
+        def generate_historical_signals(self, symbol, frame):
+            return pd.DataFrame(
+                {
+                    "date": frame.index,
+                    "close": frame["Close"].to_numpy(),
+                    "trend": ["BULLISH"] * len(frame),
+                    "strength": ["STRONG"] * len(frame),
+                    "adx": [25.0] * len(frame),
+                    "confirmation_signal": [1] * len(frame),
+                    "contrarian_signal": [0] * len(frame),
+                    "combined_signal": [1] * len(frame),
+                    "options_hint": ["CALL"] * len(frame),
+                    "signal_context": ["trend_confirmation_buy"] * len(frame),
+                    "signal_bias": ["BULLISH"] * len(frame),
+                    "range_position_pct": [45.0] * len(frame),
+                    "rsi": [52.0] * len(frame),
+                    "long_signal": [True] * len(frame),
+                    "short_signal": [False] * len(frame),
+                    "swing_high_marker": [False] * len(frame),
+                    "swing_low_marker": [False] * len(frame),
+                    "in_premium": [False] * len(frame),
+                    "in_discount": [True] * len(frame),
+                    "bullish_rejection": [False] * len(frame),
+                    "bearish_rejection": [False] * len(frame),
+                }
+            )
+
+    profiler = BacktestProfiler()
+    events = generate_symbol_events(
+        symbol="AAPL",
+        df=df,
+        ranking_modes=["recent-event"],
+        min_bars=120,
+        horizons=[3],
+        win_threshold=0.01,
+        profiler=profiler,
+        lux_analyzer=FakeAnalyzer(),
+        smc_analyzer=FakeAnalyzer(),
+    )
+
+    assert len(events) == 3
+    timings = profiler.snapshot()
+    assert "lux_historical_generation" in timings
+    assert "smc_historical_generation" in timings
+    assert "build_scanner_row" in timings
+    assert "forward_metrics" in timings
+    assert "per_bar_loop" in timings
+
+
+def test_render_profile_report_lists_timings():
+    report = render_profile_report(
+        {"build_scanner_row": 1.25, "forward_metrics": 0.5, "csv_writing": 0.1}
+    )
+
+    assert "Performance Report" in report
+    assert "total measured time" in report
+    assert "build_scanner_row: 1.250s" in report
+    assert "forward_metrics: 0.500s" in report
 
 
 def test_render_decision_summary_uses_directional_metrics_not_avg_return():

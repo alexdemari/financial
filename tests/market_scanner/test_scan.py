@@ -2,7 +2,13 @@ from types import SimpleNamespace
 
 import pandas as pd
 
+from market_scanner.event_state import (
+    LUX_ACTIVE_PRIORITY_CONTEXTS,
+    SMC_ACTIVE_PRIORITY_CONTEXTS,
+    build_event_state_history,
+)
 from market_scanner.scan import _smc_context, scan_universe
+from market_scanner.scanner_row import build_scanner_row_from_history
 from market_scanner.report_writer import render_top_n_summary
 from stock_analyzer.signals.smc import SMCSignalGenerator
 
@@ -18,6 +24,109 @@ def make_csv(path, rows: int = 220, volume: int = 2_000_000):
             "Volume": [volume] * rows,
         }
     ).to_csv(path, index=False)
+
+
+def test_precomputed_event_state_matches_history_scanner_row():
+    dates = pd.date_range("2026-01-01", periods=6, freq="D", tz="UTC")
+    lux_historical = pd.DataFrame(
+        {
+            "date": dates,
+            "close": [100, 101, 102, 103, 104, 105],
+            "trend": ["BULLISH"] * 6,
+            "strength": ["STRONG"] * 6,
+            "adx": [25.0] * 6,
+            "confirmation_signal": [0, 1, 0, 0, 0, 0],
+            "contrarian_signal": [0, 0, 0, -1, 0, 0],
+            "combined_signal": [0, 1, 0, -1, 0, 0],
+            "options_hint": [
+                "NO_TRADE",
+                "CALL",
+                "NO_TRADE",
+                "PUT",
+                "NO_TRADE",
+                "NO_TRADE",
+            ],
+            "signal_context": [
+                "no_trade",
+                "trend_confirmation_buy",
+                "no_trade",
+                "contrarian_reversal_sell",
+                "no_trade",
+                "no_trade",
+            ],
+        }
+    )
+    smc_historical = pd.DataFrame(
+        {
+            "date": dates,
+            "close": [100, 101, 102, 103, 104, 105],
+            "combined_signal": [0, 0, 1, 0, 0, 0],
+            "signal_bias": [
+                "NEUTRAL",
+                "NEUTRAL",
+                "BULLISH",
+                "NEUTRAL",
+                "NEUTRAL",
+                "NEUTRAL",
+            ],
+            "range_position_pct": [50.0, 48.0, 45.0, 44.0, 43.0, 42.0],
+            "rsi": [50.0, 51.0, 52.0, 53.0, 54.0, 55.0],
+            "options_hint": [
+                "NO_TRADE",
+                "NO_TRADE",
+                "CALL",
+                "NO_TRADE",
+                "CALL_WATCH",
+                "NO_TRADE",
+            ],
+            "signal_context": [
+                "no_trade",
+                "no_trade",
+                "bullish_confluence",
+                "no_trade",
+                "short_term_bullish_reversal",
+                "no_trade",
+            ],
+            "long_signal": [False, False, True, False, False, False],
+            "short_signal": [False] * 6,
+            "swing_high_marker": [False] * 6,
+            "swing_low_marker": [False, False, False, False, True, False],
+            "in_premium": [False] * 6,
+            "in_discount": [False, False, True, False, True, False],
+            "bullish_rejection": [False] * 6,
+            "bearish_rejection": [False] * 6,
+        }
+    )
+    index = 5
+
+    slow_row = build_scanner_row_from_history(
+        "AAPL",
+        close=105.0,
+        lux_historical=lux_historical,
+        smc_historical=smc_historical,
+        index=index,
+        ranking_mode="recent-event",
+    )
+    lux_event_states = build_event_state_history(
+        lux_historical,
+        active_priority_contexts=LUX_ACTIVE_PRIORITY_CONTEXTS,
+    )
+    smc_event_states = build_event_state_history(
+        smc_historical,
+        active_priority_contexts=SMC_ACTIVE_PRIORITY_CONTEXTS,
+    )
+    precomputed_row = build_scanner_row_from_history(
+        "AAPL",
+        close=105.0,
+        lux_historical=lux_historical,
+        smc_historical=smc_historical,
+        index=index,
+        ranking_mode="recent-event",
+        lux_event_state=lux_event_states[index],
+        smc_event_state=smc_event_states[index],
+    )
+
+    assert precomputed_row == slow_row
 
 
 def test_scan_universe_generates_csv_and_sorts_top_results(

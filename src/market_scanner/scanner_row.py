@@ -73,22 +73,28 @@ def build_scanner_row_from_history(
     ranking_mode: str,
     avg_volume_20: float | None = None,
     market_cap: float | None = None,
+    lux_event_state: dict[str, dict[str, str | int | None]] | None = None,
+    smc_event_state: dict[str, dict[str, str | int | None]] | None = None,
 ) -> dict:
-    lux_slice = lux_historical.iloc[: index + 1]
-    smc_slice = smc_historical.iloc[: index + 1]
-    lux_signal = lux_signal_from_history(symbol, lux_slice.iloc[-1])
-    smc_signal = smc_signal_from_history(symbol, smc_slice.iloc[-1])
+    lux_signal = lux_signal_from_history(symbol, lux_historical.iloc[index])
+    smc_signal = smc_signal_from_history(symbol, smc_historical.iloc[index])
+
+    if lux_event_state is None or smc_event_state is None:
+        lux_historical = lux_historical.iloc[: index + 1]
+        smc_historical = smc_historical.iloc[: index + 1]
 
     return _assemble_scanner_row(
         symbol=symbol,
         lux_signal=lux_signal,
         smc_signal=smc_signal,
-        lux_historical=lux_slice,
-        smc_historical=smc_slice,
+        lux_historical=lux_historical,
+        smc_historical=smc_historical,
         ranking_mode=ranking_mode,
         close=close,
         avg_volume_20=avg_volume_20,
         market_cap=market_cap,
+        lux_event_state=lux_event_state,
+        smc_event_state=smc_event_state,
     )
 
 
@@ -103,11 +109,29 @@ def _assemble_scanner_row(
     close: float | None,
     avg_volume_20: float | None,
     market_cap: float | None,
+    lux_event_state: dict[str, dict[str, str | int | None]] | None = None,
+    smc_event_state: dict[str, dict[str, str | int | None]] | None = None,
 ) -> dict:
-    lux_event = latest_model_event(lux_historical)
-    lux_active = active_lux_event(lux_historical)
-    smc_event = latest_model_event(smc_historical)
-    smc_active = active_smc_event(smc_historical)
+    lux_event = (
+        lux_event_state["latest"]
+        if lux_event_state is not None
+        else latest_model_event(lux_historical)
+    )
+    lux_active = (
+        lux_event_state["active"]
+        if lux_event_state is not None
+        else active_lux_event(lux_historical)
+    )
+    smc_event = (
+        smc_event_state["latest"]
+        if smc_event_state is not None
+        else latest_model_event(smc_historical)
+    )
+    smc_active = (
+        smc_event_state["active"]
+        if smc_event_state is not None
+        else active_smc_event(smc_historical)
+    )
     selected_lux_event = _selected_state_event(ranking_mode, lux_event, lux_active)
     selected_smc_event = _selected_state_event(ranking_mode, smc_event, smc_active)
 

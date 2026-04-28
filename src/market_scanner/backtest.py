@@ -1,4 +1,6 @@
 import argparse
+import time
+from contextlib import contextmanager
 from pathlib import Path
 
 import pandas as pd
@@ -11,6 +13,11 @@ from market_scanner.pipeline import (
 )
 from market_scanner.report_writer import write_csv_report
 from market_scanner.scanner_row import build_scanner_row_from_history
+from market_scanner.event_state import (
+    LUX_ACTIVE_PRIORITY_CONTEXTS,
+    SMC_ACTIVE_PRIORITY_CONTEXTS,
+    build_event_state_history,
+)
 from stock_analyzer.analyzer import StockDataAnalyzer
 
 DEFAULT_HORIZONS = (3, 5, 10, 20)
@@ -18,6 +25,7 @@ DEFAULT_MIN_BARS = 120
 DEFAULT_WIN_THRESHOLD = 0.01
 SCANNER_ROW_MIN_BARS = MIN_HISTORY_ROWS
 DEFAULT_REPORTS_DIR = "reports/market_scanner"
+EVENT_STATE_PRECOMPUTE_MIN_ROWS = 50
 DETAILED_SUMMARY_GROUP_COLUMNS = [
     "signal_side",
     "action_bucket",
@@ -54,6 +62,24 @@ DECISION_SUMMARY_GROUP_COLUMNS = [
     "lux_strength",
     "ranking_mode",
 ]
+
+
+class BacktestProfiler:
+    def __init__(self) -> None:
+        self.timings: dict[str, float] = {}
+
+    @contextmanager
+    def track(self, name: str):
+        started_at = time.perf_counter()
+        try:
+            yield
+        finally:
+            self.timings[name] = self.timings.get(name, 0.0) + (
+                time.perf_counter() - started_at
+            )
+
+    def snapshot(self) -> dict[str, float]:
+        return dict(self.timings)
 
 
 def infer_signal_side(adjusted_alignment: str | None) -> str:
@@ -192,6 +218,9 @@ def generate_symbol_events(
     min_bars: int,
     horizons: list[int],
     win_threshold: float,
+    start_date: str | None = None,
+    max_bars: int | None = None,
+    profiler: BacktestProfiler | None = None,
     lux_analyzer: StockDataAnalyzer | None = None,
     smc_analyzer: StockDataAnalyzer | None = None,
 ) -> list[dict]:
@@ -204,32 +233,112 @@ def generate_symbol_events(
     start_index = max(effective_min_bars - 1, 0)
     lux_analyzer = lux_analyzer or StockDataAnalyzer(signal_model="lux")
     smc_analyzer = smc_analyzer or StockDataAnalyzer(signal_model="smc")
-    lux_historical = lux_analyzer.generate_historical_signals(symbol, df)
-    smc_historical = smc_analyzer.generate_historical_signals(symbol, df)
+    if profiler is None:
+        lux_historical = lux_analyzer.generate_historical_signals(symbol, df)
+        smc_historical = smc_analyzer.generate_historical_signals(symbol, df)
+    else:
+        with profiler.track("lux_historical_generation"):
+            lux_historical = lux_analyzer.generate_historical_signals(symbol, df)
+        with profiler.track("smc_historical_generation"):
+            smc_historical = smc_analyzer.generate_historical_signals(symbol, df)
     close_column = _require_column(df, "close")
-
-    for i in range(start_index, len(df) - max_horizon):
-        entry_close = float(df.iloc[i][close_column])
-        for ranking_mode in ranking_modes:
-            row = build_scanner_row_from_history(
-                symbol=symbol,
-                close=entry_close,
-                lux_historical=lux_historical,
-                smc_historical=smc_historical,
-                index=i,
-                ranking_mode=ranking_mode,
+    evaluation_indexes = _resolve_evaluation_indexes(
+        df=df,
+        start_index=start_index,
+        max_horizon=max_horizon,
+        start_date=start_date,
+        max_bars=max_bars,
+    )
+    use_event_state_precompute = (
+        len(evaluation_indexes) * len(ranking_modes) >= EVENT_STATE_PRECOMPUTE_MIN_ROWS
+    )
+    lux_event_states = None
+    smc_event_states = None
+    if use_event_state_precompute:
+        if profiler is None:
+            lux_event_states = build_event_state_history(
+                lux_historical,
+                active_priority_contexts=LUX_ACTIVE_PRIORITY_CONTEXTS,
             )
-            events.append(
-                build_backtest_event(
-                    symbol=symbol,
-                    date=pd.Timestamp(df.index[i]),
-                    row=row,
-                    df=df,
-                    index=i,
-                    horizons=horizons,
-                    win_threshold=win_threshold,
+            smc_event_states = build_event_state_history(
+                smc_historical,
+                active_priority_contexts=SMC_ACTIVE_PRIORITY_CONTEXTS,
+            )
+        else:
+            with profiler.track("event_state_precompute"):
+                lux_event_states = build_event_state_history(
+                    lux_historical,
+                    active_priority_contexts=LUX_ACTIVE_PRIORITY_CONTEXTS,
                 )
-            )
+                smc_event_states = build_event_state_history(
+                    smc_historical,
+                    active_priority_contexts=SMC_ACTIVE_PRIORITY_CONTEXTS,
+                )
+
+    for i in evaluation_indexes:
+        if profiler is None:
+            entry_close = float(df.iloc[i][close_column])
+            for ranking_mode in ranking_modes:
+                row = build_scanner_row_from_history(
+                    symbol=symbol,
+                    close=entry_close,
+                    lux_historical=lux_historical,
+                    smc_historical=smc_historical,
+                    index=i,
+                    ranking_mode=ranking_mode,
+                    lux_event_state=(
+                        lux_event_states[i] if lux_event_states is not None else None
+                    ),
+                    smc_event_state=(
+                        smc_event_states[i] if smc_event_states is not None else None
+                    ),
+                )
+                events.append(
+                    build_backtest_event(
+                        symbol=symbol,
+                        date=pd.Timestamp(df.index[i]),
+                        row=row,
+                        df=df,
+                        index=i,
+                        horizons=horizons,
+                        win_threshold=win_threshold,
+                    )
+                )
+            continue
+
+        with profiler.track("per_bar_loop"):
+            entry_close = float(df.iloc[i][close_column])
+            for ranking_mode in ranking_modes:
+                with profiler.track("build_scanner_row"):
+                    row = build_scanner_row_from_history(
+                        symbol=symbol,
+                        close=entry_close,
+                        lux_historical=lux_historical,
+                        smc_historical=smc_historical,
+                        index=i,
+                        ranking_mode=ranking_mode,
+                        lux_event_state=(
+                            lux_event_states[i]
+                            if lux_event_states is not None
+                            else None
+                        ),
+                        smc_event_state=(
+                            smc_event_states[i]
+                            if smc_event_states is not None
+                            else None
+                        ),
+                    )
+                with profiler.track("forward_metrics"):
+                    event = build_backtest_event(
+                        symbol=symbol,
+                        date=pd.Timestamp(df.index[i]),
+                        row=row,
+                        df=df,
+                        index=i,
+                        horizons=horizons,
+                        win_threshold=win_threshold,
+                    )
+                events.append(event)
 
     return events
 
@@ -291,55 +400,117 @@ def backtest_universe(
     start_date: str | None = None,
     end_date: str | None = None,
     max_bars: int | None = None,
+    profile: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     horizons = horizons or list(DEFAULT_HORIZONS)
     ranking_modes = _resolve_ranking_modes(ranking_mode)
-    universe = load_selected_universe(universe_file, symbols=symbols)
-    analyzers = create_analyzers(StockDataAnalyzer)
+    profiler = BacktestProfiler() if profile else None
+    if profiler is None:
+        universe = load_selected_universe(universe_file, symbols=symbols)
+        analyzers = create_analyzers(StockDataAnalyzer)
+    else:
+        with profiler.track("data_loading"):
+            universe = load_selected_universe(universe_file, symbols=symbols)
+            analyzers = create_analyzers(StockDataAnalyzer)
     events: list[dict] = []
 
     def _transform_df(df: pd.DataFrame) -> pd.DataFrame:
         return prepare_backtest_df(
             df=df.sort_index(),
-            start_date=start_date,
             end_date=end_date,
-            max_bars=max_bars,
         )
 
-    for symbol_data in iter_symbol_data(universe, data_dir, transform_df=_transform_df):
+    if profiler is None:
+        symbol_data_rows = iter_symbol_data(
+            universe, data_dir, transform_df=_transform_df
+        )
+    else:
+        with profiler.track("data_loading"):
+            symbol_data_rows = iter_symbol_data(
+                universe,
+                data_dir,
+                transform_df=_transform_df,
+            )
+
+    for symbol_data in symbol_data_rows:
         if symbol_data.load_error is not None or symbol_data.df is None:
             continue
 
         symbol = symbol_data.symbol
         df = symbol_data.df
 
-        events.extend(
-            generate_symbol_events(
-                symbol=symbol,
-                df=df,
-                ranking_modes=ranking_modes,
-                min_bars=min_bars,
-                horizons=horizons,
-                win_threshold=win_threshold,
-                lux_analyzer=analyzers.lux_analyzer,
-                smc_analyzer=analyzers.smc_analyzer,
+        if profiler is None:
+            events.extend(
+                generate_symbol_events(
+                    symbol=symbol,
+                    df=df,
+                    ranking_modes=ranking_modes,
+                    min_bars=min_bars,
+                    horizons=horizons,
+                    win_threshold=win_threshold,
+                    start_date=start_date,
+                    max_bars=max_bars,
+                    lux_analyzer=analyzers.lux_analyzer,
+                    smc_analyzer=analyzers.smc_analyzer,
+                )
             )
-        )
+            continue
+
+        with profiler.track("per_symbol_loop"):
+            events.extend(
+                generate_symbol_events(
+                    symbol=symbol,
+                    df=df,
+                    ranking_modes=ranking_modes,
+                    min_bars=min_bars,
+                    horizons=horizons,
+                    win_threshold=win_threshold,
+                    start_date=start_date,
+                    max_bars=max_bars,
+                    profiler=profiler,
+                    lux_analyzer=analyzers.lux_analyzer,
+                    smc_analyzer=analyzers.smc_analyzer,
+                )
+            )
 
     events_df = pd.DataFrame(events)
-    detailed_summary_df = pd.DataFrame(summarize_detailed_events(events, horizons))
-    decision_summary_df = pd.DataFrame(summarize_decision_events(events, horizons))
-    lux_summary_df = pd.DataFrame(summarize_lux_indicator_events(events, horizons))
-    smc_summary_df = pd.DataFrame(summarize_smc_indicator_events(events, horizons))
-    write_csv_report(events_df, output_events)
-    write_csv_report(detailed_summary_df, output_detailed_summary)
-    write_csv_report(decision_summary_df, output_decision_summary)
-    write_csv_report(lux_summary_df, output_lux_summary)
-    write_csv_report(smc_summary_df, output_smc_summary)
+    if profiler is None:
+        detailed_summary_df = pd.DataFrame(summarize_detailed_events(events, horizons))
+        decision_summary_df = pd.DataFrame(summarize_decision_events(events, horizons))
+        lux_summary_df = pd.DataFrame(summarize_lux_indicator_events(events, horizons))
+        smc_summary_df = pd.DataFrame(summarize_smc_indicator_events(events, horizons))
+        write_csv_report(events_df, output_events)
+        write_csv_report(detailed_summary_df, output_detailed_summary)
+        write_csv_report(decision_summary_df, output_decision_summary)
+        write_csv_report(lux_summary_df, output_lux_summary)
+        write_csv_report(smc_summary_df, output_smc_summary)
+    else:
+        with profiler.track("summary_generation"):
+            detailed_summary_df = pd.DataFrame(
+                summarize_detailed_events(events, horizons)
+            )
+            decision_summary_df = pd.DataFrame(
+                summarize_decision_events(events, horizons)
+            )
+            lux_summary_df = pd.DataFrame(
+                summarize_lux_indicator_events(events, horizons)
+            )
+            smc_summary_df = pd.DataFrame(
+                summarize_smc_indicator_events(events, horizons)
+            )
+        with profiler.track("csv_writing"):
+            write_csv_report(events_df, output_events)
+            write_csv_report(detailed_summary_df, output_detailed_summary)
+            write_csv_report(decision_summary_df, output_decision_summary)
+            write_csv_report(lux_summary_df, output_lux_summary)
+            write_csv_report(smc_summary_df, output_smc_summary)
 
     terminal_summary = render_decision_summary(decision_summary_df)
     if terminal_summary:
         print(terminal_summary)
+    if profiler is not None:
+        print()
+        print(render_profile_report(profiler.snapshot()))
     print(f"\nExported events: {Path(output_events)}")
     print(f"Exported detailed summary: {Path(output_detailed_summary)}")
     print(f"Exported decision summary: {Path(output_decision_summary)}")
@@ -445,6 +616,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--start-date", default=None)
     parser.add_argument("--end-date", default=None)
     parser.add_argument("--max-bars", type=int, default=None)
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        help="Print cumulative execution timings for the current run.",
+    )
     return parser
 
 
@@ -468,6 +644,7 @@ def main(argv: list[str] | None = None) -> int:
         start_date=args.start_date,
         end_date=args.end_date,
         max_bars=args.max_bars,
+        profile=args.profile,
     )
     return 0
 
@@ -475,18 +652,24 @@ def main(argv: list[str] | None = None) -> int:
 def prepare_backtest_df(
     *,
     df: pd.DataFrame,
-    start_date: str | None = None,
     end_date: str | None = None,
-    max_bars: int | None = None,
 ) -> pd.DataFrame:
     filtered = df.sort_index()
-    if start_date is not None:
-        filtered = filtered[filtered.index >= pd.Timestamp(start_date, tz="UTC")]
     if end_date is not None:
         filtered = filtered[filtered.index <= pd.Timestamp(end_date, tz="UTC")]
-    if max_bars is not None:
-        filtered = filtered.tail(max_bars)
     return filtered.copy()
+
+
+def render_profile_report(timings: dict[str, float]) -> str:
+    if not timings:
+        return "Performance Report\n- no timings collected"
+
+    ordered = sorted(timings.items(), key=lambda item: item[1], reverse=True)
+    total = sum(duration for _, duration in ordered)
+    lines = ["Performance Report", f"- total measured time: {total:.3f}s"]
+    for name, duration in ordered:
+        lines.append(f"- {name}: {duration:.3f}s")
+    return "\n".join(lines)
 
 
 def _summarize_events(
@@ -646,6 +829,28 @@ def _parse_symbols(raw_symbols: str | None) -> list[str] | None:
         symbol.strip().upper() for symbol in raw_symbols.split(",") if symbol.strip()
     ]
     return symbols or None
+
+
+def _resolve_evaluation_indexes(
+    *,
+    df: pd.DataFrame,
+    start_index: int,
+    max_horizon: int,
+    start_date: str | None,
+    max_bars: int | None,
+) -> list[int]:
+    candidate_indexes = list(range(start_index, len(df) - max_horizon))
+
+    if start_date is not None:
+        start_timestamp = pd.Timestamp(start_date, tz="UTC")
+        candidate_indexes = [
+            index for index in candidate_indexes if df.index[index] >= start_timestamp
+        ]
+
+    if max_bars is not None:
+        candidate_indexes = candidate_indexes[-max_bars:]
+
+    return candidate_indexes
 
 
 def _require_column(df: pd.DataFrame, name: str) -> str:

@@ -4,6 +4,15 @@ import pandas as pd
 
 from market_scanner.ranking import signal_to_label
 
+LUX_ACTIVE_PRIORITY_CONTEXTS = (
+    ("trend_confirmation_buy", "trend_confirmation_sell"),
+    ("contrarian_reversal_buy", "contrarian_reversal_sell"),
+)
+SMC_ACTIVE_PRIORITY_CONTEXTS = (
+    ("short_term_bullish_reversal", "short_term_bearish_reversal"),
+    ("bullish_confluence", "bearish_confluence"),
+)
+
 
 def optional_float(value) -> float | None:
     if value is None or pd.isna(value):
@@ -101,19 +110,58 @@ def latest_model_event(historical: pd.DataFrame) -> dict[str, str | int | None]:
 
 
 def active_lux_event(historical: pd.DataFrame) -> dict[str, str | int | None]:
-    priority_contexts = (
-        ("trend_confirmation_buy", "trend_confirmation_sell"),
-        ("contrarian_reversal_buy", "contrarian_reversal_sell"),
-    )
-    return latest_event_by_priority(historical, priority_contexts)
+    return latest_event_by_priority(historical, LUX_ACTIVE_PRIORITY_CONTEXTS)
 
 
 def active_smc_event(historical: pd.DataFrame) -> dict[str, str | int | None]:
-    priority_contexts = (
-        ("short_term_bullish_reversal", "short_term_bearish_reversal"),
-        ("bullish_confluence", "bearish_confluence"),
-    )
-    return latest_event_by_priority(historical, priority_contexts)
+    return latest_event_by_priority(historical, SMC_ACTIVE_PRIORITY_CONTEXTS)
+
+
+def build_event_state_history(
+    historical: pd.DataFrame,
+    *,
+    active_priority_contexts: tuple[tuple[str, str], ...],
+) -> list[dict[str, dict[str, str | int | None]]]:
+    latest_row = None
+    active_row = None
+    active_rank = None
+    priority_rank = _priority_rank(active_priority_contexts)
+    event_mask_values = event_mask(historical) if not historical.empty else []
+    states = []
+
+    for position, (_, row) in enumerate(historical.iterrows()):
+        if bool(event_mask_values.iloc[position]):
+            latest_row = row
+        if (
+            "signal_context" in historical.columns
+            and row.get("signal_context") in priority_rank
+        ):
+            candidate_rank = priority_rank[str(row.get("signal_context"))]
+            if active_row is None or _is_better_active_event(
+                row,
+                candidate_rank=candidate_rank,
+                active_row=active_row,
+                active_rank=active_rank,
+            ):
+                active_row = row
+                active_rank = candidate_rank
+
+        states.append(
+            {
+                "latest": (
+                    _event_from_current_row(latest_row, current_row=row)
+                    if latest_row is not None
+                    else empty_event()
+                ),
+                "active": (
+                    _event_from_current_row(active_row, current_row=row)
+                    if active_row is not None
+                    else empty_event()
+                ),
+            }
+        )
+
+    return states
 
 
 def rank_inputs(
@@ -153,10 +201,7 @@ def latest_event_by_priority(
     if historical.empty or "signal_context" not in historical.columns:
         return empty_event()
 
-    priority_rank: dict[str, int] = {}
-    for rank, (bullish_context, bearish_context) in enumerate(priority_contexts):
-        priority_rank[bullish_context] = rank
-        priority_rank[bearish_context] = rank
+    priority_rank = _priority_rank(priority_contexts)
 
     matching = historical[
         historical["signal_context"].isin(priority_rank.keys())
@@ -178,6 +223,15 @@ def event_from_row(
 ) -> dict[str, str | int | None]:
     last_date = pd.Timestamp(row["date"])
     final_date = pd.Timestamp(historical.iloc[-1]["date"])
+    return _event_from_dates(row, last_date=last_date, final_date=final_date)
+
+
+def _event_from_dates(
+    row: pd.Series,
+    *,
+    last_date: pd.Timestamp,
+    final_date: pd.Timestamp,
+) -> dict[str, str | int | None]:
     return {
         "signal": signal_to_label(row["combined_signal"]),
         "options_hint": str(row.get("options_hint", "NO_TRADE")),
@@ -185,3 +239,41 @@ def event_from_row(
         "date": last_date.isoformat(),
         "days_since": int((final_date.normalize() - last_date.normalize()).days),
     }
+
+
+def _event_from_current_row(
+    event_row: pd.Series,
+    *,
+    current_row: pd.Series,
+) -> dict[str, str | int | None]:
+    return _event_from_dates(
+        event_row,
+        last_date=pd.Timestamp(event_row["date"]),
+        final_date=pd.Timestamp(current_row["date"]),
+    )
+
+
+def _priority_rank(
+    priority_contexts: tuple[tuple[str, str], ...],
+) -> dict[str, int]:
+    priority_rank: dict[str, int] = {}
+    for rank, (bullish_context, bearish_context) in enumerate(priority_contexts):
+        priority_rank[bullish_context] = rank
+        priority_rank[bearish_context] = rank
+    return priority_rank
+
+
+def _is_better_active_event(
+    row: pd.Series,
+    *,
+    candidate_rank: int,
+    active_row: pd.Series,
+    active_rank: int | None,
+) -> bool:
+    row_date = pd.Timestamp(row["date"])
+    active_date = pd.Timestamp(active_row["date"])
+    if row_date > active_date:
+        return True
+    if row_date == active_date and active_rank is not None:
+        return candidate_rank < active_rank
+    return False
