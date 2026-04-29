@@ -12,6 +12,7 @@ class EligibilityResult:
     eligible: bool
     excluded_reason: str | None
     avg_volume_20: float | None
+    avg_dollar_volume_20: float | None
     close: float | None
 
 
@@ -32,6 +33,7 @@ def evaluate_symbol_eligibility(
     df: pd.DataFrame | None,
     min_market_cap: float,
     min_avg_volume_20: float,
+    min_avg_dollar_volume_20: float = 0,
     min_history_rows: int = MIN_HISTORY_ROWS,
 ) -> EligibilityResult:
     if market_cap is None or pd.isna(market_cap) or market_cap < min_market_cap:
@@ -39,6 +41,7 @@ def evaluate_symbol_eligibility(
             eligible=False,
             excluded_reason="market_cap_below_threshold",
             avg_volume_20=None,
+            avg_dollar_volume_20=None,
             close=_latest_close(df),
         )
 
@@ -47,6 +50,7 @@ def evaluate_symbol_eligibility(
             eligible=False,
             excluded_reason="missing_csv",
             avg_volume_20=None,
+            avg_dollar_volume_20=None,
             close=None,
         )
 
@@ -55,15 +59,29 @@ def evaluate_symbol_eligibility(
             eligible=False,
             excluded_reason="insufficient_history",
             avg_volume_20=None,
+            avg_dollar_volume_20=None,
             close=_latest_close(df),
         )
 
     avg_volume_20 = calculate_avg_volume_20(df)
+    avg_dollar_volume_20 = calculate_avg_dollar_volume_20(df)
     if avg_volume_20 is None or avg_volume_20 < min_avg_volume_20:
         return EligibilityResult(
             eligible=False,
             excluded_reason="avg_volume_20_below_threshold",
             avg_volume_20=avg_volume_20,
+            avg_dollar_volume_20=avg_dollar_volume_20,
+            close=_latest_close(df),
+        )
+
+    if min_avg_dollar_volume_20 > 0 and (
+        avg_dollar_volume_20 is None or avg_dollar_volume_20 < min_avg_dollar_volume_20
+    ):
+        return EligibilityResult(
+            eligible=False,
+            excluded_reason="avg_dollar_volume_20_below_threshold",
+            avg_volume_20=avg_volume_20,
+            avg_dollar_volume_20=avg_dollar_volume_20,
             close=_latest_close(df),
         )
 
@@ -71,6 +89,7 @@ def evaluate_symbol_eligibility(
         eligible=True,
         excluded_reason=None,
         avg_volume_20=avg_volume_20,
+        avg_dollar_volume_20=avg_dollar_volume_20,
         close=_latest_close(df),
     )
 
@@ -84,6 +103,20 @@ def calculate_avg_volume_20(df: pd.DataFrame) -> float | None:
     if volume.isna().any():
         return None
     return float(volume.mean())
+
+
+def calculate_avg_dollar_volume_20(df: pd.DataFrame) -> float | None:
+    close_column = _detect_column(df, ["close"])
+    volume_column = _detect_column(df, ["volume"])
+    if close_column is None or volume_column is None or len(df) < 20:
+        return None
+
+    close = pd.to_numeric(df[close_column], errors="coerce").tail(20)
+    volume = pd.to_numeric(df[volume_column], errors="coerce").tail(20)
+    dollar_volume = close * volume
+    if dollar_volume.isna().any():
+        return None
+    return float(dollar_volume.mean())
 
 
 def _detect_column(df: pd.DataFrame, candidates: list[str]) -> str | None:

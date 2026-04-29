@@ -160,6 +160,21 @@ PYTHONPATH=src uv run python -m market_scanner.scan \
   --output reports/market_scanner/scan.csv
 ```
 
+SMC-focused scan using recent signals, last 200 bars, and liquidity by average
+dollar volume:
+
+```bash
+PYTHONPATH=src uv run python -m market_scanner.scan \
+  --universe-file data/scanner_universe_sample.csv \
+  --data-dir data/stocks/1D \
+  --min-market-cap 2000000 \
+  --min-avg-dollar-volume-20 2000000 \
+  --analysis-bars 200 \
+  --ranking-mode recent-event \
+  --sort-by smc-recent \
+  --output reports/market_scanner/scan_smc_recent.csv
+```
+
 ### Backtest
 
 ```bash

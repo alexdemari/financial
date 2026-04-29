@@ -150,6 +150,7 @@ def test_scan_universe_generates_csv_and_sorts_top_results(
             self.signal_model = signal_model
 
         def generate_signal(self, symbol, df):
+            assert len(df) == 200
             if self.signal_model == "lux":
                 if symbol == "AAPL":
                     return SimpleNamespace(
@@ -208,6 +209,7 @@ def test_scan_universe_generates_csv_and_sorts_top_results(
             )
 
         def generate_historical_signals(self, symbol, df):
+            assert len(df) == 200
             if self.signal_model == "lux":
                 if symbol == "AAPL":
                     return pd.DataFrame(
@@ -253,8 +255,11 @@ def test_scan_universe_generates_csv_and_sorts_top_results(
         data_dir=data_dir,
         min_market_cap=1_000_000_000,
         min_avg_volume_20=1_000_000,
+        min_avg_dollar_volume_20=20_000_000,
         top=10,
         output=output_file,
+        analysis_bars=200,
+        sort_by="smc-recent",
     )
 
     eligible = result_df[result_df["eligible"]]
@@ -263,6 +268,7 @@ def test_scan_universe_generates_csv_and_sorts_top_results(
     assert eligible.iloc[0]["symbol"] == "AAPL"
     aapl = result_df.loc[result_df["symbol"] == "AAPL"].iloc[0]
     assert aapl["consistency_score"] == 6
+    assert aapl["avg_dollar_volume_20"] == 21_000_000.0
     assert aapl["alignment"] == "bullish_aligned"
     assert aapl["market_state"] == "unknown"
     assert aapl["adjusted_alignment"] == "bullish_aligned"
@@ -295,6 +301,7 @@ def test_scan_universe_generates_csv_and_sorts_top_results(
     assert "AAPL" in stdout
     assert "MSFT" in stdout
     assert "adjusted_alignment" in stdout
+    assert "smc_active_event" in stdout
     assert "market_state" in stdout
     assert "action_bucket" in stdout
     assert "Exported:" in stdout
@@ -873,3 +880,51 @@ def test_render_top_n_summary_prioritizes_candidates_over_watchlists():
 
     assert "AAA" in lines[2]
     assert "ZZZ" in lines[3]
+
+
+def test_render_top_n_summary_can_sort_by_recent_smc_event():
+    summary_df = pd.DataFrame(
+        [
+            {
+                "symbol": "OLD",
+                "close": 10.5,
+                "avg_dollar_volume_20": 20_000_000,
+                "market_cap": 2_000_000_000,
+                "smc_role": "bullish_trigger",
+                "smc_active_event": "BUY",
+                "smc_active_event_options_hint": "CALL",
+                "smc_active_event_context": "bullish_confluence",
+                "smc_days_since_active_event": 5,
+                "lux_trend": "BULLISH",
+                "alignment": "bullish_aligned",
+                "market_state": "pullback",
+                "action_bucket": "candidate",
+                "consistency_score": 5,
+                "eligible": True,
+            },
+            {
+                "symbol": "NEW",
+                "close": 11.5,
+                "avg_dollar_volume_20": 30_000_000,
+                "market_cap": 3_000_000_000,
+                "smc_role": "bullish_trigger",
+                "smc_active_event": "BUY",
+                "smc_active_event_options_hint": "CALL",
+                "smc_active_event_context": "bullish_confluence",
+                "smc_days_since_active_event": 1,
+                "lux_trend": "BULLISH",
+                "alignment": "bullish_aligned",
+                "market_state": "pullback",
+                "action_bucket": "watchlist",
+                "consistency_score": 3,
+                "eligible": True,
+            },
+        ]
+    )
+
+    summary = render_top_n_summary(summary_df, top=10, sort_by="smc-recent")
+    lines = [line for line in summary.splitlines() if line.strip()]
+
+    assert "smc_active_event" in summary
+    assert "NEW" in lines[2]
+    assert "OLD" in lines[3]

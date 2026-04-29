@@ -6,6 +6,7 @@ class ScannerRow:
     symbol: str
     close: float | None
     avg_volume_20: float | None
+    avg_dollar_volume_20: float | None
     market_cap: float | None
     ranking_mode: str | None
     lux_role: str | None

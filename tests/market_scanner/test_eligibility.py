@@ -1,6 +1,7 @@
 import pandas as pd
 
 from market_scanner.eligibility import (
+    calculate_avg_dollar_volume_20,
     calculate_avg_volume_20,
     evaluate_symbol_eligibility,
 )
@@ -26,6 +27,16 @@ def test_calculate_avg_volume_20_uses_last_20_rows():
     result = calculate_avg_volume_20(df)
 
     assert result == 200.0
+
+
+def test_calculate_avg_dollar_volume_20_uses_last_20_rows():
+    df = make_df(rows=25, volume=100)
+    df.loc[df.index[-20] :, "Close"] = 20
+    df.loc[df.index[-20] :, "Volume"] = 200
+
+    result = calculate_avg_dollar_volume_20(df)
+
+    assert result == 4_000.0
 
 
 def test_evaluate_symbol_eligibility_rejects_market_cap_first():
@@ -67,6 +78,21 @@ def test_evaluate_symbol_eligibility_rejects_avg_volume_20():
     assert result.excluded_reason == "avg_volume_20_below_threshold"
 
 
+def test_evaluate_symbol_eligibility_rejects_avg_dollar_volume_20():
+    result = evaluate_symbol_eligibility(
+        market_cap=2_000_000_000,
+        df=make_df(rows=220, volume=50_000),
+        min_market_cap=1_000_000_000,
+        min_avg_volume_20=1,
+        min_avg_dollar_volume_20=1_000_000,
+        min_history_rows=200,
+    )
+
+    assert result.eligible is False
+    assert result.excluded_reason == "avg_dollar_volume_20_below_threshold"
+    assert result.avg_dollar_volume_20 == 525_000.0
+
+
 def test_evaluate_symbol_eligibility_accepts_valid_symbol():
     result = evaluate_symbol_eligibility(
         market_cap=2_000_000_000,
@@ -79,3 +105,4 @@ def test_evaluate_symbol_eligibility_accepts_valid_symbol():
     assert result.eligible is True
     assert result.excluded_reason is None
     assert result.avg_volume_20 == 2_000_000.0
+    assert result.avg_dollar_volume_20 == 21_000_000.0

@@ -38,6 +38,9 @@ def scan_universe(
     output: str | Path,
     ranking_mode: str = "snapshot",
     min_history_rows: int = MIN_HISTORY_ROWS,
+    min_avg_dollar_volume_20: float = 0,
+    analysis_bars: int | None = None,
+    sort_by: str = "scanner",
 ) -> tuple[pd.DataFrame, Path]:
     universe = load_selected_universe(universe_file)
     rows: list[dict] = []
@@ -54,6 +57,7 @@ def scan_universe(
                 df=None,
                 min_market_cap=min_market_cap,
                 min_avg_volume_20=min_avg_volume_20,
+                min_avg_dollar_volume_20=min_avg_dollar_volume_20,
                 min_history_rows=min_history_rows,
             )
             rows.append(
@@ -70,11 +74,13 @@ def scan_universe(
             rows.append(_build_analysis_failed_row(symbol, market_cap, ranking_mode))
             continue
 
+        analysis_df = _analysis_window(df, analysis_bars)
         eligibility = evaluate_symbol_eligibility(
             market_cap=market_cap,
-            df=df,
+            df=analysis_df,
             min_market_cap=min_market_cap,
             min_avg_volume_20=min_avg_volume_20,
+            min_avg_dollar_volume_20=min_avg_dollar_volume_20,
             min_history_rows=min_history_rows,
         )
         if not eligibility.eligible:
@@ -92,12 +98,13 @@ def scan_universe(
             rows.append(
                 build_scanner_row(
                     symbol=symbol,
-                    df_slice=df,
+                    df_slice=analysis_df,
                     ranking_mode=ranking_mode,
                     lux_analyzer=analyzers.lux_analyzer,
                     smc_analyzer=analyzers.smc_analyzer,
                     close=eligibility.close,
                     avg_volume_20=eligibility.avg_volume_20,
+                    avg_dollar_volume_20=eligibility.avg_dollar_volume_20,
                     market_cap=market_cap,
                 )
             )
@@ -117,12 +124,22 @@ def scan_universe(
 
     result_df = pd.DataFrame(rows)
     if not result_df.empty:
-        result_df = sort_scanner_results(result_df).reset_index(drop=True)
+        result_df = sort_scanner_results(result_df, sort_by=sort_by).reset_index(
+            drop=True
+        )
 
     output_path = write_csv_report(result_df, output)
-    print(render_top_n_summary(result_df[result_df["eligible"]], top))
+    print(render_top_n_summary(result_df[result_df["eligible"]], top, sort_by=sort_by))
     print(f"\nExported: {output_path}")
     return result_df, output_path
+
+
+def _analysis_window(df: pd.DataFrame, analysis_bars: int | None) -> pd.DataFrame:
+    if analysis_bars is None:
+        return df
+    if analysis_bars <= 0:
+        raise ValueError("analysis_bars must be greater than zero")
+    return df.tail(analysis_bars)
 
 
 def _build_excluded_row(
@@ -136,6 +153,7 @@ def _build_excluded_row(
             symbol=symbol,
             close=eligibility.close,
             avg_volume_20=eligibility.avg_volume_20,
+            avg_dollar_volume_20=eligibility.avg_dollar_volume_20,
             market_cap=market_cap,
             ranking_mode=ranking_mode,
             lux_role=None,
@@ -198,6 +216,7 @@ def _build_analysis_failed_row(
             symbol=symbol,
             close=None,
             avg_volume_20=None,
+            avg_dollar_volume_20=None,
             market_cap=market_cap,
             ranking_mode=ranking_mode,
             lux_role=None,
@@ -266,6 +285,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Minimum average daily volume over the last 20 sessions",
     )
     parser.add_argument(
+        "--min-avg-dollar-volume-20",
+        type=float,
+        default=0,
+        help="Minimum average dollar volume over the last 20 sessions",
+    )
+    parser.add_argument(
+        "--analysis-bars",
+        type=int,
+        default=None,
+        help="Limit signal analysis to the most recent N bars",
+    )
+    parser.add_argument(
         "--top", type=int, default=10, help="Top-N rows printed to terminal"
     )
     parser.add_argument(
@@ -276,6 +307,12 @@ def build_parser() -> argparse.ArgumentParser:
             "Ranking basis: current Lux/SMC snapshot or the model's active "
             "directional event from historical signals"
         ),
+    )
+    parser.add_argument(
+        "--sort-by",
+        choices=["scanner", "smc-recent"],
+        default="scanner",
+        help="Sort basis for CSV and terminal output",
     )
     parser.add_argument("--output", required=True, help="CSV output path")
     return parser
@@ -293,6 +330,9 @@ def main(argv: list[str] | None = None) -> int:
         top=args.top,
         output=args.output,
         ranking_mode=args.ranking_mode,
+        min_avg_dollar_volume_20=args.min_avg_dollar_volume_20,
+        analysis_bars=args.analysis_bars,
+        sort_by=args.sort_by,
     )
     return 0
 

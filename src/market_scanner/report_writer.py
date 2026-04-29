@@ -31,6 +31,24 @@ TERMINAL_COLUMNS = [
     "consistency_score",
 ]
 
+SMC_TERMINAL_COLUMNS = [
+    "symbol",
+    "close",
+    "avg_dollar_volume_20",
+    "market_cap",
+    "smc_role",
+    "smc_active_event",
+    "smc_active_event_options_hint",
+    "smc_active_event_context",
+    "smc_days_since_active_event",
+    "lux_trend",
+    "alignment",
+    "adjusted_alignment",
+    "market_state",
+    "action_bucket",
+    "consistency_score",
+]
+
 ACTION_BUCKET_PRIORITY = {
     CANDIDATE: 0,
     WATCHLIST: 1,
@@ -57,6 +75,14 @@ ALIGNMENT_PRIORITY = {
     "no_trade": 6,
 }
 
+SMC_ROLE_PRIORITY = {
+    "bullish_trigger": 0,
+    "bearish_trigger": 1,
+    "bullish_watch": 2,
+    "bearish_watch": 3,
+    "neutral": 4,
+}
+
 
 def write_csv_report(df: pd.DataFrame, output_path: str | Path) -> Path:
     report_path = Path(output_path)
@@ -65,13 +91,16 @@ def write_csv_report(df: pd.DataFrame, output_path: str | Path) -> Path:
     return report_path
 
 
-def render_top_n_summary(df: pd.DataFrame, top: int) -> str:
+def render_top_n_summary(df: pd.DataFrame, top: int, sort_by: str = "scanner") -> str:
     if df.empty:
         return "No eligible scanner results."
 
-    top_rows = sort_scanner_results(df).head(top)
+    top_rows = sort_scanner_results(df, sort_by=sort_by).head(top)
+    terminal_columns = (
+        SMC_TERMINAL_COLUMNS if sort_by == "smc-recent" else TERMINAL_COLUMNS
+    )
     display = top_rows.loc[
-        :, [col for col in TERMINAL_COLUMNS if col in top_rows.columns]
+        :, [col for col in terminal_columns if col in top_rows.columns]
     ].copy()
 
     for column in display.columns:
@@ -82,13 +111,16 @@ def render_top_n_summary(df: pd.DataFrame, top: int) -> str:
     return tabulate(display, headers="keys", tablefmt="simple", showindex=False)
 
 
-def sort_scanner_results(df: pd.DataFrame) -> pd.DataFrame:
+def sort_scanner_results(df: pd.DataFrame, sort_by: str = "scanner") -> pd.DataFrame:
     if df.empty:
         return df
 
     sortable = df.copy()
     if "eligible" not in sortable.columns:
         sortable["eligible"] = True
+    if sort_by == "smc-recent":
+        return _sort_by_smc_recent(sortable)
+
     sortable["_bucket_priority"] = (
         sortable["action_bucket"]
         .map(ACTION_BUCKET_PRIORITY)
@@ -117,3 +149,30 @@ def sort_scanner_results(df: pd.DataFrame) -> pd.DataFrame:
         ascending=[False, True, True, True, False, True],
         na_position="last",
     ).drop(columns=["_bucket_priority", "_state_priority", "_alignment_priority"])
+
+
+def _sort_by_smc_recent(df: pd.DataFrame) -> pd.DataFrame:
+    sortable = df.copy()
+    sortable["_smc_role_priority"] = (
+        sortable["smc_role"].map(SMC_ROLE_PRIORITY).fillna(len(SMC_ROLE_PRIORITY))
+    )
+    sortable["_has_smc_active_event"] = sortable["smc_active_event"].notna()
+    sortable["_bucket_priority"] = (
+        sortable["action_bucket"]
+        .map(ACTION_BUCKET_PRIORITY)
+        .fillna(len(ACTION_BUCKET_PRIORITY))
+    )
+
+    return sortable.sort_values(
+        [
+            "eligible",
+            "_has_smc_active_event",
+            "_smc_role_priority",
+            "smc_days_since_active_event",
+            "consistency_score",
+            "_bucket_priority",
+            "symbol",
+        ],
+        ascending=[False, False, True, True, False, True, True],
+        na_position="last",
+    ).drop(columns=["_smc_role_priority", "_has_smc_active_event", "_bucket_priority"])

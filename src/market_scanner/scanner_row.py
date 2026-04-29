@@ -37,6 +37,7 @@ def build_scanner_row(
     smc_analyzer: StockDataAnalyzer | None = None,
     close: float | None = None,
     avg_volume_20: float | None = None,
+    avg_dollar_volume_20: float | None = None,
     market_cap: float | None = None,
 ) -> dict:
     lux_analyzer = lux_analyzer or StockDataAnalyzer(signal_model="lux")
@@ -59,6 +60,7 @@ def build_scanner_row(
         ranking_mode=ranking_mode,
         close=close,
         avg_volume_20=avg_volume_20,
+        avg_dollar_volume_20=avg_dollar_volume_20,
         market_cap=market_cap,
     )
 
@@ -72,6 +74,7 @@ def build_scanner_row_from_history(
     index: int,
     ranking_mode: str,
     avg_volume_20: float | None = None,
+    avg_dollar_volume_20: float | None = None,
     market_cap: float | None = None,
     lux_event_state: dict[str, dict[str, str | int | None]] | None = None,
     smc_event_state: dict[str, dict[str, str | int | None]] | None = None,
@@ -92,6 +95,7 @@ def build_scanner_row_from_history(
         ranking_mode=ranking_mode,
         close=close,
         avg_volume_20=avg_volume_20,
+        avg_dollar_volume_20=avg_dollar_volume_20,
         market_cap=market_cap,
         lux_event_state=lux_event_state,
         smc_event_state=smc_event_state,
@@ -108,6 +112,7 @@ def _assemble_scanner_row(
     ranking_mode: str,
     close: float | None,
     avg_volume_20: float | None,
+    avg_dollar_volume_20: float | None,
     market_cap: float | None,
     lux_event_state: dict[str, dict[str, str | int | None]] | None = None,
     smc_event_state: dict[str, dict[str, str | int | None]] | None = None,
@@ -208,6 +213,7 @@ def _assemble_scanner_row(
             symbol=symbol,
             close=close if close is not None else float(lux_signal.close_price),
             avg_volume_20=avg_volume_20,
+            avg_dollar_volume_20=avg_dollar_volume_20,
             market_cap=market_cap,
             ranking_mode=ranking_mode,
             lux_role=lux_role,
