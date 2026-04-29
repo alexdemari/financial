@@ -45,6 +45,7 @@ reports and backtest
 - current scanner decision logic
 - scanner reporting
 - signal-quality backtesting orchestration
+- execution-capture backtesting orchestration
 
 In practice, this includes:
 
@@ -53,6 +54,7 @@ In practice, this includes:
 - `market_state`
 - `adjusted_alignment`
 - `action_bucket`
+- liquidity diagnostics such as `avg_volume_20` and `avg_dollar_volume_20`
 
 Internally, the package is now organized around a small set of roles:
 
@@ -68,6 +70,12 @@ Internally, the package is now organized around a small set of roles:
   - current live scan orchestration
 - `backtest.py`
   - historical replay and signal validation
+- `backtest_execution.py`
+  - trade-style execution capture validation
+- `exits.py`
+  - isolated execution exit rules
+- `trades.py`
+  - directional trade records and trade metrics
 
 ---
 
@@ -118,6 +126,26 @@ classifying their current state in a reusable, backtestable way.
 
 ---
 
+## Current Scan Controls
+
+The live scanner remains local-first and CSV-driven. Current scan controls
+include:
+
+- market-cap filtering
+- 20-day average volume filtering
+- 20-day average dollar-volume filtering through `--min-avg-dollar-volume-20`
+- optional recent-window analysis through `--analysis-bars`
+- scanner-oriented sorting through `--sort-by scanner`
+- SMC recent-event sorting through `--sort-by smc-recent`
+
+`analysis_bars` limits the data slice passed into the Lux/SMC analyzer for a
+scan run. It is a scan-time analysis window, not a raw data download setting.
+
+`smc-recent` sorting is a reporting/ranking view focused on recent SMC context.
+It does not change the underlying Scanner V3 decision rules.
+
+---
+
 ## Relationship With `stock_analyzer`
 
 This is the most important boundary.
@@ -148,6 +176,7 @@ That is why the scanner row is shared between:
 - live scan execution
 - scanner reporting
 - historical replay
+- execution-capture replay
 
 This is one of the most important architectural constraints in the current
 system.
@@ -158,6 +187,39 @@ The scan and backtest now also share a pipeline layer for:
 - optional symbol selection
 - analyzer creation
 - symbol-by-symbol local CSV iteration
+
+---
+
+## Relationship With Execution Backtest
+
+`market_scanner.backtest_execution` is separate from
+`market_scanner.backtest`.
+
+The signal-quality backtest answers:
+
+```text
+Did the scanner decision have directional edge?
+```
+
+The execution backtest answers:
+
+```text
+How much of that edge was captured by a concrete entry/exit rule?
+```
+
+Execution backtest entries are still based on Scanner V3 decision rows:
+
+- bullish entry: `action_bucket == candidate` and
+  `adjusted_alignment == bullish_aligned`
+- bearish entry: `action_bucket == candidate` and
+  `adjusted_alignment == bearish_aligned`
+
+Exit rules live in `exits.py` and remain isolated. The `--exit-rule all`
+comparison mode runs the supported exit rules independently, then ranks the
+results by directional execution metrics such as expectancy and profit factor.
+
+This remains directional execution validation. It is not options PnL,
+position sizing, slippage, commissions, or portfolio simulation.
 
 ---
 

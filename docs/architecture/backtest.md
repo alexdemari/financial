@@ -10,6 +10,8 @@ temporarily, but it should no longer be treated as the canonical module name.
 The current backtest validates current scanner signal quality.
 
 It does NOT simulate options trades or options PnL.
+Trade-style execution capture validation lives separately in
+`market_scanner.backtest_execution`.
 
 Its core question is:
 
@@ -135,3 +137,46 @@ Rule:
 
 - backtest should consume scanner decisions
 - it should not redefine scanner logic independently
+
+---
+
+## Execution Backtest
+
+`market_scanner.backtest_execution` is a separate downstream validation layer.
+
+It simulates directional trades from Scanner V3 entries:
+
+- bullish entries from `candidate` + `bullish_aligned`
+- bearish entries from `candidate` + `bearish_aligned`
+
+It supports isolated exit rules:
+
+- `alignment_break`
+- `bucket_downgrade`
+- `late_state`
+- `opposite_signal`
+- `bars_5`
+- `bars_10`
+- `bars_20`
+
+It also supports:
+
+```text
+--exit-rule all
+```
+
+That mode runs each exit rule independently, exports trades and summaries, and
+adds `execution_rule_comparison.csv` with qualification and ranking fields.
+
+Execution comparison metrics use directional returns and include:
+
+- win rate
+- loss rate
+- average and median directional return
+- expectancy
+- profit factor
+- MFE and MAE
+- average holding period
+
+This layer validates execution capture, not signal existence. It should not be
+merged into `market_scanner.backtest`.
