@@ -154,6 +154,24 @@ def test_summarize_trade_records_profit_factor_edge_cases():
     assert summarize_trade_records(loss_only)[0]["profit_factor"] == pytest.approx(0.0)
 
 
+def test_summarize_trade_records_profit_factor_zero_loss_sum():
+    zero_return = [
+        {
+            "exit_rule": "bars_5",
+            "ranking_mode": "recent-event",
+            "side": "bullish",
+            "entry_alignment": "bullish_aligned",
+            "raw_return": 0.0,
+            "directional_return": 0.0,
+            "mfe": 0.0,
+            "mae": 0.0,
+            "bars_held": 5,
+        }
+    ]
+
+    assert summarize_trade_records(zero_return)[0]["profit_factor"] is None
+
+
 def test_summarize_symbol_trade_records_groups_by_symbol():
     records = [
         {

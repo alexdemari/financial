@@ -134,7 +134,7 @@ def summarize_trade_records_by(
 
         winning_sum = float(wins.sum()) if not wins.empty else 0.0
         losing_sum = float(losses.sum()) if not losses.empty else 0.0
-        if losses.empty:
+        if losses.empty or abs(losing_sum) == 0.0:
             profit_factor = None
         elif wins.empty:
             profit_factor = 0.0

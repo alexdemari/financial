@@ -222,6 +222,17 @@ PYTHONPATH=src uv run python -m market_scanner.backtest_execution \
   --output-worst-trades reports/market_scanner/execution_worst_trades.csv
 ```
 
+Generate the operational decision report from the execution CSVs:
+
+```bash
+PYTHONPATH=src uv run python -m market_scanner.operational_report \
+  --recommendations reports/market_scanner/execution_recommended_rules.csv \
+  --symbol-comparison reports/market_scanner/execution_symbol_comparison.csv \
+  --scan reports/market_scanner/scan.csv \
+  --output-markdown reports/market_scanner/execution_operational_report.md \
+  --output-ranking reports/market_scanner/execution_operational_ranking.csv
+```
+
 ---
 
 ## Current Project Status
