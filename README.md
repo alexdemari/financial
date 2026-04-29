@@ -217,7 +217,8 @@ PYTHONPATH=src uv run python -m market_scanner.backtest_execution \
   --output-summary reports/market_scanner/execution_summary.csv \
   --output-comparison reports/market_scanner/execution_rule_comparison.csv \
   --output-symbol-comparison reports/market_scanner/execution_symbol_comparison.csv \
-  --output-recommendations reports/market_scanner/execution_recommended_rules.csv
+  --output-recommendations reports/market_scanner/execution_recommended_rules.csv \
+  --output-worst-trades reports/market_scanner/execution_worst_trades.csv
 ```
 
 ---

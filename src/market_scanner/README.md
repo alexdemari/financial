@@ -57,6 +57,7 @@ Execution comparison supports:
 - `--output-comparison`
 - `--output-symbol-comparison`
 - `--output-recommendations`
+- `--output-worst-trades`
 - `--progress`
 
 When `--exit-rule all` is used, Lux/SMC histories and Scanner V3 rows are
@@ -65,6 +66,8 @@ simulations.
 
 `execution_recommended_rules.csv` reports the best qualified rule globally by
 side and per symbol by side.
+`execution_worst_trades.csv` captures the largest losses, worst MAE cases, and
+longest holds for risk review.
 
 Use `--progress` for per-symbol elapsed time and ETA on larger universes.
 

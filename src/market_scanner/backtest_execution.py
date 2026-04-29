@@ -109,6 +109,24 @@ RECOMMENDATION_COLUMNS = [
     "best_trade",
     "worst_trade",
 ]
+WORST_TRADES_COLUMNS = [
+    "report_reason",
+    "symbol",
+    "side",
+    "entry_date",
+    "entry_price",
+    "exit_date",
+    "exit_price",
+    "bars_held",
+    "entry_alignment",
+    "exit_reason",
+    "raw_return",
+    "directional_return",
+    "mfe",
+    "mae",
+    "exit_rule",
+    "ranking_mode",
+]
 
 
 @dataclass
@@ -156,6 +174,8 @@ def backtest_execution_universe(
     output_recommendations: str | Path = (
         f"{DEFAULT_REPORTS_DIR}/execution_recommended_rules.csv"
     ),
+    output_worst_trades: str
+    | Path = f"{DEFAULT_REPORTS_DIR}/execution_worst_trades.csv",
     min_trades: int = 20,
     symbols: list[str] | None = None,
     progress: bool = False,
@@ -246,11 +266,13 @@ def backtest_execution_universe(
         symbol_comparison_df=symbol_comparison_df,
         min_trades=min_trades,
     )
+    worst_trades_df = build_worst_trades_report(trades_df)
     write_csv_report(trades_df, output_trades)
     write_csv_report(summary_df, output_summary)
     write_csv_report(comparison_df, output_comparison)
     write_csv_report(symbol_comparison_df, output_symbol_comparison)
     write_csv_report(recommendations_df, output_recommendations)
+    write_csv_report(worst_trades_df, output_worst_trades)
 
     if exit_rule == "all":
         terminal_summary = render_execution_rule_comparison(comparison_df)
@@ -267,6 +289,7 @@ def backtest_execution_universe(
     print(f"Exported comparison: {Path(output_comparison)}")
     print(f"Exported symbol comparison: {Path(output_symbol_comparison)}")
     print(f"Exported recommendations: {Path(output_recommendations)}")
+    print(f"Exported worst trades: {Path(output_worst_trades)}")
     return trades_df, summary_df
 
 
@@ -337,6 +360,46 @@ def build_execution_recommendations(
             )
 
     return pd.DataFrame(rows, columns=RECOMMENDATION_COLUMNS)
+
+
+def build_worst_trades_report(
+    trades_df: pd.DataFrame,
+    *,
+    limit: int = 50,
+) -> pd.DataFrame:
+    if trades_df.empty:
+        return pd.DataFrame(columns=WORST_TRADES_COLUMNS)
+
+    report_frames = [
+        _worst_trades_slice(
+            trades_df,
+            reason="worst_directional_return",
+            sort_columns=["directional_return", "mae", "bars_held"],
+            ascending=[True, True, False],
+            limit=limit,
+        ),
+        _worst_trades_slice(
+            trades_df,
+            reason="worst_mae",
+            sort_columns=["mae", "directional_return", "bars_held"],
+            ascending=[True, True, False],
+            limit=limit,
+        ),
+        _worst_trades_slice(
+            trades_df,
+            reason="longest_hold",
+            sort_columns=["bars_held", "mae", "directional_return"],
+            ascending=[False, True, True],
+            limit=limit,
+        ),
+    ]
+    report = pd.concat(report_frames, ignore_index=True)
+    report = report.drop_duplicates(
+        subset=["report_reason", "symbol", "side", "entry_date", "exit_rule"]
+    )
+    return report.loc[
+        :, [column for column in WORST_TRADES_COLUMNS if column in report.columns]
+    ]
 
 
 def generate_symbol_trades(
@@ -601,6 +664,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--output-recommendations",
         default=f"{DEFAULT_REPORTS_DIR}/execution_recommended_rules.csv",
     )
+    parser.add_argument(
+        "--output-worst-trades",
+        default=f"{DEFAULT_REPORTS_DIR}/execution_worst_trades.csv",
+    )
     parser.add_argument("--min-trades", type=int, default=20)
     parser.add_argument(
         "--progress",
@@ -629,6 +696,7 @@ def main(argv: list[str] | None = None) -> int:
         output_comparison=args.output_comparison,
         output_symbol_comparison=args.output_symbol_comparison,
         output_recommendations=args.output_recommendations,
+        output_worst_trades=args.output_worst_trades,
         min_trades=args.min_trades,
         symbols=_parse_symbols(args.symbols),
         progress=args.progress,
@@ -727,6 +795,31 @@ def _parse_symbols(raw_symbols: str | None) -> list[str] | None:
         symbol.strip().upper() for symbol in raw_symbols.split(",") if symbol.strip()
     ]
     return symbols or None
+
+
+def _worst_trades_slice(
+    trades_df: pd.DataFrame,
+    *,
+    reason: str,
+    sort_columns: list[str],
+    ascending: list[bool],
+    limit: int,
+) -> pd.DataFrame:
+    available_sort_columns = [
+        column for column in sort_columns if column in trades_df.columns
+    ]
+    if not available_sort_columns:
+        return pd.DataFrame(columns=WORST_TRADES_COLUMNS)
+
+    sort_directions = ascending[: len(available_sort_columns)]
+    result = trades_df.sort_values(
+        available_sort_columns,
+        ascending=sort_directions,
+        na_position="last",
+    ).head(limit)
+    result = result.copy()
+    result.insert(0, "report_reason", reason)
+    return result
 
 
 def _print_progress(

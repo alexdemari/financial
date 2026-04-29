@@ -5,6 +5,7 @@ import pandas as pd
 from market_scanner.backtest_execution import (
     backtest_execution_universe,
     build_execution_recommendations,
+    build_worst_trades_report,
     generate_symbol_trades,
     rank_execution_rules,
     render_execution_rule_comparison,
@@ -317,6 +318,7 @@ def test_backtest_execution_universe_exports_required_schema(
         output_comparison=tmp_path / "execution_rule_comparison.csv",
         output_symbol_comparison=tmp_path / "execution_symbol_comparison.csv",
         output_recommendations=tmp_path / "execution_recommended_rules.csv",
+        output_worst_trades=tmp_path / "execution_worst_trades.csv",
         progress=True,
     )
 
@@ -437,6 +439,27 @@ def test_backtest_execution_universe_exports_required_schema(
             "worst_trade",
         ]
     ).issubset(recommendations_df.columns)
+    worst_trades_df = pd.read_csv(tmp_path / "execution_worst_trades.csv")
+    assert set(
+        [
+            "report_reason",
+            "symbol",
+            "side",
+            "entry_date",
+            "entry_price",
+            "exit_date",
+            "exit_price",
+            "bars_held",
+            "entry_alignment",
+            "exit_reason",
+            "raw_return",
+            "directional_return",
+            "mfe",
+            "mae",
+            "exit_rule",
+            "ranking_mode",
+        ]
+    ).issubset(worst_trades_df.columns)
 
 
 def test_exit_rule_all_reuses_prepared_symbol_rows(tmp_path, monkeypatch):
@@ -500,6 +523,7 @@ def test_exit_rule_all_reuses_prepared_symbol_rows(tmp_path, monkeypatch):
         output_comparison=tmp_path / "execution_rule_comparison.csv",
         output_symbol_comparison=tmp_path / "execution_symbol_comparison.csv",
         output_recommendations=tmp_path / "execution_recommended_rules.csv",
+        output_worst_trades=tmp_path / "execution_worst_trades.csv",
         min_trades=1,
     )
 
@@ -644,6 +668,56 @@ def test_build_execution_recommendations_selects_global_and_symbol_rules():
     assert global_bullish["qualified"] == True  # noqa: E712
     assert snow_bullish["recommended_exit_rule"] == "alignment_break"
     assert snow_bullish["qualified"] == True  # noqa: E712
+
+
+def test_build_worst_trades_report_includes_loss_mae_and_hold_slices():
+    trades_df = pd.DataFrame(
+        [
+            {
+                "symbol": "AAPL",
+                "side": "bullish",
+                "entry_date": "2026-01-01",
+                "entry_price": 100.0,
+                "exit_date": "2026-01-02",
+                "exit_price": 90.0,
+                "bars_held": 2,
+                "entry_alignment": "bullish_aligned",
+                "exit_reason": "bars_5",
+                "raw_return": -0.10,
+                "directional_return": -0.10,
+                "mfe": 0.01,
+                "mae": -0.12,
+                "exit_rule": "bars_5",
+                "ranking_mode": "recent-event",
+            },
+            {
+                "symbol": "MSFT",
+                "side": "bearish",
+                "entry_date": "2026-01-01",
+                "entry_price": 100.0,
+                "exit_date": "2026-02-15",
+                "exit_price": 95.0,
+                "bars_held": 30,
+                "entry_alignment": "bearish_aligned",
+                "exit_reason": "opposite_signal",
+                "raw_return": -0.05,
+                "directional_return": 0.05,
+                "mfe": 0.08,
+                "mae": -0.20,
+                "exit_rule": "opposite_signal",
+                "ranking_mode": "recent-event",
+            },
+        ]
+    )
+
+    report = build_worst_trades_report(trades_df, limit=1)
+
+    assert set(report["report_reason"]) == {
+        "worst_directional_return",
+        "worst_mae",
+        "longest_hold",
+    }
+    assert len(report) == 3
 
 
 def test_summarize_execution_rules_groups_all_rules():

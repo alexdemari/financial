@@ -172,6 +172,8 @@ robust across individual symbols.
 `execution_recommended_rules.csv` selects the best qualified rule globally by
 side and per symbol by side, using the same minimum-trade and positive
 expectancy filters as the comparison layer.
+`execution_worst_trades.csv` lists the largest directional losses, worst MAE
+cases, and longest holds for risk review.
 For larger universes, `--progress` prints per-symbol elapsed time and an
 estimated remaining runtime.
 
