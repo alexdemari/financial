@@ -211,6 +211,7 @@ PYTHONPATH=src uv run python -m market_scanner.backtest_execution \
   --ranking-mode recent-event \
   --exit-rule all \
   --min-trades 20 \
+  --max-symbols 100 \
   --progress \
   --symbols AAPL \
   --output-trades reports/market_scanner/execution_trades.csv \

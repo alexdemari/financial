@@ -176,6 +176,8 @@ expectancy filters as the comparison layer.
 cases, and longest holds for risk review.
 For larger universes, `--progress` prints per-symbol elapsed time and an
 estimated remaining runtime.
+`--max-symbols` can cap execution to the first N symbols in the selected
+universe for deterministic sampling.
 
 Execution comparison metrics use directional returns and include:
 

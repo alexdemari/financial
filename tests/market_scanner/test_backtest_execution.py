@@ -462,6 +462,68 @@ def test_backtest_execution_universe_exports_required_schema(
     ).issubset(worst_trades_df.columns)
 
 
+def test_backtest_execution_universe_limits_first_symbols(tmp_path, monkeypatch):
+    df = make_ohlc_df()
+    seen_universe = []
+
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.load_selected_universe",
+        lambda universe_file, symbols=None: pd.DataFrame(
+            {
+                "symbol": ["AAPL", "MSFT", "NVDA"],
+                "market_cap": [2_000_000_000, 2_000_000_000, 2_000_000_000],
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.create_analyzers",
+        lambda analyzer_cls: SimpleNamespace(
+            lux_analyzer=FakeAnalyzer(),
+            smc_analyzer=FakeAnalyzer(),
+        ),
+    )
+
+    def fake_iter_symbol_data(universe, data_dir, transform_df=None):
+        seen_universe.extend(universe["symbol"].tolist())
+        return [
+            SymbolData(
+                symbol=str(row.symbol),
+                market_cap=2_000_000_000,
+                df=transform_df(df) if transform_df else df,
+                load_error=None,
+            )
+            for row in universe.itertuples(index=False)
+        ]
+
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.iter_symbol_data",
+        fake_iter_symbol_data,
+    )
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.build_scanner_row_from_history",
+        lambda symbol, **kwargs: make_row(
+            adjusted_alignment="bullish_watchlist",
+            action_bucket="watchlist",
+        ),
+    )
+
+    backtest_execution_universe(
+        universe_file=tmp_path / "universe.csv",
+        data_dir=tmp_path / "data",
+        ranking_mode="recent-event",
+        exit_rule="bucket_downgrade",
+        output_trades=tmp_path / "execution_trades.csv",
+        output_summary=tmp_path / "execution_summary.csv",
+        output_comparison=tmp_path / "execution_rule_comparison.csv",
+        output_symbol_comparison=tmp_path / "execution_symbol_comparison.csv",
+        output_recommendations=tmp_path / "execution_recommended_rules.csv",
+        output_worst_trades=tmp_path / "execution_worst_trades.csv",
+        max_symbols=2,
+    )
+
+    assert seen_universe == ["AAPL", "MSFT"]
+
+
 def test_exit_rule_all_reuses_prepared_symbol_rows(tmp_path, monkeypatch):
     df = make_ohlc_df()
     lux_analyzer = CountingAnalyzer()

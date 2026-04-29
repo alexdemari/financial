@@ -58,6 +58,7 @@ Execution comparison supports:
 - `--output-symbol-comparison`
 - `--output-recommendations`
 - `--output-worst-trades`
+- `--max-symbols`
 - `--progress`
 
 When `--exit-rule all` is used, Lux/SMC histories and Scanner V3 rows are
@@ -70,6 +71,8 @@ side and per symbol by side.
 longest holds for risk review.
 
 Use `--progress` for per-symbol elapsed time and ETA on larger universes.
+Use `--max-symbols` to run the first N symbols from the selected universe
+deterministically.
 
 `options_tech_scanner` remains in the repository for the legacy scanner and
 temporary compatibility imports.

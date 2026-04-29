@@ -178,9 +178,11 @@ def backtest_execution_universe(
     | Path = f"{DEFAULT_REPORTS_DIR}/execution_worst_trades.csv",
     min_trades: int = 20,
     symbols: list[str] | None = None,
+    max_symbols: int | None = None,
     progress: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     universe = load_selected_universe(universe_file, symbols=symbols)
+    universe = _limit_universe(universe, max_symbols=max_symbols)
     analyzers = create_analyzers(StockDataAnalyzer)
     trade_records: list[dict] = []
     exit_rules = resolve_exit_rules(exit_rule)
@@ -670,6 +672,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--min-trades", type=int, default=20)
     parser.add_argument(
+        "--max-symbols",
+        type=int,
+        default=None,
+        help=(
+            "Limit the run to the first N symbols after universe and --symbols "
+            "filtering. Deterministic, not random."
+        ),
+    )
+    parser.add_argument(
         "--progress",
         action="store_true",
         help="Print per-symbol elapsed time and ETA during execution.",
@@ -699,6 +710,7 @@ def main(argv: list[str] | None = None) -> int:
         output_worst_trades=args.output_worst_trades,
         min_trades=args.min_trades,
         symbols=_parse_symbols(args.symbols),
+        max_symbols=args.max_symbols,
         progress=args.progress,
     )
     return 0
@@ -795,6 +807,18 @@ def _parse_symbols(raw_symbols: str | None) -> list[str] | None:
         symbol.strip().upper() for symbol in raw_symbols.split(",") if symbol.strip()
     ]
     return symbols or None
+
+
+def _limit_universe(
+    universe: pd.DataFrame,
+    *,
+    max_symbols: int | None,
+) -> pd.DataFrame:
+    if max_symbols is None:
+        return universe
+    if max_symbols <= 0:
+        raise ValueError("max_symbols must be greater than zero")
+    return universe.head(max_symbols).reset_index(drop=True)
 
 
 def _worst_trades_slice(
