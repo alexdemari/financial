@@ -76,6 +76,23 @@ class OpenPosition:
     entry_alignment: str
 
 
+@dataclass(frozen=True)
+class ExecutionBar:
+    index: int
+    date: str
+    close: float
+    row: dict
+
+
+@dataclass(frozen=True)
+class PreparedSymbolExecutionData:
+    symbol: str
+    df: pd.DataFrame
+    bars: list[ExecutionBar]
+    high_column: str
+    low_column: str
+
+
 def backtest_execution_universe(
     *,
     universe_file: str | Path,
@@ -103,15 +120,21 @@ def backtest_execution_universe(
         if symbol_data.load_error is not None or symbol_data.df is None:
             continue
 
+        prepared_data = prepare_symbol_execution_data(
+            symbol=symbol_data.symbol,
+            df=symbol_data.df,
+            ranking_mode=ranking_mode,
+            min_bars=min_bars,
+            lux_analyzer=analyzers.lux_analyzer,
+            smc_analyzer=analyzers.smc_analyzer,
+        )
+        if prepared_data is None:
+            continue
+
         for current_exit_rule in exit_rules:
-            symbol_trades = generate_symbol_trades(
-                symbol=symbol_data.symbol,
-                df=symbol_data.df,
-                ranking_mode=ranking_mode,
+            symbol_trades = generate_prepared_symbol_trades(
+                prepared_data=prepared_data,
                 exit_rule=current_exit_rule,
-                min_bars=min_bars,
-                lux_analyzer=analyzers.lux_analyzer,
-                smc_analyzer=analyzers.smc_analyzer,
             )
             trade_records.extend(
                 trade_to_record(
@@ -192,9 +215,34 @@ def generate_symbol_trades(
     lux_analyzer: StockDataAnalyzer | None = None,
     smc_analyzer: StockDataAnalyzer | None = None,
 ) -> list[Trade]:
+    prepared_data = prepare_symbol_execution_data(
+        symbol=symbol,
+        df=df,
+        ranking_mode=ranking_mode,
+        min_bars=min_bars,
+        lux_analyzer=lux_analyzer,
+        smc_analyzer=smc_analyzer,
+    )
+    if prepared_data is None:
+        return []
+    return generate_prepared_symbol_trades(
+        prepared_data=prepared_data,
+        exit_rule=exit_rule,
+    )
+
+
+def prepare_symbol_execution_data(
+    *,
+    symbol: str,
+    df: pd.DataFrame,
+    ranking_mode: str,
+    min_bars: int,
+    lux_analyzer: StockDataAnalyzer | None = None,
+    smc_analyzer: StockDataAnalyzer | None = None,
+) -> PreparedSymbolExecutionData | None:
     effective_min_bars = max(min_bars, SCANNER_ROW_MIN_BARS)
     if len(df) < effective_min_bars:
-        return []
+        return None
 
     lux_analyzer = lux_analyzer or StockDataAnalyzer(signal_model="lux")
     smc_analyzer = smc_analyzer or StockDataAnalyzer(signal_model="smc")
@@ -204,10 +252,8 @@ def generate_symbol_trades(
     high_column = _require_column(df, "high")
     low_column = _require_column(df, "low")
 
-    trades: list[Trade] = []
-    open_position: OpenPosition | None = None
+    bars: list[ExecutionBar] = []
     start_index = max(effective_min_bars - 1, 0)
-
     for index in range(start_index, len(df)):
         close_price = float(df.iloc[index][close_column])
         row = build_scanner_row_from_history(
@@ -219,57 +265,82 @@ def generate_symbol_trades(
             ranking_mode=ranking_mode,
         )
         bar_date = pd.Timestamp(df.index[index]).isoformat()
+        bars.append(
+            ExecutionBar(
+                index=index,
+                date=bar_date,
+                close=close_price,
+                row=row,
+            )
+        )
+
+    return PreparedSymbolExecutionData(
+        symbol=symbol,
+        df=df,
+        bars=bars,
+        high_column=high_column,
+        low_column=low_column,
+    )
+
+
+def generate_prepared_symbol_trades(
+    *,
+    prepared_data: PreparedSymbolExecutionData,
+    exit_rule: str,
+) -> list[Trade]:
+    trades: list[Trade] = []
+    open_position: OpenPosition | None = None
+
+    for bar in prepared_data.bars:
         exited_this_bar = False
 
         if open_position is not None and _should_exit(
-            row=row,
+            row=bar.row,
             side=open_position.side,
             exit_rule=exit_rule,
-            bars_held=_bars_held(open_position.entry_index, index),
+            bars_held=_bars_held(open_position.entry_index, bar.index),
         ):
             trades.append(
                 _close_trade(
-                    symbol=symbol,
-                    df=df,
+                    symbol=prepared_data.symbol,
+                    df=prepared_data.df,
                     open_position=open_position,
-                    exit_index=index,
-                    exit_date=bar_date,
-                    exit_price=close_price,
+                    exit_index=bar.index,
+                    exit_date=bar.date,
+                    exit_price=bar.close,
                     exit_reason=exit_rule,
-                    high_column=high_column,
-                    low_column=low_column,
+                    high_column=prepared_data.high_column,
+                    low_column=prepared_data.low_column,
                 )
             )
             open_position = None
             exited_this_bar = True
 
         if open_position is None and not exited_this_bar:
-            side = _entry_side(row)
+            side = _entry_side(bar.row)
             if side is not None:
                 open_position = OpenPosition(
-                    symbol=symbol,
+                    symbol=prepared_data.symbol,
                     side=side,
-                    entry_index=index,
-                    entry_date=bar_date,
-                    entry_price=close_price,
-                    entry_alignment=str(row["adjusted_alignment"]),
+                    entry_index=bar.index,
+                    entry_date=bar.date,
+                    entry_price=bar.close,
+                    entry_alignment=str(bar.row["adjusted_alignment"]),
                 )
 
     if open_position is not None:
-        final_index = len(df) - 1
-        final_close = float(df.iloc[final_index][close_column])
-        final_date = pd.Timestamp(df.index[final_index]).isoformat()
+        final_bar = prepared_data.bars[-1]
         trades.append(
             _close_trade(
-                symbol=symbol,
-                df=df,
+                symbol=prepared_data.symbol,
+                df=prepared_data.df,
                 open_position=open_position,
-                exit_index=final_index,
-                exit_date=final_date,
-                exit_price=final_close,
+                exit_index=final_bar.index,
+                exit_date=final_bar.date,
+                exit_price=final_bar.close,
                 exit_reason="end_of_data",
-                high_column=high_column,
-                low_column=low_column,
+                high_column=prepared_data.high_column,
+                low_column=prepared_data.low_column,
             )
         )
 
@@ -370,7 +441,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--exit-rule",
         choices=list(EXIT_RULE_CHOICES),
         required=True,
-        help="Exit rule experiment to simulate.",
+        help=(
+            "Exit rule experiment to simulate. Use 'all' to compare every "
+            "supported rule while preparing scanner rows once per symbol."
+        ),
     )
     parser.add_argument("--min-bars", type=int, default=DEFAULT_MIN_BARS)
     parser.add_argument(

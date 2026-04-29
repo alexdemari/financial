@@ -56,5 +56,9 @@ Execution comparison supports:
 - `--min-trades`
 - `--output-comparison`
 
+When `--exit-rule all` is used, Lux/SMC histories and Scanner V3 rows are
+prepared once per symbol and reused across the individual exit-rule
+simulations.
+
 `options_tech_scanner` remains in the repository for the legacy scanner and
 temporary compatibility imports.

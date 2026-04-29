@@ -67,6 +67,15 @@ class FakeAnalyzer:
         )
 
 
+class CountingAnalyzer(FakeAnalyzer):
+    def __init__(self):
+        self.calls = 0
+
+    def generate_historical_signals(self, symbol, frame):
+        self.calls += 1
+        return super().generate_historical_signals(symbol, frame)
+
+
 def test_generate_symbol_trades_opens_bullish_and_closes_on_bucket_downgrade(
     monkeypatch,
 ):
@@ -370,6 +379,74 @@ def test_backtest_execution_universe_exports_required_schema(tmp_path, monkeypat
             "worst_trade",
         ]
     ).issubset(comparison_df.columns)
+
+
+def test_exit_rule_all_reuses_prepared_symbol_rows(tmp_path, monkeypatch):
+    df = make_ohlc_df()
+    lux_analyzer = CountingAnalyzer()
+    smc_analyzer = CountingAnalyzer()
+    row_calls = []
+
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.load_selected_universe",
+        lambda universe_file, symbols=None: pd.DataFrame(
+            {"symbol": ["AAPL"], "market_cap": [2_000_000_000]}
+        ),
+    )
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.create_analyzers",
+        lambda analyzer_cls: SimpleNamespace(
+            lux_analyzer=lux_analyzer,
+            smc_analyzer=smc_analyzer,
+        ),
+    )
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.iter_symbol_data",
+        lambda universe, data_dir, transform_df=None: [
+            SymbolData(
+                symbol="AAPL",
+                market_cap=2_000_000_000,
+                df=transform_df(df) if transform_df else df,
+                load_error=None,
+            )
+        ],
+    )
+
+    def fake_build_scanner_row_from_history(
+        symbol, *, close, lux_historical, smc_historical, index, ranking_mode, **kwargs
+    ):
+        row_calls.append(index)
+        if index == 199:
+            return make_row(
+                adjusted_alignment="bullish_aligned",
+                action_bucket="candidate",
+            )
+        return make_row(
+            adjusted_alignment="bullish_watchlist",
+            action_bucket="watchlist",
+            market_state="range",
+        )
+
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.build_scanner_row_from_history",
+        fake_build_scanner_row_from_history,
+    )
+
+    trades_df, _summary_df = backtest_execution_universe(
+        universe_file=tmp_path / "universe.csv",
+        data_dir=tmp_path / "data",
+        ranking_mode="recent-event",
+        exit_rule="all",
+        output_trades=tmp_path / "execution_trades.csv",
+        output_summary=tmp_path / "execution_summary.csv",
+        output_comparison=tmp_path / "execution_rule_comparison.csv",
+        min_trades=1,
+    )
+
+    assert lux_analyzer.calls == 1
+    assert smc_analyzer.calls == 1
+    assert row_calls == list(range(199, len(df)))
+    assert set(trades_df["exit_rule"]) == set(resolve_exit_rules("all"))
 
 
 def test_resolve_exit_rules_expands_all():

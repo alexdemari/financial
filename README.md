@@ -200,6 +200,10 @@ PYTHONPATH=src uv run python -m market_scanner.backtest \
 
 ### Execution Backtest
 
+`--exit-rule all` compares every supported exit rule. The execution backtest
+prepares per-symbol Lux/SMC histories and scanner rows once per run, then
+reuses them across the exit-rule simulations.
+
 ```bash
 PYTHONPATH=src uv run python -m market_scanner.backtest_execution \
   --universe-file data/scanner_universe_sample.csv \
