@@ -33,7 +33,7 @@ from stock_analyzer.analyzer import StockDataAnalyzer
 DEFAULT_MIN_BARS = 120
 SCANNER_ROW_MIN_BARS = MIN_HISTORY_ROWS
 DEFAULT_REPORTS_DIR = "reports/market_scanner"
-EXIT_RULE_CHOICES = (
+ALL_EXIT_RULES = (
     "alignment_break",
     "bucket_downgrade",
     "late_state",
@@ -42,6 +42,28 @@ EXIT_RULE_CHOICES = (
     "bars_10",
     "bars_20",
 )
+EXIT_RULE_CHOICES = (*ALL_EXIT_RULES, "all")
+COMPARISON_COLUMNS = [
+    "rank",
+    "qualified",
+    "qualification_reason",
+    "exit_rule",
+    "ranking_mode",
+    "side",
+    "entry_alignment",
+    "total_trades",
+    "win_rate",
+    "loss_rate",
+    "avg_directional_return",
+    "median_directional_return",
+    "expectancy",
+    "profit_factor",
+    "avg_mfe",
+    "avg_mae",
+    "avg_bars_held",
+    "best_trade",
+    "worst_trade",
+]
 
 
 @dataclass
@@ -63,11 +85,16 @@ def backtest_execution_universe(
     min_bars: int = DEFAULT_MIN_BARS,
     output_trades: str | Path = f"{DEFAULT_REPORTS_DIR}/execution_trades.csv",
     output_summary: str | Path = f"{DEFAULT_REPORTS_DIR}/execution_summary.csv",
+    output_comparison: str | Path = (
+        f"{DEFAULT_REPORTS_DIR}/execution_rule_comparison.csv"
+    ),
+    min_trades: int = 20,
     symbols: list[str] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     universe = load_selected_universe(universe_file, symbols=symbols)
     analyzers = create_analyzers(StockDataAnalyzer)
     trade_records: list[dict] = []
+    exit_rules = resolve_exit_rules(exit_rule)
 
     def _transform_df(df: pd.DataFrame) -> pd.DataFrame:
         return prepare_backtest_df(df=df.sort_index())
@@ -76,39 +103,83 @@ def backtest_execution_universe(
         if symbol_data.load_error is not None or symbol_data.df is None:
             continue
 
-        symbol_trades = generate_symbol_trades(
-            symbol=symbol_data.symbol,
-            df=symbol_data.df,
-            ranking_mode=ranking_mode,
-            exit_rule=exit_rule,
-            min_bars=min_bars,
-            lux_analyzer=analyzers.lux_analyzer,
-            smc_analyzer=analyzers.smc_analyzer,
-        )
-        trade_records.extend(
-            trade_to_record(
-                trade,
-                exit_rule=exit_rule,
+        for current_exit_rule in exit_rules:
+            symbol_trades = generate_symbol_trades(
+                symbol=symbol_data.symbol,
+                df=symbol_data.df,
                 ranking_mode=ranking_mode,
+                exit_rule=current_exit_rule,
+                min_bars=min_bars,
+                lux_analyzer=analyzers.lux_analyzer,
+                smc_analyzer=analyzers.smc_analyzer,
             )
-            for trade in symbol_trades
-        )
+            trade_records.extend(
+                trade_to_record(
+                    trade,
+                    exit_rule=current_exit_rule,
+                    ranking_mode=ranking_mode,
+                )
+                for trade in symbol_trades
+            )
 
     trades_df = pd.DataFrame(trade_records)
     summary_df = pd.DataFrame(summarize_trade_records(trade_records))
+    comparison_df = pd.DataFrame(
+        summarize_execution_rules(trade_records, min_trades=min_trades),
+        columns=COMPARISON_COLUMNS,
+    )
     write_csv_report(trades_df, output_trades)
     write_csv_report(summary_df, output_summary)
+    write_csv_report(comparison_df, output_comparison)
 
-    terminal_summary = render_execution_summary(
-        summary_df,
-        exit_rule=exit_rule,
-        ranking_mode=ranking_mode,
-    )
+    if exit_rule == "all":
+        terminal_summary = render_execution_rule_comparison(comparison_df)
+    else:
+        terminal_summary = render_execution_summary(
+            summary_df,
+            exit_rule=exit_rule,
+            ranking_mode=ranking_mode,
+        )
     if terminal_summary:
         print(terminal_summary)
     print(f"\nExported trades: {Path(output_trades)}")
     print(f"Exported summary: {Path(output_summary)}")
+    print(f"Exported comparison: {Path(output_comparison)}")
     return trades_df, summary_df
+
+
+def resolve_exit_rules(exit_rule: str) -> list[str]:
+    if exit_rule == "all":
+        return list(ALL_EXIT_RULES)
+    if exit_rule not in ALL_EXIT_RULES:
+        raise ValueError(f"Unsupported exit rule: {exit_rule}")
+    return [exit_rule]
+
+
+def summarize_execution_rules(records: list[dict], min_trades: int = 20) -> list[dict]:
+    return rank_execution_rules(summarize_trade_records(records), min_trades=min_trades)
+
+
+def rank_execution_rules(
+    summary_rows: list[dict],
+    *,
+    min_trades: int = 20,
+) -> list[dict]:
+    comparison_rows = [
+        _with_qualification(row, min_trades=min_trades) for row in summary_rows
+    ]
+    qualified = [row for row in comparison_rows if row["qualified"]]
+    unqualified = [row for row in comparison_rows if not row["qualified"]]
+
+    qualified.sort(key=_comparison_sort_key, reverse=True)
+    unqualified.sort(key=_comparison_sort_key, reverse=True)
+
+    for index, row in enumerate(qualified, start=1):
+        row["rank"] = index
+    for row in unqualified:
+        row["rank"] = None
+
+    return qualified + unqualified
 
 
 def generate_symbol_trades(
@@ -259,6 +330,32 @@ def render_execution_summary(
     return "\n".join(lines)
 
 
+def render_execution_rule_comparison(
+    comparison_df: pd.DataFrame,
+    limit: int = 10,
+) -> str:
+    if comparison_df.empty:
+        return "No execution trades generated."
+
+    lines = ["BEST EXECUTION RULES"]
+    qualified = comparison_df[comparison_df["qualified"] == True].head(limit)  # noqa: E712
+    if qualified.empty:
+        lines.extend(["", "No qualified execution rules."])
+    else:
+        for _, row in qualified.iterrows():
+            lines.extend(["", _render_comparison_row(row, ranked=True)])
+
+    unqualified = comparison_df[comparison_df["qualified"] == False].head(limit)  # noqa: E712
+    lines.extend(["", "UNQUALIFIED RULES"])
+    if unqualified.empty:
+        lines.extend(["", "None"])
+    else:
+        for _, row in unqualified.iterrows():
+            lines.extend(["", _render_comparison_row(row, ranked=False)])
+
+    return "\n".join(lines)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser("Market scanner execution backtest")
     parser.add_argument("--universe-file", required=True)
@@ -285,6 +382,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=f"{DEFAULT_REPORTS_DIR}/execution_summary.csv",
     )
     parser.add_argument(
+        "--output-comparison",
+        default=f"{DEFAULT_REPORTS_DIR}/execution_rule_comparison.csv",
+    )
+    parser.add_argument("--min-trades", type=int, default=20)
+    parser.add_argument(
         "--symbols",
         default=None,
         help="Comma-separated symbol filter",
@@ -303,6 +405,8 @@ def main(argv: list[str] | None = None) -> int:
         min_bars=args.min_bars,
         output_trades=args.output_trades,
         output_summary=args.output_summary,
+        output_comparison=args.output_comparison,
+        min_trades=args.min_trades,
         symbols=_parse_symbols(args.symbols),
     )
     return 0
@@ -399,6 +503,94 @@ def _parse_symbols(raw_symbols: str | None) -> list[str] | None:
         symbol.strip().upper() for symbol in raw_symbols.split(",") if symbol.strip()
     ]
     return symbols or None
+
+
+def _with_qualification(row: dict, *, min_trades: int) -> dict:
+    comparison_row = {column: row.get(column) for column in COMPARISON_COLUMNS}
+    total_trades = int(row.get("total_trades") or 0)
+    expectancy = row.get("expectancy")
+    avg_directional_return = row.get("avg_directional_return")
+    reasons: list[str] = []
+
+    if total_trades < min_trades:
+        reasons.append("not enough trades")
+    if expectancy is None or pd.isna(expectancy) or expectancy <= 0:
+        reasons.append("negative expectancy")
+    if (
+        avg_directional_return is None
+        or pd.isna(avg_directional_return)
+        or avg_directional_return <= 0
+    ):
+        reasons.append("negative avg directional return")
+
+    comparison_row["qualified"] = not reasons
+    comparison_row["qualification_reason"] = (
+        "; ".join(reasons) if reasons else "qualified"
+    )
+    comparison_row["rank"] = None
+    return comparison_row
+
+
+def _comparison_sort_key(row: dict) -> tuple:
+    profit_factor = row.get("profit_factor")
+    if profit_factor is None or pd.isna(profit_factor):
+        profit_factor_sort = float("-inf")
+    else:
+        profit_factor_sort = float(profit_factor)
+    return (
+        _numeric_or_negative_infinity(row.get("expectancy")),
+        profit_factor_sort,
+        _numeric_or_negative_infinity(row.get("avg_directional_return")),
+        _numeric_or_negative_infinity(row.get("avg_mae")),
+        _numeric_or_negative_infinity(row.get("total_trades")),
+    )
+
+
+def _numeric_or_negative_infinity(value: object) -> float:
+    if value is None or pd.isna(value):
+        return float("-inf")
+    return float(value)
+
+
+def _render_comparison_row(row: pd.Series, *, ranked: bool) -> str:
+    heading_parts = []
+    if ranked:
+        heading_parts.append(f"{int(row['rank'])})")
+    heading_parts.extend(
+        [
+            str(row["exit_rule"]),
+            str(row["side"]),
+            str(row["ranking_mode"]),
+            str(row["entry_alignment"]),
+        ]
+    )
+    if ranked:
+        heading = " ".join([heading_parts[0], " | ".join(heading_parts[1:])])
+    else:
+        heading = " | ".join(heading_parts)
+
+    lines = [
+        heading,
+        (
+            f"trades={int(row['total_trades'])} | "
+            f"win={_format_percent(row.get('win_rate'))} | "
+            f"loss={_format_percent(row.get('loss_rate'))}"
+        ),
+        (
+            f"expectancy={_format_signed_percent(row.get('expectancy'))} | "
+            "avg_dir_return="
+            f"{_format_signed_percent(row.get('avg_directional_return'))} | "
+            f"profit_factor={_format_decimal(row.get('profit_factor'))}"
+        ),
+        (
+            f"avg_mfe={_format_signed_percent(row.get('avg_mfe'))} | "
+            f"avg_mae={_format_signed_percent(row.get('avg_mae'))} | "
+            f"avg_hold={_format_decimal(row.get('avg_bars_held'))} bars"
+        ),
+    ]
+    if not ranked:
+        lines.append(f"reason={row.get('qualification_reason')}")
+    return "\n".join(lines)
 
 
 def _aggregate_weighted(df: pd.DataFrame, value_column: str) -> float | None:

@@ -16,9 +16,11 @@ Current structure:
 
 ~~~text
 src/market_scanner/
+  backtest_execution.py
   backtest.py
   eligibility.py
   event_state.py
+  exits.py
   market_state.py
   models.py
   pipeline.py
@@ -26,6 +28,7 @@ src/market_scanner/
   report_writer.py
   scan.py
   scanner_row.py
+  trades.py
   universe_loader.py
 ~~~
 
@@ -34,10 +37,13 @@ Current tests:
 ~~~text
 tests/market_scanner/
   test_backtest.py
+  test_backtest_execution.py
   test_eligibility.py
+  test_exits.py
   test_market_state.py
   test_ranking.py
   test_scan.py
+  test_trades.py
   test_universe_loader.py
 ~~~
 
@@ -69,6 +75,12 @@ The new execution backtest should answer:
 
 ~~~text
 Given a candidate signal, which exit rule captures the best risk-adjusted return?
+~~~
+
+Current incremental comparison mode also answers:
+
+~~~text
+Which exit rule works best operationally across rule variants?
 ~~~
 
 ---
@@ -107,11 +119,20 @@ Purpose:
 Simulate entries and exits as trades.
 ~~~
 
+It now also supports a comparison mode:
+
+~~~text
+--exit-rule all
+~~~
+
+This runs each supported exit rule independently, consolidates trades and
+summaries, and ranks the execution rules by directional expectancy.
+
 ---
 
-## Files to Add
+## Files Added
 
-Create:
+Implemented files:
 
 ~~~text
 src/market_scanner/exits.py
@@ -526,11 +547,13 @@ Suggested arguments:
 --universe-file
 --data-dir
 --ranking-mode snapshot|recent-event
---exit-rule alignment_break|bucket_downgrade|late_state|opposite_signal|bars_5|bars_10|bars_20
+--exit-rule alignment_break|bucket_downgrade|late_state|opposite_signal|bars_5|bars_10|bars_20|all
 --symbols optional comma-separated list
 --min-bars
+--min-trades
 --output-trades
 --output-summary
+--output-comparison
 ~~~
 
 Example:
@@ -543,7 +566,23 @@ PYTHONPATH=src uv run python -m market_scanner.backtest_execution \
   --ranking-mode recent-event \
   --exit-rule bucket_downgrade \
   --output-trades reports/market_scanner/execution_trades.csv \
-  --output-summary reports/market_scanner/execution_summary.csv
+  --output-summary reports/market_scanner/execution_summary.csv \
+  --output-comparison reports/market_scanner/execution_rule_comparison.csv
+~~~
+
+Comparison example:
+
+~~~bash
+PYTHONPATH=src uv run python -m market_scanner.backtest_execution \
+  --universe-file data/scanner_universe_sample.csv \
+  --data-dir data/stocks/1D \
+  --symbols SMR,AAPL,AFRM \
+  --ranking-mode recent-event \
+  --exit-rule all \
+  --min-trades 20 \
+  --output-trades reports/market_scanner/execution_trades.csv \
+  --output-summary reports/market_scanner/execution_summary.csv \
+  --output-comparison reports/market_scanner/execution_rule_comparison.csv
 ~~~
 
 ---
@@ -609,8 +648,84 @@ avg_mfe
 avg_mae
 avg_bars_held
 expectancy
+profit_factor
 best_trade
 worst_trade
+~~~
+
+---
+
+## Output: Comparison CSV
+
+Default:
+
+~~~text
+reports/market_scanner/execution_rule_comparison.csv
+~~~
+
+This file is generated for both single-rule and `--exit-rule all` runs. It is
+most useful when `--exit-rule all` is used.
+
+Group by:
+
+~~~text
+exit_rule
+ranking_mode
+side
+entry_alignment
+~~~
+
+Columns:
+
+~~~text
+rank
+qualified
+qualification_reason
+exit_rule
+ranking_mode
+side
+entry_alignment
+total_trades
+win_rate
+loss_rate
+avg_directional_return
+median_directional_return
+expectancy
+profit_factor
+avg_mfe
+avg_mae
+avg_bars_held
+best_trade
+worst_trade
+~~~
+
+Qualification:
+
+~~~text
+total_trades >= min_trades
+expectancy > 0
+avg_directional_return > 0
+~~~
+
+Qualification reasons:
+
+~~~text
+qualified
+not enough trades
+negative expectancy
+negative avg directional return
+~~~
+
+If multiple reasons apply, join them with `; `.
+
+Ranking order for qualified rows:
+
+~~~text
+expectancy desc
+profit_factor desc
+avg_directional_return desc
+avg_mae desc
+total_trades desc
 ~~~
 
 ---
@@ -656,6 +771,16 @@ Reason:
 
 This backtest validates directional signal execution, not options strategy PnL.
 
+When `--exit-rule all` is used, terminal output should show:
+
+~~~text
+BEST EXECUTION RULES
+UNQUALIFIED RULES
+~~~
+
+The comparison output should prioritize `expectancy` and
+`avg_directional_return`, not raw return.
+
 ---
 
 ## MFE / MAE Calculation
@@ -690,6 +815,30 @@ Where:
 avg_win = average positive directional_return
 avg_loss = absolute average negative directional_return
 ~~~
+
+---
+
+## Profit Factor
+
+Use directional returns.
+
+~~~text
+profit_factor = sum(winning directional returns) / abs(sum(losing directional returns))
+~~~
+
+If there are no losing trades:
+
+~~~text
+profit_factor = None
+~~~
+
+If there are no winning trades:
+
+~~~text
+profit_factor = 0.0
+~~~
+
+Do not divide by zero.
 
 ---
 
@@ -733,6 +882,10 @@ or action-bucket logic inside `backtest_execution.py`.
 Do not combine exit rules in V1.
 
 Run each separately.
+
+`--exit-rule all` is a comparison convenience, not a compound rule. It runs the
+same single-rule execution backtest once per supported exit rule and then
+compares the outputs.
 
 The purpose is to compare:
 
@@ -778,6 +931,8 @@ Cover:
 - bearish raw/directional return
 - MFE / MAE calculations
 - expectancy calculation
+- profit factor calculation
+- profit factor edge cases
 
 ---
 
@@ -792,6 +947,11 @@ Cover:
 - closes on selected exit rule
 - one open trade per symbol
 - output schema contains required columns
+- `--exit-rule all` expansion
+- comparison summary includes each rule group
+- qualification logic and reasons
+- ranking sort order
+- terminal comparison renderer
 
 ---
 
@@ -817,14 +977,19 @@ PYTHONPATH=src uv run python -m market_scanner.backtest_execution \
   --data-dir data/stocks/1D \
   --symbols SMR \
   --ranking-mode recent-event \
-  --exit-rule bucket_downgrade
+  --exit-rule all \
+  --min-trades 1
 ~~~
 
 Expected:
 
+- all exit rules run when `--exit-rule all` is used
 - trades CSV generated
 - summary CSV generated
+- comparison CSV generated
 - terminal summary shown
+- `BEST EXECUTION RULES` shown for comparison mode
+- `UNQUALIFIED RULES` shown for comparison mode
 - current `market_scanner/backtest.py` remains working
 - no behavior change in `market_scanner.scan`
 

@@ -97,14 +97,23 @@ def summarize_trade_records(records: list[dict]) -> list[dict]:
     for group_values, group in grouped:
         directional = pd.to_numeric(group["directional_return"], errors="coerce")
         wins = directional[directional > 0]
-        losses = directional[directional < 0]
+        losses = directional[directional <= 0]
         win_rate = float((directional > 0).mean()) if not directional.empty else None
-        loss_rate = 1.0 - win_rate if win_rate is not None else None
-        avg_win = float(wins.mean()) if not wins.empty else None
-        avg_loss = float(abs(losses.mean())) if not losses.empty else None
+        loss_rate = float((directional <= 0).mean()) if not directional.empty else None
+        avg_win = float(wins.mean()) if not wins.empty else 0.0
+        avg_loss = float(abs(losses.mean())) if not losses.empty else 0.0
         expectancy = None
-        if win_rate is not None and avg_win is not None and avg_loss is not None:
-            expectancy = (win_rate * avg_win) - ((1.0 - win_rate) * avg_loss)
+        if win_rate is not None and loss_rate is not None:
+            expectancy = (win_rate * avg_win) - (loss_rate * avg_loss)
+
+        winning_sum = float(wins.sum()) if not wins.empty else 0.0
+        losing_sum = float(losses.sum()) if not losses.empty else 0.0
+        if losses.empty:
+            profit_factor = None
+        elif wins.empty:
+            profit_factor = 0.0
+        else:
+            profit_factor = winning_sum / abs(losing_sum)
 
         row = {
             "exit_rule": group_values[0],
@@ -134,6 +143,7 @@ def summarize_trade_records(records: list[dict]) -> list[dict]:
             ),
             "avg_bars_held": float(pd.to_numeric(group["bars_held"]).mean()),
             "expectancy": expectancy,
+            "profit_factor": profit_factor,
             "best_trade": (float(directional.max()) if not directional.empty else None),
             "worst_trade": (
                 float(directional.min()) if not directional.empty else None

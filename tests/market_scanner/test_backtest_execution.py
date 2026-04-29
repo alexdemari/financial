@@ -5,6 +5,10 @@ import pandas as pd
 from market_scanner.backtest_execution import (
     backtest_execution_universe,
     generate_symbol_trades,
+    rank_execution_rules,
+    render_execution_rule_comparison,
+    resolve_exit_rules,
+    summarize_execution_rules,
 )
 from market_scanner.pipeline import SymbolData
 
@@ -298,6 +302,7 @@ def test_backtest_execution_universe_exports_required_schema(tmp_path, monkeypat
         exit_rule="bucket_downgrade",
         output_trades=tmp_path / "execution_trades.csv",
         output_summary=tmp_path / "execution_summary.csv",
+        output_comparison=tmp_path / "execution_rule_comparison.csv",
     )
 
     assert set(
@@ -336,7 +341,211 @@ def test_backtest_execution_universe_exports_required_schema(tmp_path, monkeypat
             "avg_mae",
             "avg_bars_held",
             "expectancy",
+            "profit_factor",
             "best_trade",
             "worst_trade",
         ]
     ).issubset(summary_df.columns)
+    comparison_df = pd.read_csv(tmp_path / "execution_rule_comparison.csv")
+    assert set(
+        [
+            "rank",
+            "qualified",
+            "qualification_reason",
+            "exit_rule",
+            "ranking_mode",
+            "side",
+            "entry_alignment",
+            "total_trades",
+            "win_rate",
+            "loss_rate",
+            "avg_directional_return",
+            "median_directional_return",
+            "expectancy",
+            "profit_factor",
+            "avg_mfe",
+            "avg_mae",
+            "avg_bars_held",
+            "best_trade",
+            "worst_trade",
+        ]
+    ).issubset(comparison_df.columns)
+
+
+def test_resolve_exit_rules_expands_all():
+    assert resolve_exit_rules("all") == [
+        "alignment_break",
+        "bucket_downgrade",
+        "late_state",
+        "opposite_signal",
+        "bars_5",
+        "bars_10",
+        "bars_20",
+    ]
+    assert resolve_exit_rules("bars_10") == ["bars_10"]
+
+
+def test_summarize_execution_rules_groups_all_rules():
+    records = [
+        {
+            "exit_rule": "bars_5",
+            "ranking_mode": "recent-event",
+            "side": "bullish",
+            "entry_alignment": "bullish_aligned",
+            "raw_return": 0.05,
+            "directional_return": 0.05,
+            "mfe": 0.08,
+            "mae": -0.01,
+            "bars_held": 5,
+        },
+        {
+            "exit_rule": "bars_10",
+            "ranking_mode": "recent-event",
+            "side": "bearish",
+            "entry_alignment": "bearish_aligned",
+            "raw_return": -0.04,
+            "directional_return": 0.04,
+            "mfe": 0.06,
+            "mae": -0.02,
+            "bars_held": 10,
+        },
+    ]
+
+    rows = summarize_execution_rules(records, min_trades=1)
+
+    groups = {
+        (
+            row["exit_rule"],
+            row["ranking_mode"],
+            row["side"],
+            row["entry_alignment"],
+        )
+        for row in rows
+    }
+    assert groups == {
+        ("bars_5", "recent-event", "bullish", "bullish_aligned"),
+        ("bars_10", "recent-event", "bearish", "bearish_aligned"),
+    }
+
+
+def test_rank_execution_rules_qualification_and_order():
+    rows = [
+        {
+            "exit_rule": "bars_5",
+            "ranking_mode": "recent-event",
+            "side": "bullish",
+            "entry_alignment": "bullish_aligned",
+            "total_trades": 30,
+            "win_rate": 0.7,
+            "loss_rate": 0.3,
+            "avg_directional_return": 0.03,
+            "median_directional_return": 0.02,
+            "expectancy": 0.02,
+            "profit_factor": 1.2,
+            "avg_mfe": 0.05,
+            "avg_mae": -0.03,
+            "avg_bars_held": 5.0,
+            "best_trade": 0.08,
+            "worst_trade": -0.02,
+        },
+        {
+            "exit_rule": "bars_10",
+            "ranking_mode": "recent-event",
+            "side": "bullish",
+            "entry_alignment": "bullish_aligned",
+            "total_trades": 30,
+            "win_rate": 0.7,
+            "loss_rate": 0.3,
+            "avg_directional_return": 0.04,
+            "median_directional_return": 0.03,
+            "expectancy": 0.03,
+            "profit_factor": 1.1,
+            "avg_mfe": 0.06,
+            "avg_mae": -0.02,
+            "avg_bars_held": 10.0,
+            "best_trade": 0.09,
+            "worst_trade": -0.02,
+        },
+        {
+            "exit_rule": "late_state",
+            "ranking_mode": "recent-event",
+            "side": "bearish",
+            "entry_alignment": "bearish_aligned",
+            "total_trades": 7,
+            "win_rate": 0.4,
+            "loss_rate": 0.6,
+            "avg_directional_return": -0.01,
+            "median_directional_return": -0.01,
+            "expectancy": -0.01,
+            "profit_factor": 0.8,
+            "avg_mfe": 0.02,
+            "avg_mae": -0.05,
+            "avg_bars_held": 4.0,
+            "best_trade": 0.03,
+            "worst_trade": -0.06,
+        },
+    ]
+
+    ranked = rank_execution_rules(rows, min_trades=20)
+
+    assert ranked[0]["exit_rule"] == "bars_10"
+    assert ranked[0]["rank"] == 1
+    assert ranked[0]["qualification_reason"] == "qualified"
+    assert ranked[-1]["qualified"] is False
+    assert ranked[-1]["qualification_reason"] == (
+        "not enough trades; negative expectancy; " "negative avg directional return"
+    )
+
+
+def test_render_execution_rule_comparison_shows_required_sections():
+    comparison_df = pd.DataFrame(
+        rank_execution_rules(
+            [
+                {
+                    "exit_rule": "bucket_downgrade",
+                    "ranking_mode": "recent-event",
+                    "side": "bullish",
+                    "entry_alignment": "bullish_aligned",
+                    "total_trades": 21,
+                    "win_rate": 0.6,
+                    "loss_rate": 0.4,
+                    "avg_directional_return": 0.03,
+                    "median_directional_return": 0.02,
+                    "expectancy": 0.02,
+                    "profit_factor": 1.5,
+                    "avg_mfe": 0.06,
+                    "avg_mae": -0.02,
+                    "avg_bars_held": 8.0,
+                    "best_trade": 0.1,
+                    "worst_trade": -0.03,
+                },
+                {
+                    "exit_rule": "opposite_signal",
+                    "ranking_mode": "recent-event",
+                    "side": "bearish",
+                    "entry_alignment": "bearish_aligned",
+                    "total_trades": 3,
+                    "win_rate": 0.3,
+                    "loss_rate": 0.7,
+                    "avg_directional_return": -0.01,
+                    "median_directional_return": -0.01,
+                    "expectancy": -0.01,
+                    "profit_factor": 0.5,
+                    "avg_mfe": 0.02,
+                    "avg_mae": -0.04,
+                    "avg_bars_held": 6.0,
+                    "best_trade": 0.02,
+                    "worst_trade": -0.05,
+                },
+            ],
+            min_trades=20,
+        )
+    )
+
+    output = render_execution_rule_comparison(comparison_df)
+
+    assert "BEST EXECUTION RULES" in output
+    assert "UNQUALIFIED RULES" in output
+    assert "expectancy" in output
+    assert "avg_dir_return" in output
+    assert "profit_factor" in output

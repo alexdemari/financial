@@ -118,3 +118,36 @@ def test_summarize_trade_records_computes_expectancy():
     assert row["avg_directional_return"] == pytest.approx(0.025)
     assert row["avg_bars_held"] == pytest.approx(3.0)
     assert row["expectancy"] == pytest.approx(0.025)
+    assert row["profit_factor"] == pytest.approx(2.0)
+
+
+def test_summarize_trade_records_profit_factor_edge_cases():
+    win_only = [
+        {
+            "exit_rule": "bars_5",
+            "ranking_mode": "recent-event",
+            "side": "bullish",
+            "entry_alignment": "bullish_aligned",
+            "raw_return": 0.04,
+            "directional_return": 0.04,
+            "mfe": 0.05,
+            "mae": -0.01,
+            "bars_held": 5,
+        }
+    ]
+    loss_only = [
+        {
+            "exit_rule": "bars_5",
+            "ranking_mode": "recent-event",
+            "side": "bullish",
+            "entry_alignment": "bullish_aligned",
+            "raw_return": -0.04,
+            "directional_return": -0.04,
+            "mfe": 0.02,
+            "mae": -0.05,
+            "bars_held": 5,
+        }
+    ]
+
+    assert summarize_trade_records(win_only)[0]["profit_factor"] is None
+    assert summarize_trade_records(loss_only)[0]["profit_factor"] == pytest.approx(0.0)

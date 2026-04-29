@@ -190,10 +190,12 @@ PYTHONPATH=src uv run python -m market_scanner.backtest_execution \
   --universe-file data/scanner_universe_sample.csv \
   --data-dir data/stocks/1D \
   --ranking-mode recent-event \
-  --exit-rule bucket_downgrade \
+  --exit-rule all \
+  --min-trades 20 \
   --symbols AAPL \
   --output-trades reports/market_scanner/execution_trades.csv \
-  --output-summary reports/market_scanner/execution_summary.csv
+  --output-summary reports/market_scanner/execution_summary.csv \
+  --output-comparison reports/market_scanner/execution_rule_comparison.csv
 ```
 
 ---
