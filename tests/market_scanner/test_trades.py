@@ -4,6 +4,7 @@ import pytest
 from market_scanner.trades import (
     build_trade,
     compute_trade_excursions,
+    summarize_symbol_trade_records,
     summarize_trade_records,
     trade_to_record,
 )
@@ -151,3 +152,39 @@ def test_summarize_trade_records_profit_factor_edge_cases():
 
     assert summarize_trade_records(win_only)[0]["profit_factor"] is None
     assert summarize_trade_records(loss_only)[0]["profit_factor"] == pytest.approx(0.0)
+
+
+def test_summarize_symbol_trade_records_groups_by_symbol():
+    records = [
+        {
+            "symbol": "AAPL",
+            "exit_rule": "bars_5",
+            "ranking_mode": "recent-event",
+            "side": "bullish",
+            "entry_alignment": "bullish_aligned",
+            "raw_return": 0.04,
+            "directional_return": 0.04,
+            "mfe": 0.06,
+            "mae": -0.01,
+            "bars_held": 5,
+        },
+        {
+            "symbol": "MSFT",
+            "exit_rule": "bars_5",
+            "ranking_mode": "recent-event",
+            "side": "bullish",
+            "entry_alignment": "bullish_aligned",
+            "raw_return": -0.02,
+            "directional_return": -0.02,
+            "mfe": 0.03,
+            "mae": -0.04,
+            "bars_held": 5,
+        },
+    ]
+
+    rows = summarize_symbol_trade_records(records)
+
+    assert {row["symbol"] for row in rows} == {"AAPL", "MSFT"}
+    aapl = next(row for row in rows if row["symbol"] == "AAPL")
+    assert aapl["total_trades"] == 1
+    assert aapl["avg_directional_return"] == pytest.approx(0.04)

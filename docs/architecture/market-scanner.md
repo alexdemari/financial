@@ -217,6 +217,8 @@ Execution backtest entries are still based on Scanner V3 decision rows:
 Exit rules live in `exits.py` and remain isolated. The `--exit-rule all`
 comparison mode runs the supported exit rules independently, then ranks the
 results by directional execution metrics such as expectancy and profit factor.
+The execution backtest also writes a symbol-level comparison so rule quality
+can be checked per asset instead of only in aggregate.
 
 This remains directional execution validation. It is not options PnL,
 position sizing, slippage, commissions, or portfolio simulation.

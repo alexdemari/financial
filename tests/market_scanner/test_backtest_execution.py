@@ -4,6 +4,7 @@ import pandas as pd
 
 from market_scanner.backtest_execution import (
     backtest_execution_universe,
+    build_execution_recommendations,
     generate_symbol_trades,
     rank_execution_rules,
     render_execution_rule_comparison,
@@ -257,7 +258,9 @@ def test_generate_symbol_trades_force_closes_at_end_of_data(monkeypatch):
     assert trades[0].exit_date == pd.Timestamp(df.index[-1]).isoformat()
 
 
-def test_backtest_execution_universe_exports_required_schema(tmp_path, monkeypatch):
+def test_backtest_execution_universe_exports_required_schema(
+    tmp_path, monkeypatch, capsys
+):
     df = make_ohlc_df()
 
     monkeypatch.setattr(
@@ -312,7 +315,13 @@ def test_backtest_execution_universe_exports_required_schema(tmp_path, monkeypat
         output_trades=tmp_path / "execution_trades.csv",
         output_summary=tmp_path / "execution_summary.csv",
         output_comparison=tmp_path / "execution_rule_comparison.csv",
+        output_symbol_comparison=tmp_path / "execution_symbol_comparison.csv",
+        output_recommendations=tmp_path / "execution_recommended_rules.csv",
+        progress=True,
     )
+
+    stdout = capsys.readouterr().out
+    assert "[execution progress] 1/1 AAPL status=ok trades=1" in stdout
 
     assert set(
         [
@@ -379,6 +388,55 @@ def test_backtest_execution_universe_exports_required_schema(tmp_path, monkeypat
             "worst_trade",
         ]
     ).issubset(comparison_df.columns)
+    symbol_comparison_df = pd.read_csv(tmp_path / "execution_symbol_comparison.csv")
+    assert set(
+        [
+            "symbol",
+            "exit_rule",
+            "ranking_mode",
+            "side",
+            "entry_alignment",
+            "total_trades",
+            "win_rate",
+            "loss_rate",
+            "avg_return",
+            "median_return",
+            "avg_directional_return",
+            "median_directional_return",
+            "avg_mfe",
+            "avg_mae",
+            "avg_bars_held",
+            "expectancy",
+            "profit_factor",
+            "best_trade",
+            "worst_trade",
+        ]
+    ).issubset(symbol_comparison_df.columns)
+    recommendations_df = pd.read_csv(tmp_path / "execution_recommended_rules.csv")
+    assert set(
+        [
+            "scope",
+            "symbol",
+            "side",
+            "recommended_exit_rule",
+            "qualified",
+            "qualification_reason",
+            "ranking_mode",
+            "entry_alignment",
+            "total_trades",
+            "win_rate",
+            "loss_rate",
+            "avg_directional_return",
+            "median_directional_return",
+            "expectancy",
+            "profit_factor",
+            "avg_mfe",
+            "avg_mae",
+            "avg_bars_held",
+            "best_trade",
+            "worst_trade",
+        ]
+    ).issubset(recommendations_df.columns)
 
 
 def test_exit_rule_all_reuses_prepared_symbol_rows(tmp_path, monkeypatch):
@@ -440,6 +498,8 @@ def test_exit_rule_all_reuses_prepared_symbol_rows(tmp_path, monkeypatch):
         output_trades=tmp_path / "execution_trades.csv",
         output_summary=tmp_path / "execution_summary.csv",
         output_comparison=tmp_path / "execution_rule_comparison.csv",
+        output_symbol_comparison=tmp_path / "execution_symbol_comparison.csv",
+        output_recommendations=tmp_path / "execution_recommended_rules.csv",
         min_trades=1,
     )
 
@@ -460,6 +520,130 @@ def test_resolve_exit_rules_expands_all():
         "bars_20",
     ]
     assert resolve_exit_rules("bars_10") == ["bars_10"]
+
+
+def test_build_execution_recommendations_selects_global_and_symbol_rules():
+    comparison_df = pd.DataFrame(
+        [
+            {
+                "exit_rule": "bars_20",
+                "ranking_mode": "recent-event",
+                "side": "bullish",
+                "entry_alignment": "bullish_aligned",
+                "total_trades": 40,
+                "win_rate": 0.6,
+                "loss_rate": 0.4,
+                "avg_directional_return": 0.02,
+                "median_directional_return": 0.01,
+                "expectancy": 0.02,
+                "profit_factor": 2.0,
+                "avg_mfe": 0.05,
+                "avg_mae": -0.03,
+                "avg_bars_held": 20.0,
+                "best_trade": 0.10,
+                "worst_trade": -0.04,
+            },
+            {
+                "exit_rule": "opposite_signal",
+                "ranking_mode": "recent-event",
+                "side": "bullish",
+                "entry_alignment": "bullish_aligned",
+                "total_trades": 35,
+                "win_rate": 0.7,
+                "loss_rate": 0.3,
+                "avg_directional_return": 0.05,
+                "median_directional_return": 0.03,
+                "expectancy": 0.05,
+                "profit_factor": 3.0,
+                "avg_mfe": 0.08,
+                "avg_mae": -0.05,
+                "avg_bars_held": 30.0,
+                "best_trade": 0.20,
+                "worst_trade": -0.05,
+            },
+        ]
+    )
+    symbol_comparison_df = pd.DataFrame(
+        [
+            {
+                "symbol": "AAPL",
+                "exit_rule": "opposite_signal",
+                "ranking_mode": "recent-event",
+                "side": "bullish",
+                "entry_alignment": "bullish_aligned",
+                "total_trades": 30,
+                "win_rate": 0.7,
+                "loss_rate": 0.3,
+                "avg_directional_return": 0.04,
+                "median_directional_return": 0.03,
+                "expectancy": 0.04,
+                "profit_factor": 2.5,
+                "avg_mfe": 0.08,
+                "avg_mae": -0.04,
+                "avg_bars_held": 30.0,
+                "best_trade": 0.20,
+                "worst_trade": -0.05,
+            },
+            {
+                "symbol": "SNOW",
+                "exit_rule": "opposite_signal",
+                "ranking_mode": "recent-event",
+                "side": "bullish",
+                "entry_alignment": "bullish_aligned",
+                "total_trades": 15,
+                "win_rate": 0.4,
+                "loss_rate": 0.6,
+                "avg_directional_return": -0.03,
+                "median_directional_return": -0.02,
+                "expectancy": -0.03,
+                "profit_factor": 0.7,
+                "avg_mfe": 0.04,
+                "avg_mae": -0.10,
+                "avg_bars_held": 35.0,
+                "best_trade": 0.08,
+                "worst_trade": -0.12,
+            },
+            {
+                "symbol": "SNOW",
+                "exit_rule": "alignment_break",
+                "ranking_mode": "recent-event",
+                "side": "bullish",
+                "entry_alignment": "bullish_aligned",
+                "total_trades": 24,
+                "win_rate": 0.6,
+                "loss_rate": 0.4,
+                "avg_directional_return": 0.01,
+                "median_directional_return": 0.01,
+                "expectancy": 0.01,
+                "profit_factor": 1.4,
+                "avg_mfe": 0.05,
+                "avg_mae": -0.06,
+                "avg_bars_held": 8.0,
+                "best_trade": 0.09,
+                "worst_trade": -0.04,
+            },
+        ]
+    )
+
+    recommendations = build_execution_recommendations(
+        comparison_df=comparison_df,
+        symbol_comparison_df=symbol_comparison_df,
+        min_trades=20,
+    )
+
+    global_bullish = recommendations[
+        (recommendations["scope"] == "global") & (recommendations["side"] == "bullish")
+    ].iloc[0]
+    snow_bullish = recommendations[
+        (recommendations["scope"] == "symbol")
+        & (recommendations["symbol"] == "SNOW")
+        & (recommendations["side"] == "bullish")
+    ].iloc[0]
+
+    assert global_bullish["recommended_exit_rule"] == "opposite_signal"
+    assert global_bullish["qualified"] == True  # noqa: E712
+    assert snow_bullish["recommended_exit_rule"] == "alignment_break"
+    assert snow_bullish["qualified"] == True  # noqa: E712
 
 
 def test_summarize_execution_rules_groups_all_rules():

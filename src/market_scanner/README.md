@@ -55,10 +55,18 @@ Execution comparison supports:
 - `--exit-rule all`
 - `--min-trades`
 - `--output-comparison`
+- `--output-symbol-comparison`
+- `--output-recommendations`
+- `--progress`
 
 When `--exit-rule all` is used, Lux/SMC histories and Scanner V3 rows are
 prepared once per symbol and reused across the individual exit-rule
 simulations.
+
+`execution_recommended_rules.csv` reports the best qualified rule globally by
+side and per symbol by side.
+
+Use `--progress` for per-symbol elapsed time and ETA on larger universes.
 
 `options_tech_scanner` remains in the repository for the legacy scanner and
 temporary compatibility imports.

@@ -1,6 +1,7 @@
 import argparse
 from dataclasses import dataclass
 from pathlib import Path
+from time import perf_counter
 
 import pandas as pd
 
@@ -26,6 +27,7 @@ from market_scanner.trades import (
     build_trade,
     compute_trade_excursions,
     summarize_trade_records,
+    summarize_symbol_trade_records,
     trade_to_record,
 )
 from stock_analyzer.analyzer import StockDataAnalyzer
@@ -50,6 +52,49 @@ COMPARISON_COLUMNS = [
     "exit_rule",
     "ranking_mode",
     "side",
+    "entry_alignment",
+    "total_trades",
+    "win_rate",
+    "loss_rate",
+    "avg_directional_return",
+    "median_directional_return",
+    "expectancy",
+    "profit_factor",
+    "avg_mfe",
+    "avg_mae",
+    "avg_bars_held",
+    "best_trade",
+    "worst_trade",
+]
+SYMBOL_COMPARISON_COLUMNS = [
+    "symbol",
+    "exit_rule",
+    "ranking_mode",
+    "side",
+    "entry_alignment",
+    "total_trades",
+    "win_rate",
+    "loss_rate",
+    "avg_return",
+    "median_return",
+    "avg_directional_return",
+    "median_directional_return",
+    "avg_mfe",
+    "avg_mae",
+    "avg_bars_held",
+    "expectancy",
+    "profit_factor",
+    "best_trade",
+    "worst_trade",
+]
+RECOMMENDATION_COLUMNS = [
+    "scope",
+    "symbol",
+    "side",
+    "recommended_exit_rule",
+    "qualified",
+    "qualification_reason",
+    "ranking_mode",
     "entry_alignment",
     "total_trades",
     "win_rate",
@@ -105,19 +150,40 @@ def backtest_execution_universe(
     output_comparison: str | Path = (
         f"{DEFAULT_REPORTS_DIR}/execution_rule_comparison.csv"
     ),
+    output_symbol_comparison: str | Path = (
+        f"{DEFAULT_REPORTS_DIR}/execution_symbol_comparison.csv"
+    ),
+    output_recommendations: str | Path = (
+        f"{DEFAULT_REPORTS_DIR}/execution_recommended_rules.csv"
+    ),
     min_trades: int = 20,
     symbols: list[str] | None = None,
+    progress: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     universe = load_selected_universe(universe_file, symbols=symbols)
     analyzers = create_analyzers(StockDataAnalyzer)
     trade_records: list[dict] = []
     exit_rules = resolve_exit_rules(exit_rule)
+    total_symbols = len(universe)
+    start_time = perf_counter()
+    processed_symbols = 0
 
     def _transform_df(df: pd.DataFrame) -> pd.DataFrame:
         return prepare_backtest_df(df=df.sort_index())
 
     for symbol_data in iter_symbol_data(universe, data_dir, transform_df=_transform_df):
+        symbol_start = perf_counter()
+        processed_symbols += 1
         if symbol_data.load_error is not None or symbol_data.df is None:
+            if progress:
+                _print_progress(
+                    processed_symbols=processed_symbols,
+                    total_symbols=total_symbols,
+                    symbol=symbol_data.symbol,
+                    start_time=start_time,
+                    symbol_start=symbol_start,
+                    status=symbol_data.load_error,
+                )
             continue
 
         prepared_data = prepare_symbol_execution_data(
@@ -129,13 +195,24 @@ def backtest_execution_universe(
             smc_analyzer=analyzers.smc_analyzer,
         )
         if prepared_data is None:
+            if progress:
+                _print_progress(
+                    processed_symbols=processed_symbols,
+                    total_symbols=total_symbols,
+                    symbol=symbol_data.symbol,
+                    start_time=start_time,
+                    symbol_start=symbol_start,
+                    status="insufficient_history",
+                )
             continue
 
+        symbol_trade_count = 0
         for current_exit_rule in exit_rules:
             symbol_trades = generate_prepared_symbol_trades(
                 prepared_data=prepared_data,
                 exit_rule=current_exit_rule,
             )
+            symbol_trade_count += len(symbol_trades)
             trade_records.extend(
                 trade_to_record(
                     trade,
@@ -144,6 +221,15 @@ def backtest_execution_universe(
                 )
                 for trade in symbol_trades
             )
+        if progress:
+            _print_progress(
+                processed_symbols=processed_symbols,
+                total_symbols=total_symbols,
+                symbol=symbol_data.symbol,
+                start_time=start_time,
+                symbol_start=symbol_start,
+                status=f"ok trades={symbol_trade_count}",
+            )
 
     trades_df = pd.DataFrame(trade_records)
     summary_df = pd.DataFrame(summarize_trade_records(trade_records))
@@ -151,9 +237,20 @@ def backtest_execution_universe(
         summarize_execution_rules(trade_records, min_trades=min_trades),
         columns=COMPARISON_COLUMNS,
     )
+    symbol_comparison_df = pd.DataFrame(
+        summarize_symbol_trade_records(trade_records),
+        columns=SYMBOL_COMPARISON_COLUMNS,
+    )
+    recommendations_df = build_execution_recommendations(
+        comparison_df=comparison_df,
+        symbol_comparison_df=symbol_comparison_df,
+        min_trades=min_trades,
+    )
     write_csv_report(trades_df, output_trades)
     write_csv_report(summary_df, output_summary)
     write_csv_report(comparison_df, output_comparison)
+    write_csv_report(symbol_comparison_df, output_symbol_comparison)
+    write_csv_report(recommendations_df, output_recommendations)
 
     if exit_rule == "all":
         terminal_summary = render_execution_rule_comparison(comparison_df)
@@ -168,6 +265,8 @@ def backtest_execution_universe(
     print(f"\nExported trades: {Path(output_trades)}")
     print(f"Exported summary: {Path(output_summary)}")
     print(f"Exported comparison: {Path(output_comparison)}")
+    print(f"Exported symbol comparison: {Path(output_symbol_comparison)}")
+    print(f"Exported recommendations: {Path(output_recommendations)}")
     return trades_df, summary_df
 
 
@@ -203,6 +302,41 @@ def rank_execution_rules(
         row["rank"] = None
 
     return qualified + unqualified
+
+
+def build_execution_recommendations(
+    *,
+    comparison_df: pd.DataFrame,
+    symbol_comparison_df: pd.DataFrame,
+    min_trades: int = 20,
+) -> pd.DataFrame:
+    rows: list[dict] = []
+    if not comparison_df.empty:
+        for side, group in comparison_df.groupby("side", sort=True):
+            rows.append(
+                _build_recommendation_row(
+                    group=group,
+                    scope="global",
+                    symbol=None,
+                    side=str(side),
+                    min_trades=min_trades,
+                )
+            )
+
+    if not symbol_comparison_df.empty:
+        grouped = symbol_comparison_df.groupby(["symbol", "side"], sort=True)
+        for (symbol, side), group in grouped:
+            rows.append(
+                _build_recommendation_row(
+                    group=group,
+                    scope="symbol",
+                    symbol=str(symbol),
+                    side=str(side),
+                    min_trades=min_trades,
+                )
+            )
+
+    return pd.DataFrame(rows, columns=RECOMMENDATION_COLUMNS)
 
 
 def generate_symbol_trades(
@@ -459,7 +593,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--output-comparison",
         default=f"{DEFAULT_REPORTS_DIR}/execution_rule_comparison.csv",
     )
+    parser.add_argument(
+        "--output-symbol-comparison",
+        default=f"{DEFAULT_REPORTS_DIR}/execution_symbol_comparison.csv",
+    )
+    parser.add_argument(
+        "--output-recommendations",
+        default=f"{DEFAULT_REPORTS_DIR}/execution_recommended_rules.csv",
+    )
     parser.add_argument("--min-trades", type=int, default=20)
+    parser.add_argument(
+        "--progress",
+        action="store_true",
+        help="Print per-symbol elapsed time and ETA during execution.",
+    )
     parser.add_argument(
         "--symbols",
         default=None,
@@ -480,8 +627,11 @@ def main(argv: list[str] | None = None) -> int:
         output_trades=args.output_trades,
         output_summary=args.output_summary,
         output_comparison=args.output_comparison,
+        output_symbol_comparison=args.output_symbol_comparison,
+        output_recommendations=args.output_recommendations,
         min_trades=args.min_trades,
         symbols=_parse_symbols(args.symbols),
+        progress=args.progress,
     )
     return 0
 
@@ -579,8 +729,71 @@ def _parse_symbols(raw_symbols: str | None) -> list[str] | None:
     return symbols or None
 
 
+def _print_progress(
+    *,
+    processed_symbols: int,
+    total_symbols: int,
+    symbol: str,
+    start_time: float,
+    symbol_start: float,
+    status: str,
+) -> None:
+    now = perf_counter()
+    elapsed = now - start_time
+    symbol_elapsed = now - symbol_start
+    eta = _estimate_eta(
+        processed_symbols=processed_symbols,
+        total_symbols=total_symbols,
+        elapsed=elapsed,
+    )
+    print(
+        "[execution progress] "
+        f"{processed_symbols}/{total_symbols} {symbol} "
+        f"status={status} "
+        f"symbol_elapsed={_format_duration(symbol_elapsed)} "
+        f"elapsed={_format_duration(elapsed)} "
+        f"eta={_format_duration(eta)}",
+        flush=True,
+    )
+
+
+def _estimate_eta(
+    *,
+    processed_symbols: int,
+    total_symbols: int,
+    elapsed: float,
+) -> float | None:
+    if processed_symbols <= 0 or total_symbols <= processed_symbols:
+        return 0.0
+    average_per_symbol = elapsed / processed_symbols
+    return average_per_symbol * (total_symbols - processed_symbols)
+
+
+def _format_duration(seconds: float | None) -> str:
+    if seconds is None or pd.isna(seconds):
+        return "n/a"
+    seconds = max(0, int(round(seconds)))
+    minutes, second = divmod(seconds, 60)
+    hours, minute = divmod(minutes, 60)
+    if hours:
+        return f"{hours}h{minute:02d}m{second:02d}s"
+    if minutes:
+        return f"{minutes}m{second:02d}s"
+    return f"{second}s"
+
+
 def _with_qualification(row: dict, *, min_trades: int) -> dict:
     comparison_row = {column: row.get(column) for column in COMPARISON_COLUMNS}
+    reasons = _qualification_reasons(row, min_trades=min_trades)
+    comparison_row["qualified"] = not reasons
+    comparison_row["qualification_reason"] = (
+        "; ".join(reasons) if reasons else "qualified"
+    )
+    comparison_row["rank"] = None
+    return comparison_row
+
+
+def _qualification_reasons(row: dict, *, min_trades: int) -> list[str]:
     total_trades = int(row.get("total_trades") or 0)
     expectancy = row.get("expectancy")
     avg_directional_return = row.get("avg_directional_return")
@@ -597,12 +810,54 @@ def _with_qualification(row: dict, *, min_trades: int) -> dict:
     ):
         reasons.append("negative avg directional return")
 
-    comparison_row["qualified"] = not reasons
-    comparison_row["qualification_reason"] = (
-        "; ".join(reasons) if reasons else "qualified"
-    )
-    comparison_row["rank"] = None
-    return comparison_row
+    return reasons
+
+
+def _build_recommendation_row(
+    *,
+    group: pd.DataFrame,
+    scope: str,
+    symbol: str | None,
+    side: str,
+    min_trades: int,
+) -> dict:
+    candidates = []
+    for record in group.to_dict("records"):
+        reasons = _qualification_reasons(record, min_trades=min_trades)
+        candidate = dict(record)
+        candidate["qualified"] = not reasons
+        candidate["qualification_reason"] = (
+            "; ".join(reasons) if reasons else "qualified"
+        )
+        candidates.append(candidate)
+
+    qualified = [candidate for candidate in candidates if candidate["qualified"]]
+    ranked_candidates = qualified if qualified else candidates
+    ranked_candidates.sort(key=_comparison_sort_key, reverse=True)
+    best = ranked_candidates[0]
+
+    return {
+        "scope": scope,
+        "symbol": symbol,
+        "side": side,
+        "recommended_exit_rule": best.get("exit_rule"),
+        "qualified": best.get("qualified"),
+        "qualification_reason": best.get("qualification_reason"),
+        "ranking_mode": best.get("ranking_mode"),
+        "entry_alignment": best.get("entry_alignment"),
+        "total_trades": best.get("total_trades"),
+        "win_rate": best.get("win_rate"),
+        "loss_rate": best.get("loss_rate"),
+        "avg_directional_return": best.get("avg_directional_return"),
+        "median_directional_return": best.get("median_directional_return"),
+        "expectancy": best.get("expectancy"),
+        "profit_factor": best.get("profit_factor"),
+        "avg_mfe": best.get("avg_mfe"),
+        "avg_mae": best.get("avg_mae"),
+        "avg_bars_held": best.get("avg_bars_held"),
+        "best_trade": best.get("best_trade"),
+        "worst_trade": best.get("worst_trade"),
+    }
 
 
 def _comparison_sort_key(row: dict) -> tuple:

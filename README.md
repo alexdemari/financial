@@ -211,10 +211,13 @@ PYTHONPATH=src uv run python -m market_scanner.backtest_execution \
   --ranking-mode recent-event \
   --exit-rule all \
   --min-trades 20 \
+  --progress \
   --symbols AAPL \
   --output-trades reports/market_scanner/execution_trades.csv \
   --output-summary reports/market_scanner/execution_summary.csv \
-  --output-comparison reports/market_scanner/execution_rule_comparison.csv
+  --output-comparison reports/market_scanner/execution_rule_comparison.csv \
+  --output-symbol-comparison reports/market_scanner/execution_symbol_comparison.csv \
+  --output-recommendations reports/market_scanner/execution_recommended_rules.csv
 ```
 
 ---

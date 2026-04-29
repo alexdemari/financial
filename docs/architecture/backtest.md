@@ -167,6 +167,13 @@ It also supports:
 
 That mode runs each exit rule independently, exports trades and summaries, and
 adds `execution_rule_comparison.csv` with qualification and ranking fields.
+It also exports `execution_symbol_comparison.csv` to inspect whether a rule is
+robust across individual symbols.
+`execution_recommended_rules.csv` selects the best qualified rule globally by
+side and per symbol by side, using the same minimum-trade and positive
+expectancy filters as the comparison layer.
+For larger universes, `--progress` prints per-symbol elapsed time and an
+estimated remaining runtime.
 
 Execution comparison metrics use directional returns and include:
 

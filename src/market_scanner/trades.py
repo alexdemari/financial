@@ -83,6 +83,30 @@ def trade_to_record(trade: Trade, *, exit_rule: str, ranking_mode: str) -> dict:
 
 
 def summarize_trade_records(records: list[dict]) -> list[dict]:
+    return summarize_trade_records_by(
+        records,
+        group_columns=["exit_rule", "ranking_mode", "side", "entry_alignment"],
+    )
+
+
+def summarize_symbol_trade_records(records: list[dict]) -> list[dict]:
+    return summarize_trade_records_by(
+        records,
+        group_columns=[
+            "symbol",
+            "exit_rule",
+            "ranking_mode",
+            "side",
+            "entry_alignment",
+        ],
+    )
+
+
+def summarize_trade_records_by(
+    records: list[dict],
+    *,
+    group_columns: list[str],
+) -> list[dict]:
     if not records:
         return []
 
@@ -90,11 +114,13 @@ def summarize_trade_records(records: list[dict]) -> list[dict]:
     rows: list[dict] = []
 
     grouped = trades_df.groupby(
-        ["exit_rule", "ranking_mode", "side", "entry_alignment"],
+        group_columns,
         dropna=False,
         sort=False,
     )
     for group_values, group in grouped:
+        if not isinstance(group_values, tuple):
+            group_values = (group_values,)
         directional = pd.to_numeric(group["directional_return"], errors="coerce")
         wins = directional[directional > 0]
         losses = directional[directional <= 0]
@@ -115,11 +141,7 @@ def summarize_trade_records(records: list[dict]) -> list[dict]:
         else:
             profit_factor = winning_sum / abs(losing_sum)
 
-        row = {
-            "exit_rule": group_values[0],
-            "ranking_mode": group_values[1],
-            "side": group_values[2],
-            "entry_alignment": group_values[3],
+        row = {column: value for column, value in zip(group_columns, group_values)} | {
             "total_trades": int(len(group)),
             "win_rate": win_rate,
             "loss_rate": loss_rate,
