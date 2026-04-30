@@ -250,3 +250,24 @@ with the real system state, especially around:
 - `stock_analyzer`
 - `market_scanner`
 - current scanner backtest (`market_scanner.backtest`)
+
+## Primeiro uso no Claude Code
+
+```bash
+cd <path>/financial
+claude
+```
+
+Claude Code vai carregar `CLAUDE.md` automaticamente.
+
+Para usar um subagente:
+```
+Use the code-reviewer agent on the last commit
+```
+
+Para usar um slash command:
+```
+/review
+/tests stock_analyzer
+/feature add execution summary to operational_report
+```

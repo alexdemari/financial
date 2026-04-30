@@ -6,14 +6,13 @@ export PYTHONPATH := "src"
 default:
     just --list
 
-# Setup development environment
-setup:
-    uv sync --dev
-    uv run pre-commit install
-
 # Install project in development mode
 install:
     uv sync --dev
+
+# Setup development environment
+setup: install
+    uv run pre-commit install
 
 # Run tests
 test:
@@ -167,3 +166,13 @@ clean-cache:
 
 profile-backtest:
     uv run python -m src.options_tech_scanner.profile_backtest
+
+# ── AI / Agent tooling ────────────────────────────────────────────────────────
+
+# Sincroniza skills entre .claude/skills/ e .codex/skills/
+# Skills usam o mesmo formato (YAML frontmatter) nos dois ambientes
+sync-skills:
+    @echo "Sincronizando skills: .claude/skills/ → .codex/skills/"
+    @mkdir -p .codex/skills
+    @cp .claude/skills/*.md .codex/skills/
+    @echo "Pronto."
