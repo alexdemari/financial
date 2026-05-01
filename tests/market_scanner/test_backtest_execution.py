@@ -13,6 +13,7 @@ from market_scanner.backtest_execution import (
     summarize_execution_rules,
 )
 from market_scanner.pipeline import SymbolData
+from market_scanner.trades import summarize_trade_records
 
 
 def make_ohlc_df(rows: int = 205) -> pd.DataFrame:
@@ -890,7 +891,7 @@ def test_rank_execution_rules_qualification_and_order():
     assert ranked[0]["qualification_reason"] == "qualified"
     assert ranked[-1]["qualified"] is False
     assert ranked[-1]["qualification_reason"] == (
-        "not enough trades; negative expectancy; " "negative avg directional return"
+        "not enough trades; negative expectancy; negative avg directional return"
     )
 
 
@@ -946,3 +947,748 @@ def test_render_execution_rule_comparison_shows_required_sections():
     assert "expectancy" in output
     assert "avg_dir_return" in output
     assert "profit_factor" in output
+
+
+def test_min_price_skips_symbol_below_threshold(tmp_path, monkeypatch):
+    # Median close will be ~102 (midpoint of 100..204), well below 500 threshold.
+    df = make_ohlc_df()
+
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.load_selected_universe",
+        lambda universe_file, symbols=None: pd.DataFrame(
+            {"symbol": ["WNW"], "market_cap": [500_000_000]}
+        ),
+    )
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.create_analyzers",
+        lambda analyzer_cls: SimpleNamespace(
+            lux_analyzer=FakeAnalyzer(),
+            smc_analyzer=FakeAnalyzer(),
+        ),
+    )
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.iter_symbol_data",
+        lambda universe, data_dir, transform_df=None: [
+            SymbolData(
+                symbol="WNW",
+                market_cap=500_000_000,
+                df=transform_df(df) if transform_df else df,
+                load_error=None,
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.build_scanner_row_from_history",
+        lambda symbol, **kwargs: make_row(
+            adjusted_alignment="bullish_aligned",
+            action_bucket="candidate",
+        ),
+    )
+
+    trades_df, _summary_df = backtest_execution_universe(
+        universe_file=tmp_path / "universe.csv",
+        data_dir=tmp_path / "data",
+        ranking_mode="recent-event",
+        exit_rule="bars_5",
+        output_trades=tmp_path / "execution_trades.csv",
+        output_summary=tmp_path / "execution_summary.csv",
+        output_comparison=tmp_path / "execution_rule_comparison.csv",
+        output_symbol_comparison=tmp_path / "execution_symbol_comparison.csv",
+        output_recommendations=tmp_path / "execution_recommended_rules.csv",
+        output_worst_trades=tmp_path / "execution_worst_trades.csv",
+        min_price=500.0,
+    )
+
+    assert trades_df.empty
+
+
+def test_min_price_passes_symbol_above_threshold(tmp_path, monkeypatch):
+    # Median close will be ~102 (midpoint of 100..204), above 5.0 threshold.
+    df = make_ohlc_df()
+
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.load_selected_universe",
+        lambda universe_file, symbols=None: pd.DataFrame(
+            {"symbol": ["AAPL"], "market_cap": [2_000_000_000]}
+        ),
+    )
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.create_analyzers",
+        lambda analyzer_cls: SimpleNamespace(
+            lux_analyzer=FakeAnalyzer(),
+            smc_analyzer=FakeAnalyzer(),
+        ),
+    )
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.iter_symbol_data",
+        lambda universe, data_dir, transform_df=None: [
+            SymbolData(
+                symbol="AAPL",
+                market_cap=2_000_000_000,
+                df=transform_df(df) if transform_df else df,
+                load_error=None,
+            )
+        ],
+    )
+
+    def fake_build_scanner_row_from_history(
+        symbol, *, close, lux_historical, smc_historical, index, ranking_mode, **kwargs
+    ):
+        if index == 199:
+            return make_row(
+                adjusted_alignment="bullish_aligned",
+                action_bucket="candidate",
+            )
+        return make_row(
+            adjusted_alignment="bullish_watchlist",
+            action_bucket="watchlist",
+            market_state="range",
+        )
+
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.build_scanner_row_from_history",
+        fake_build_scanner_row_from_history,
+    )
+
+    # min_price=5.0 — median is ~102, so symbol passes
+    trades_df_with_filter, _summary = backtest_execution_universe(
+        universe_file=tmp_path / "universe.csv",
+        data_dir=tmp_path / "data",
+        ranking_mode="recent-event",
+        exit_rule="bucket_downgrade",
+        output_trades=tmp_path / "execution_trades.csv",
+        output_summary=tmp_path / "execution_summary.csv",
+        output_comparison=tmp_path / "execution_rule_comparison.csv",
+        output_symbol_comparison=tmp_path / "execution_symbol_comparison.csv",
+        output_recommendations=tmp_path / "execution_recommended_rules.csv",
+        output_worst_trades=tmp_path / "execution_worst_trades.csv",
+        min_price=5.0,
+    )
+    assert not trades_df_with_filter.empty
+
+    # min_price=None (default) — no filter, same result
+    trades_df_no_filter, _summary = backtest_execution_universe(
+        universe_file=tmp_path / "universe.csv",
+        data_dir=tmp_path / "data",
+        ranking_mode="recent-event",
+        exit_rule="bucket_downgrade",
+        output_trades=tmp_path / "execution_trades2.csv",
+        output_summary=tmp_path / "execution_summary2.csv",
+        output_comparison=tmp_path / "execution_rule_comparison2.csv",
+        output_symbol_comparison=tmp_path / "execution_symbol_comparison2.csv",
+        output_recommendations=tmp_path / "execution_recommended_rules2.csv",
+        output_worst_trades=tmp_path / "execution_worst_trades2.csv",
+        min_price=None,
+    )
+    assert not trades_df_no_filter.empty
+
+
+# --- Time window tests ---
+
+
+def make_record(entry_date: str, **overrides) -> dict:
+    base = {
+        "symbol": "AAPL",
+        "side": "bullish",
+        "entry_date": entry_date,
+        "entry_price": 100.0,
+        "exit_date": entry_date,
+        "exit_price": 105.0,
+        "bars_held": 5,
+        "entry_alignment": "bullish_aligned",
+        "exit_reason": "bars_5",
+        "raw_return": 0.05,
+        "directional_return": 0.05,
+        "mfe": 0.06,
+        "mae": -0.01,
+        "exit_rule": "bars_5",
+        "ranking_mode": "recent-event",
+    }
+    base.update(overrides)
+    return base
+
+
+def test_build_time_window_comparison_groups_by_window():
+    from market_scanner.backtest_execution import (
+        DEFAULT_TIME_WINDOWS,
+        build_time_window_comparison,
+    )
+
+    records = [
+        make_record("2018-06-15T00:00:00+00:00"),  # 2016-2019 window
+        make_record("2018-09-01T00:00:00+00:00"),  # 2016-2019 window
+        make_record("2024-03-10T00:00:00+00:00"),  # 2023-2026 window
+    ]
+
+    rows = build_time_window_comparison(records, DEFAULT_TIME_WINDOWS, min_trades=1)
+
+    windows_seen = {row["time_window"] for row in rows}
+    assert "2016-2019" in windows_seen
+    assert "2023-2026" in windows_seen
+    # 2020-2022 has no records, so should not appear
+    assert "2020-2022" not in windows_seen
+
+    for row in rows:
+        assert "time_window" in row
+        assert "exit_rule" in row
+        assert "total_trades" in row
+
+
+def test_build_time_window_comparison_empty_window():
+    from market_scanner.backtest_execution import build_time_window_comparison
+
+    windows = [
+        ("2016-2019", "2016-01-01", "2019-12-31"),
+        ("empty-window", "2010-01-01", "2010-12-31"),
+    ]
+    records = [
+        make_record("2017-05-01T00:00:00+00:00"),
+    ]
+
+    # Should not raise even when a window has no matching records
+    rows = build_time_window_comparison(records, windows, min_trades=1)
+
+    windows_present = {row["time_window"] for row in rows}
+    assert "2016-2019" in windows_present
+    assert "empty-window" not in windows_present
+
+
+def test_build_time_window_comparison_empty_records():
+    from market_scanner.backtest_execution import (
+        DEFAULT_TIME_WINDOWS,
+        build_time_window_comparison,
+    )
+
+    rows = build_time_window_comparison([], DEFAULT_TIME_WINDOWS, min_trades=1)
+
+    assert rows == []
+
+
+def test_backtest_execution_universe_exports_time_windows_csv(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    # Use dates spanning two windows: 2018 (2016-2019) and 2024 (2023-2026).
+    # make_ohlc_df starting 2018-01-01 places dates in the first window;
+    # we also inject a record in the 2024 range via the scanner row mock.
+    df_2018 = pd.DataFrame(
+        {
+            "Open": [100.0 + i for i in range(205)],
+            "High": [101.0 + i for i in range(205)],
+            "Low": [99.0 + i for i in range(205)],
+            "Close": [100.0 + i for i in range(205)],
+            "Volume": [1_000_000] * 205,
+        },
+        index=pd.date_range("2018-01-01", periods=205, freq="D", tz="UTC"),
+    )
+    df_2024 = pd.DataFrame(
+        {
+            "Open": [200.0 + i for i in range(205)],
+            "High": [201.0 + i for i in range(205)],
+            "Low": [199.0 + i for i in range(205)],
+            "Close": [200.0 + i for i in range(205)],
+            "Volume": [1_000_000] * 205,
+        },
+        index=pd.date_range("2024-01-01", periods=205, freq="D", tz="UTC"),
+    )
+
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.load_selected_universe",
+        lambda universe_file, symbols=None: pd.DataFrame(
+            {
+                "symbol": ["AAPL", "MSFT"],
+                "market_cap": [2_000_000_000, 2_000_000_000],
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.create_analyzers",
+        lambda analyzer_cls: SimpleNamespace(
+            lux_analyzer=FakeAnalyzer(),
+            smc_analyzer=FakeAnalyzer(),
+        ),
+    )
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.iter_symbol_data",
+        lambda universe, data_dir, transform_df=None: [
+            SymbolData(
+                symbol="AAPL",
+                market_cap=2_000_000_000,
+                df=transform_df(df_2018) if transform_df else df_2018,
+                load_error=None,
+            ),
+            SymbolData(
+                symbol="MSFT",
+                market_cap=2_000_000_000,
+                df=transform_df(df_2024) if transform_df else df_2024,
+                load_error=None,
+            ),
+        ],
+    )
+
+    def fake_build_scanner_row_from_history(
+        symbol, *, close, lux_historical, smc_historical, index, ranking_mode, **kwargs
+    ):
+        if index == 199:
+            return make_row(
+                adjusted_alignment="bullish_aligned", action_bucket="candidate"
+            )
+        return make_row(
+            adjusted_alignment="bullish_watchlist", action_bucket="watchlist"
+        )
+
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.build_scanner_row_from_history",
+        fake_build_scanner_row_from_history,
+    )
+
+    tw_path = tmp_path / "time_windows.csv"
+    backtest_execution_universe(
+        universe_file=tmp_path / "universe.csv",
+        data_dir=tmp_path / "data",
+        ranking_mode="recent-event",
+        exit_rule="bucket_downgrade",
+        output_trades=tmp_path / "execution_trades.csv",
+        output_summary=tmp_path / "execution_summary.csv",
+        output_comparison=tmp_path / "execution_rule_comparison.csv",
+        output_symbol_comparison=tmp_path / "execution_symbol_comparison.csv",
+        output_recommendations=tmp_path / "execution_recommended_rules.csv",
+        output_worst_trades=tmp_path / "execution_worst_trades.csv",
+        output_time_windows=tw_path,
+        min_trades=1,
+    )
+
+    assert tw_path.exists()
+    tw_df = pd.read_csv(tw_path)
+    assert "time_window" in tw_df.columns
+    windows_in_output = set(tw_df["time_window"].unique())
+    # AAPL entries fall in 2018 -> 2016-2019; MSFT entries fall in 2024 -> 2023-2026
+    assert "2016-2019" in windows_in_output
+    assert "2023-2026" in windows_in_output
+    assert "2020-2022" not in windows_in_output
+
+
+# --- Task 06 Group B: metric cap tests ---
+
+
+def make_trade_record(**overrides) -> dict:
+    base = {
+        "symbol": "AAPL",
+        "side": "bullish",
+        "entry_date": "2024-01-01T00:00:00+00:00",
+        "entry_price": 100.0,
+        "exit_date": "2024-01-10T00:00:00+00:00",
+        "exit_price": 110.0,
+        "bars_held": 10,
+        "entry_alignment": "bullish_aligned",
+        "exit_reason": "bars_10",
+        "raw_return": 0.10,
+        "directional_return": 0.10,
+        "mfe": 0.12,
+        "mae": -0.02,
+        "exit_rule": "bars_10",
+        "ranking_mode": "recent-event",
+    }
+    base.update(overrides)
+    return base
+
+
+def test_max_return_cap_clips_expectancy():
+    records = [
+        make_trade_record(directional_return=10.0, raw_return=10.0),
+        make_trade_record(directional_return=0.05, raw_return=0.05),
+    ]
+    result = summarize_trade_records(records, max_return_cap=5.0)
+    assert len(result) == 1
+    assert result[0]["avg_directional_return"] <= 5.0
+
+
+def test_max_loss_clamps_worst_trade_in_metrics():
+    records = [
+        make_trade_record(directional_return=-2.0, raw_return=2.0),
+        make_trade_record(directional_return=0.05, raw_return=0.05),
+    ]
+    result = summarize_trade_records(records, max_loss=-1.0)
+    assert len(result) == 1
+    assert result[0]["worst_trade"] >= -1.0
+
+
+def test_raw_return_not_modified_by_caps():
+    records = [
+        make_trade_record(directional_return=10.0, raw_return=10.0),
+        make_trade_record(directional_return=-2.0, raw_return=2.0),
+    ]
+    result_capped = summarize_trade_records(records, max_return_cap=5.0, max_loss=-1.0)
+    result_uncapped = summarize_trade_records(
+        records, max_return_cap=float("inf"), max_loss=float("-inf")
+    )
+    assert len(result_capped) == 1
+    assert len(result_uncapped) == 1
+    # avg_return and median_return use raw_return — caps must not change them
+    assert result_capped[0]["avg_return"] == result_uncapped[0]["avg_return"]
+    assert result_capped[0]["median_return"] == result_uncapped[0]["median_return"]
+    # directional metrics must differ because caps are active
+    assert (
+        result_capped[0]["avg_directional_return"]
+        != result_uncapped[0]["avg_directional_return"]
+    )
+
+
+def test_no_caps_mode():
+    records = [
+        make_trade_record(directional_return=0.10, raw_return=0.10),
+        make_trade_record(directional_return=-0.05, raw_return=0.05),
+    ]
+    result_explicit = summarize_trade_records(
+        records, max_return_cap=float("inf"), max_loss=float("-inf")
+    )
+    result_default = summarize_trade_records(records)
+    assert len(result_explicit) == 1
+    assert len(result_default) == 1
+    assert (
+        result_explicit[0]["avg_directional_return"]
+        == result_default[0]["avg_directional_return"]
+    )
+    assert result_explicit[0]["worst_trade"] == result_default[0]["worst_trade"]
+    assert result_explicit[0]["best_trade"] == result_default[0]["best_trade"]
+
+
+def test_max_return_cap_passed_through_backtest_execution_universe(
+    tmp_path, monkeypatch
+):
+    df = make_ohlc_df()
+
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.load_selected_universe",
+        lambda universe_file, symbols=None: pd.DataFrame(
+            {"symbol": ["AAPL"], "market_cap": [2_000_000_000]}
+        ),
+    )
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.create_analyzers",
+        lambda analyzer_cls: SimpleNamespace(
+            lux_analyzer=FakeAnalyzer(),
+            smc_analyzer=FakeAnalyzer(),
+        ),
+    )
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.iter_symbol_data",
+        lambda universe, data_dir, transform_df=None: [
+            SymbolData(
+                symbol="AAPL",
+                market_cap=2_000_000_000,
+                df=transform_df(df) if transform_df else df,
+                load_error=None,
+            )
+        ],
+    )
+
+    def fake_build_scanner_row_from_history(
+        symbol, *, close, lux_historical, smc_historical, index, ranking_mode, **kwargs
+    ):
+        if index == 199:
+            return make_row(
+                adjusted_alignment="bullish_aligned",
+                action_bucket="candidate",
+            )
+        return make_row(
+            adjusted_alignment="bullish_watchlist",
+            action_bucket="watchlist",
+            market_state="range",
+        )
+
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.build_scanner_row_from_history",
+        fake_build_scanner_row_from_history,
+    )
+
+    _trades_df, summary_df = backtest_execution_universe(
+        universe_file=tmp_path / "universe.csv",
+        data_dir=tmp_path / "data",
+        ranking_mode="recent-event",
+        exit_rule="bucket_downgrade",
+        output_trades=tmp_path / "execution_trades.csv",
+        output_summary=tmp_path / "execution_summary.csv",
+        output_comparison=tmp_path / "execution_rule_comparison.csv",
+        output_symbol_comparison=tmp_path / "execution_symbol_comparison.csv",
+        output_recommendations=tmp_path / "execution_recommended_rules.csv",
+        output_worst_trades=tmp_path / "execution_worst_trades.csv",
+        max_return_cap=1.0,
+        max_loss=-0.5,
+    )
+
+    if not summary_df.empty:
+        assert summary_df["best_trade"].max() <= 1.0
+        assert summary_df["worst_trade"].min() >= -0.5
+
+
+# --- Task 06 Group A: trade-entry filter tests ---
+
+
+def make_filtered_df(
+    rows: int = 205,
+    *,
+    close: float = 100.0,
+    volume: float = 1_000_000,
+    gap_multiplier: float | None = None,
+) -> pd.DataFrame:
+    """Build a minimal OHLC DataFrame with controllable close/volume/gap."""
+    closes = [close] * rows
+    opens = list(closes)
+    if gap_multiplier is not None and rows > 1:
+        # Set bar 200's open to prev_close * gap_multiplier to trigger gap filter.
+        opens[200] = closes[199] * gap_multiplier
+    return pd.DataFrame(
+        {
+            "Open": opens,
+            "High": [v + 1.0 for v in closes],
+            "Low": [v - 1.0 for v in closes],
+            "Close": closes,
+            "Volume": [volume] * rows,
+        },
+        index=pd.date_range("2026-01-01", periods=rows, freq="D", tz="UTC"),
+    )
+
+
+def _run_filter_test(
+    monkeypatch,
+    df: pd.DataFrame,
+    *,
+    min_entry_price: float = 0.0,
+    min_dollar_volume: float = 0.0,
+    max_gap: float = float("inf"),
+) -> list:
+    """Run generate_symbol_trades with a single candidate entry at index 199."""
+
+    def fake_scanner_row(
+        symbol, *, close, lux_historical, smc_historical, index, ranking_mode, **kwargs
+    ):
+        if index == 199:
+            return make_row(
+                adjusted_alignment="bullish_aligned", action_bucket="candidate"
+            )
+        return make_row(adjusted_alignment="no_trade", action_bucket="avoid")
+
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.build_scanner_row_from_history",
+        fake_scanner_row,
+    )
+
+    from market_scanner.backtest_execution import generate_symbol_trades
+
+    return generate_symbol_trades(
+        symbol="TEST",
+        df=df,
+        ranking_mode="recent-event",
+        exit_rule="bars_5",
+        min_bars=120,
+        lux_analyzer=FakeAnalyzer(),
+        smc_analyzer=FakeAnalyzer(),
+        min_entry_price=min_entry_price,
+        min_dollar_volume=min_dollar_volume,
+        max_gap=max_gap,
+    )
+
+
+def test_min_entry_price_filter_marks_trade_as_filtered(monkeypatch):
+    df = make_filtered_df(close=3.0)
+    trades = _run_filter_test(monkeypatch, df, min_entry_price=5.0)
+    assert len(trades) == 1
+    trade = trades[0]
+    assert trade.is_filtered is True
+    assert trade.filter_reason == "low_price"
+
+
+def test_min_dollar_volume_filter_marks_trade_as_filtered(monkeypatch):
+    df = make_filtered_df(close=100.0, volume=1.0)
+    trades = _run_filter_test(monkeypatch, df, min_dollar_volume=1_000_000)
+    assert len(trades) == 1
+    trade = trades[0]
+    assert trade.is_filtered is True
+    assert trade.filter_reason == "low_volume"
+
+
+def test_max_gap_filter_marks_trade_as_filtered(monkeypatch):
+    # Bar 200 open = bar 199 close * 2.0 -> gap = 100% > 50%
+    df = make_filtered_df(gap_multiplier=2.0)
+
+    def fake_scanner_row(
+        symbol, *, close, lux_historical, smc_historical, index, ranking_mode, **kwargs
+    ):
+        if index == 200:
+            return make_row(
+                adjusted_alignment="bullish_aligned", action_bucket="candidate"
+            )
+        return make_row(adjusted_alignment="no_trade", action_bucket="avoid")
+
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.build_scanner_row_from_history",
+        fake_scanner_row,
+    )
+
+    from market_scanner.backtest_execution import generate_symbol_trades
+
+    trades = generate_symbol_trades(
+        symbol="TEST",
+        df=df,
+        ranking_mode="recent-event",
+        exit_rule="bars_5",
+        min_bars=120,
+        lux_analyzer=FakeAnalyzer(),
+        smc_analyzer=FakeAnalyzer(),
+        max_gap=0.5,
+    )
+
+    assert len(trades) == 1
+    trade = trades[0]
+    assert trade.is_filtered is True
+    assert trade.filter_reason == "gap_anomaly"
+
+
+def test_extreme_ratio_filter_marks_trade_as_filtered(monkeypatch):
+    # Build a df where the trade window bar has High=100, Low=10 (ratio=10 > 5)
+    rows = 205
+    closes = [100.0 + i for i in range(rows)]
+    highs = list(closes)
+    lows = [v - 1.0 for v in closes]
+    # Bar 199 is the entry; set its High/Low to an extreme ratio
+    highs[199] = 100.0
+    lows[199] = 10.0  # ratio = 10.0 > threshold of 5.0
+
+    df = pd.DataFrame(
+        {
+            "Open": closes,
+            "High": highs,
+            "Low": lows,
+            "Close": closes,
+            "Volume": [1_000_000] * rows,
+        },
+        index=pd.date_range("2026-01-01", periods=rows, freq="D", tz="UTC"),
+    )
+
+    def fake_scanner_row(
+        symbol, *, close, lux_historical, smc_historical, index, ranking_mode, **kwargs
+    ):
+        if index == 199:
+            return make_row(
+                adjusted_alignment="bullish_aligned", action_bucket="candidate"
+            )
+        return make_row(adjusted_alignment="no_trade", action_bucket="avoid")
+
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.build_scanner_row_from_history",
+        fake_scanner_row,
+    )
+
+    from market_scanner.backtest_execution import generate_symbol_trades
+
+    trades = generate_symbol_trades(
+        symbol="TEST",
+        df=df,
+        ranking_mode="recent-event",
+        exit_rule="bars_5",
+        min_bars=120,
+        lux_analyzer=FakeAnalyzer(),
+        smc_analyzer=FakeAnalyzer(),
+    )
+
+    # Trade is entered at 199 and closed at end_of_data; the window includes bar 199
+    assert len(trades) == 1
+    trade = trades[0]
+    assert trade.is_filtered is True
+    assert trade.filter_reason == "extreme_ratio"
+
+
+def test_no_filter_mode_no_trades_filtered(monkeypatch):
+    df = make_ohlc_df()
+
+    def fake_scanner_row(
+        symbol, *, close, lux_historical, smc_historical, index, ranking_mode, **kwargs
+    ):
+        if index == 199:
+            return make_row(
+                adjusted_alignment="bullish_aligned", action_bucket="candidate"
+            )
+        return make_row(adjusted_alignment="no_trade", action_bucket="avoid")
+
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.build_scanner_row_from_history",
+        fake_scanner_row,
+    )
+
+    from market_scanner.backtest_execution import generate_symbol_trades
+
+    trades = generate_symbol_trades(
+        symbol="AAPL",
+        df=df,
+        ranking_mode="recent-event",
+        exit_rule="bars_5",
+        min_bars=120,
+        lux_analyzer=FakeAnalyzer(),
+        smc_analyzer=FakeAnalyzer(),
+        min_entry_price=0.0,
+        min_dollar_volume=0.0,
+        max_gap=float("inf"),
+    )
+
+    assert all(not t.is_filtered for t in trades)
+
+
+def test_is_filtered_and_filter_reason_columns_in_trades_csv(tmp_path, monkeypatch):
+    df = make_filtered_df(close=3.0)
+
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.load_selected_universe",
+        lambda universe_file, symbols=None: pd.DataFrame(
+            {"symbol": ["TEST"], "market_cap": [2_000_000_000]}
+        ),
+    )
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.create_analyzers",
+        lambda analyzer_cls: SimpleNamespace(
+            lux_analyzer=FakeAnalyzer(),
+            smc_analyzer=FakeAnalyzer(),
+        ),
+    )
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.iter_symbol_data",
+        lambda universe, data_dir, transform_df=None: [
+            SymbolData(
+                symbol="TEST",
+                market_cap=2_000_000_000,
+                df=transform_df(df) if transform_df else df,
+                load_error=None,
+            )
+        ],
+    )
+
+    def fake_scanner_row(
+        symbol, *, close, lux_historical, smc_historical, index, ranking_mode, **kwargs
+    ):
+        if index == 199:
+            return make_row(
+                adjusted_alignment="bullish_aligned", action_bucket="candidate"
+            )
+        return make_row(adjusted_alignment="no_trade", action_bucket="avoid")
+
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.build_scanner_row_from_history",
+        fake_scanner_row,
+    )
+
+    backtest_execution_universe(
+        universe_file=tmp_path / "universe.csv",
+        data_dir=tmp_path / "data",
+        ranking_mode="recent-event",
+        exit_rule="bars_5",
+        output_trades=tmp_path / "execution_trades.csv",
+        output_summary=tmp_path / "execution_summary.csv",
+        output_comparison=tmp_path / "execution_rule_comparison.csv",
+        output_symbol_comparison=tmp_path / "execution_symbol_comparison.csv",
+        output_recommendations=tmp_path / "execution_recommended_rules.csv",
+        output_worst_trades=tmp_path / "execution_worst_trades.csv",
+        min_entry_price=5.0,
+    )
+
+    trades_csv = pd.read_csv(tmp_path / "execution_trades.csv")
+    assert "is_filtered" in trades_csv.columns
+    assert "filter_reason" in trades_csv.columns

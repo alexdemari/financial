@@ -1,6 +1,7 @@
 import argparse
+from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from time import perf_counter
 
@@ -46,6 +47,11 @@ ALL_EXIT_RULES = (
     "bars_20",
 )
 EXIT_RULE_CHOICES = (*ALL_EXIT_RULES, "all")
+DEFAULT_TIME_WINDOWS = [
+    ("2016-2019", "2016-01-01", "2019-12-31"),
+    ("2020-2022", "2020-01-01", "2022-12-31"),
+    ("2023-2026", "2023-01-01", "2026-12-31"),
+]
 COMPARISON_COLUMNS = [
     "rank",
     "qualified",
@@ -67,6 +73,7 @@ COMPARISON_COLUMNS = [
     "best_trade",
     "worst_trade",
 ]
+TIME_WINDOW_COMPARISON_COLUMNS = ["time_window"] + COMPARISON_COLUMNS
 SYMBOL_COMPARISON_COLUMNS = [
     "symbol",
     "exit_rule",
@@ -155,6 +162,8 @@ class PreparedSymbolExecutionData:
     bars: list[ExecutionBar]
     high_column: str
     low_column: str
+    open_column: str
+    volume_column: str
 
 
 @dataclass
@@ -164,6 +173,9 @@ class _ExecutionSymbolArgs:
     ranking_mode: str
     exit_rules: list[str]
     min_bars: int
+    min_entry_price: float = 0.0
+    min_dollar_volume: float = 0.0
+    max_gap: float = float("inf")
 
 
 def _execution_symbol_worker(args: _ExecutionSymbolArgs) -> list[dict]:
@@ -177,9 +189,12 @@ def _execution_symbol_worker(args: _ExecutionSymbolArgs) -> list[dict]:
         return []
     records: list[dict] = []
     for exit_rule in args.exit_rules:
-        trades = generate_prepared_symbol_trades(
+        trades, _filter_counts = generate_prepared_symbol_trades(
             prepared_data=prepared_data,
             exit_rule=exit_rule,
+            min_entry_price=args.min_entry_price,
+            min_dollar_volume=args.min_dollar_volume,
+            max_gap=args.max_gap,
         )
         records.extend(
             trade_to_record(trade, exit_rule=exit_rule, ranking_mode=args.ranking_mode)
@@ -208,11 +223,22 @@ def backtest_execution_universe(
     ),
     output_worst_trades: str
     | Path = f"{DEFAULT_REPORTS_DIR}/execution_worst_trades.csv",
+    output_time_windows: str | Path | None = None,
     min_trades: int = 20,
     symbols: list[str] | None = None,
     max_symbols: int | None = None,
     progress: bool = False,
     workers: int = 1,
+    min_price: float | None = None,
+    min_entry_price: float = 5.0,
+    min_dollar_volume: float = 1_000_000,
+    max_gap: float = 0.5,
+    # --- Task 06 Group B: metric cap parameters ---
+    # max_return_cap: cap directional_return for summary metrics (e.g. 5.0 = +500%)
+    # max_loss: floor directional_return for summary metrics (e.g. -1.0 = -100%)
+    # Raw CSV trade records are never modified.
+    max_return_cap: float = 5.0,
+    max_loss: float = -1.0,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     universe = load_selected_universe(universe_file, symbols=symbols)
     universe = _limit_universe(universe, max_symbols=max_symbols)
@@ -226,9 +252,15 @@ def backtest_execution_universe(
     all_symbol_data = iter_symbol_data(universe, data_dir, transform_df=_transform_df)
 
     if workers > 1:
-        eligible = [
-            sd for sd in all_symbol_data if sd.load_error is None and sd.df is not None
-        ]
+        eligible = []
+        for sd in all_symbol_data:
+            if sd.load_error is not None or sd.df is None:
+                continue
+            if min_price is not None:
+                median_close = _median_close(sd.df)
+                if median_close is None or median_close < min_price:
+                    continue
+            eligible.append(sd)
         worker_args_list = [
             _ExecutionSymbolArgs(
                 symbol=sd.symbol,
@@ -236,6 +268,9 @@ def backtest_execution_universe(
                 ranking_mode=ranking_mode,
                 exit_rules=exit_rules,
                 min_bars=min_bars,
+                min_entry_price=min_entry_price,
+                min_dollar_volume=min_dollar_volume,
+                max_gap=max_gap,
             )
             for sd in eligible
         ]
@@ -267,6 +302,20 @@ def backtest_execution_universe(
                     )
                 continue
 
+            if min_price is not None:
+                median_close = _median_close(symbol_data.df)
+                if median_close is None or median_close < min_price:
+                    if progress:
+                        _print_progress(
+                            processed_symbols=processed_symbols,
+                            total_symbols=total_symbols,
+                            symbol=symbol_data.symbol,
+                            start_time=start_time,
+                            symbol_start=symbol_start,
+                            status=f"skipped_below_min_price median={median_close}",
+                        )
+                    continue
+
             prepared_data = prepare_symbol_execution_data(
                 symbol=symbol_data.symbol,
                 df=symbol_data.df,
@@ -289,9 +338,12 @@ def backtest_execution_universe(
 
             symbol_trade_count = 0
             for current_exit_rule in exit_rules:
-                symbol_trades = generate_prepared_symbol_trades(
+                symbol_trades, _filter_counts = generate_prepared_symbol_trades(
                     prepared_data=prepared_data,
                     exit_rule=current_exit_rule,
+                    min_entry_price=min_entry_price,
+                    min_dollar_volume=min_dollar_volume,
+                    max_gap=max_gap,
                 )
                 symbol_trade_count += len(symbol_trades)
                 trade_records.extend(
@@ -313,13 +365,24 @@ def backtest_execution_universe(
                 )
 
     trades_df = pd.DataFrame(trade_records)
-    summary_df = pd.DataFrame(summarize_trade_records(trade_records))
+    summary_df = pd.DataFrame(
+        summarize_trade_records(
+            trade_records, max_return_cap=max_return_cap, max_loss=max_loss
+        )
+    )
     comparison_df = pd.DataFrame(
-        summarize_execution_rules(trade_records, min_trades=min_trades),
+        summarize_execution_rules(
+            trade_records,
+            min_trades=min_trades,
+            max_return_cap=max_return_cap,
+            max_loss=max_loss,
+        ),
         columns=COMPARISON_COLUMNS,
     )
     symbol_comparison_df = pd.DataFrame(
-        summarize_symbol_trade_records(trade_records),
+        summarize_symbol_trade_records(
+            trade_records, max_return_cap=max_return_cap, max_loss=max_loss
+        ),
         columns=SYMBOL_COMPARISON_COLUMNS,
     )
     recommendations_df = build_execution_recommendations(
@@ -345,6 +408,24 @@ def backtest_execution_universe(
         )
     if terminal_summary:
         print(terminal_summary)
+    if output_time_windows is not None:
+        tw_rows = build_time_window_comparison(
+            trade_records,
+            DEFAULT_TIME_WINDOWS,
+            min_trades,
+            max_return_cap=max_return_cap,
+            max_loss=max_loss,
+        )
+        tw_df = pd.DataFrame(tw_rows, columns=TIME_WINDOW_COMPARISON_COLUMNS)
+        write_csv_report(tw_df, output_time_windows)
+        print(f"Exported time windows: {Path(output_time_windows)}")
+
+    filtered_records = [r for r in trade_records if r.get("is_filtered")]
+    filter_counts = Counter(r["filter_reason"] for r in filtered_records)
+    print("\nFILTER SUMMARY")
+    for reason in ("low_price", "low_volume", "gap_anomaly", "extreme_ratio"):
+        print(f"{reason}: {filter_counts.get(reason, 0)}")
+
     print(f"\nExported trades: {Path(output_trades)}")
     print(f"Exported summary: {Path(output_summary)}")
     print(f"Exported comparison: {Path(output_comparison)}")
@@ -362,8 +443,19 @@ def resolve_exit_rules(exit_rule: str) -> list[str]:
     return [exit_rule]
 
 
-def summarize_execution_rules(records: list[dict], min_trades: int = 20) -> list[dict]:
-    return rank_execution_rules(summarize_trade_records(records), min_trades=min_trades)
+def summarize_execution_rules(
+    records: list[dict],
+    min_trades: int = 20,
+    *,
+    max_return_cap: float = float("inf"),
+    max_loss: float = float("-inf"),
+) -> list[dict]:
+    return rank_execution_rules(
+        summarize_trade_records(
+            records, max_return_cap=max_return_cap, max_loss=max_loss
+        ),
+        min_trades=min_trades,
+    )
 
 
 def rank_execution_rules(
@@ -386,6 +478,38 @@ def rank_execution_rules(
         row["rank"] = None
 
     return qualified + unqualified
+
+
+def build_time_window_comparison(
+    records: list[dict],
+    windows: list[tuple[str, str, str]],
+    min_trades: int = 20,
+    *,
+    max_return_cap: float = float("inf"),
+    max_loss: float = float("-inf"),
+) -> list[dict]:
+    if not records:
+        return []
+
+    df = pd.DataFrame(records)
+    entry_dates = pd.to_datetime(df["entry_date"], utc=True)
+    result: list[dict] = []
+
+    for label, start, end in windows:
+        window_start = pd.Timestamp(start, tz="UTC")
+        window_end = pd.Timestamp(end, tz="UTC")
+        mask = (entry_dates >= window_start) & (entry_dates <= window_end)
+        if not mask.any():
+            continue
+        window_records = df[mask].to_dict("records")
+        summary_rows = summarize_trade_records(
+            window_records, max_return_cap=max_return_cap, max_loss=max_loss
+        )
+        ranked_rows = rank_execution_rules(summary_rows, min_trades=min_trades)
+        for row in ranked_rows:
+            result.append({"time_window": label, **row})
+
+    return result
 
 
 def build_execution_recommendations(
@@ -472,6 +596,9 @@ def generate_symbol_trades(
     min_bars: int,
     lux_analyzer: StockDataAnalyzer | None = None,
     smc_analyzer: StockDataAnalyzer | None = None,
+    min_entry_price: float = 0.0,
+    min_dollar_volume: float = 0.0,
+    max_gap: float = float("inf"),
 ) -> list[Trade]:
     prepared_data = prepare_symbol_execution_data(
         symbol=symbol,
@@ -483,10 +610,14 @@ def generate_symbol_trades(
     )
     if prepared_data is None:
         return []
-    return generate_prepared_symbol_trades(
+    trades, _filter_counts = generate_prepared_symbol_trades(
         prepared_data=prepared_data,
         exit_rule=exit_rule,
+        min_entry_price=min_entry_price,
+        min_dollar_volume=min_dollar_volume,
+        max_gap=max_gap,
     )
+    return trades
 
 
 def prepare_symbol_execution_data(
@@ -509,6 +640,8 @@ def prepare_symbol_execution_data(
     close_column = _require_column(df, "close")
     high_column = _require_column(df, "high")
     low_column = _require_column(df, "low")
+    open_column = _require_column(df, "open")
+    volume_column = _require_column(df, "volume")
 
     bars: list[ExecutionBar] = []
     start_index = max(effective_min_bars - 1, 0)
@@ -538,16 +671,64 @@ def prepare_symbol_execution_data(
         bars=bars,
         high_column=high_column,
         low_column=low_column,
+        open_column=open_column,
+        volume_column=volume_column,
     )
+
+
+def _evaluate_entry_filters(
+    *,
+    entry_price: float,
+    close: float,
+    volume: float,
+    min_entry_price: float,
+    min_dollar_volume: float,
+    df: pd.DataFrame,
+    entry_index: int,
+    open_column: str,
+    close_column: str,
+    max_gap: float,
+) -> str | None:
+    if entry_price < min_entry_price:
+        return "low_price"
+    if close * volume < min_dollar_volume:
+        return "low_volume"
+    if entry_index > 0:
+        gap = abs(
+            df.iloc[entry_index][open_column] / df.iloc[entry_index - 1][close_column]
+            - 1
+        )
+        if gap > max_gap:
+            return "gap_anomaly"
+    return None
+
+
+def _has_extreme_ratio(
+    window: pd.DataFrame,
+    high_column: str,
+    low_column: str,
+    threshold: float = 5.0,
+) -> bool:
+    return bool((window[high_column] / window[low_column]).max() > threshold)
 
 
 def generate_prepared_symbol_trades(
     *,
     prepared_data: PreparedSymbolExecutionData,
     exit_rule: str,
-) -> list[Trade]:
+    min_entry_price: float = 0.0,
+    min_dollar_volume: float = 0.0,
+    max_gap: float = float("inf"),
+) -> tuple[list[Trade], dict[str, int]]:
     trades: list[Trade] = []
     open_position: OpenPosition | None = None
+    filter_counts: dict[str, int] = {
+        "low_price": 0,
+        "low_volume": 0,
+        "gap_anomaly": 0,
+        "extreme_ratio": 0,
+    }
+    close_column = _require_column(prepared_data.df, "close")
 
     for bar in prepared_data.bars:
         exited_this_bar = False
@@ -558,51 +739,104 @@ def generate_prepared_symbol_trades(
             exit_rule=exit_rule,
             bars_held=_bars_held(open_position.entry_index, bar.index),
         ):
-            trades.append(
-                _close_trade(
-                    symbol=prepared_data.symbol,
-                    df=prepared_data.df,
-                    open_position=open_position,
-                    exit_index=bar.index,
-                    exit_date=bar.date,
-                    exit_price=bar.close,
-                    exit_reason=exit_rule,
-                    high_column=prepared_data.high_column,
-                    low_column=prepared_data.low_column,
-                )
+            closed_trade = _close_trade(
+                symbol=prepared_data.symbol,
+                df=prepared_data.df,
+                open_position=open_position,
+                exit_index=bar.index,
+                exit_date=bar.date,
+                exit_price=bar.close,
+                exit_reason=exit_rule,
+                high_column=prepared_data.high_column,
+                low_column=prepared_data.low_column,
             )
+            window = prepared_data.df.iloc[open_position.entry_index : bar.index + 1]
+            if _has_extreme_ratio(
+                window,
+                high_column=prepared_data.high_column,
+                low_column=prepared_data.low_column,
+            ):
+                closed_trade = replace(
+                    closed_trade, is_filtered=True, filter_reason="extreme_ratio"
+                )
+                filter_counts["extreme_ratio"] += 1
+            trades.append(closed_trade)
             open_position = None
             exited_this_bar = True
 
         if open_position is None and not exited_this_bar:
             side = _entry_side(bar.row)
             if side is not None:
-                open_position = OpenPosition(
-                    symbol=prepared_data.symbol,
-                    side=side,
-                    entry_index=bar.index,
-                    entry_date=bar.date,
-                    entry_price=bar.close,
-                    entry_alignment=str(bar.row["adjusted_alignment"]),
+                volume = float(
+                    prepared_data.df.iloc[bar.index][prepared_data.volume_column]
                 )
+                filter_reason = _evaluate_entry_filters(
+                    entry_price=bar.close,
+                    close=bar.close,
+                    volume=volume,
+                    min_entry_price=min_entry_price,
+                    min_dollar_volume=min_dollar_volume,
+                    df=prepared_data.df,
+                    entry_index=bar.index,
+                    open_column=prepared_data.open_column,
+                    close_column=close_column,
+                    max_gap=max_gap,
+                )
+                if filter_reason is not None:
+                    filter_counts[filter_reason] += 1
+                    trades.append(
+                        build_trade(
+                            symbol=prepared_data.symbol,
+                            side=side,
+                            entry_date=bar.date,
+                            entry_price=bar.close,
+                            exit_date=bar.date,
+                            exit_price=bar.close,
+                            bars_held=1,
+                            entry_alignment=str(bar.row["adjusted_alignment"]),
+                            exit_reason="filtered",
+                            mfe=None,
+                            mae=None,
+                            is_filtered=True,
+                            filter_reason=filter_reason,
+                        )
+                    )
+                else:
+                    open_position = OpenPosition(
+                        symbol=prepared_data.symbol,
+                        side=side,
+                        entry_index=bar.index,
+                        entry_date=bar.date,
+                        entry_price=bar.close,
+                        entry_alignment=str(bar.row["adjusted_alignment"]),
+                    )
 
     if open_position is not None:
         final_bar = prepared_data.bars[-1]
-        trades.append(
-            _close_trade(
-                symbol=prepared_data.symbol,
-                df=prepared_data.df,
-                open_position=open_position,
-                exit_index=final_bar.index,
-                exit_date=final_bar.date,
-                exit_price=final_bar.close,
-                exit_reason="end_of_data",
-                high_column=prepared_data.high_column,
-                low_column=prepared_data.low_column,
-            )
+        closed_trade = _close_trade(
+            symbol=prepared_data.symbol,
+            df=prepared_data.df,
+            open_position=open_position,
+            exit_index=final_bar.index,
+            exit_date=final_bar.date,
+            exit_price=final_bar.close,
+            exit_reason="end_of_data",
+            high_column=prepared_data.high_column,
+            low_column=prepared_data.low_column,
         )
+        window = prepared_data.df.iloc[open_position.entry_index : final_bar.index + 1]
+        if _has_extreme_ratio(
+            window,
+            high_column=prepared_data.high_column,
+            low_column=prepared_data.low_column,
+        ):
+            closed_trade = replace(
+                closed_trade, is_filtered=True, filter_reason="extreme_ratio"
+            )
+            filter_counts["extreme_ratio"] += 1
+        trades.append(closed_trade)
 
-    return trades
+    return trades, filter_counts
 
 
 def render_execution_summary(
@@ -755,6 +989,55 @@ def build_parser() -> argparse.ArgumentParser:
         default=1,
         help="Number of parallel worker processes (default: 1). Disables per-symbol --progress when > 1.",
     )
+    parser.add_argument(
+        "--min-price",
+        type=float,
+        default=None,
+        help="Skip symbols whose median close price is below this threshold.",
+    )
+    parser.add_argument(
+        "--output-time-windows",
+        default=None,
+        help="Export per-time-window exit rule comparison to this path.",
+    )
+    # --- Task 06 Group A: trade-entry filter args ---
+    parser.add_argument(
+        "--min-entry-price",
+        type=float,
+        default=5.0,
+        help="Skip trades where entry price is below this threshold.",
+    )
+    parser.add_argument(
+        "--min-dollar-volume",
+        type=float,
+        default=1_000_000,
+        help="Skip trades where close*volume at entry is below this threshold.",
+    )
+    parser.add_argument(
+        "--max-gap",
+        type=float,
+        default=0.5,
+        help="Skip trades where open/prev_close gap exceeds this fraction (default 0.5 = 50%).",
+    )
+    # --- Task 06 Group B: metric cap args ---
+    parser.add_argument(
+        "--max-return-cap",
+        type=float,
+        default=5.0,
+        help=(
+            "Cap directional_return at this value for summary metrics "
+            "(default 5.0 = 500%%). Raw CSV unchanged."
+        ),
+    )
+    parser.add_argument(
+        "--max-loss",
+        type=float,
+        default=-1.0,
+        help=(
+            "Clamp directional_return floor for summary metrics "
+            "(default -1.0 = -100%%). Raw CSV unchanged."
+        ),
+    )
     return parser
 
 
@@ -773,11 +1056,20 @@ def main(argv: list[str] | None = None) -> int:
         output_symbol_comparison=args.output_symbol_comparison,
         output_recommendations=args.output_recommendations,
         output_worst_trades=args.output_worst_trades,
+        output_time_windows=args.output_time_windows,
         min_trades=args.min_trades,
         symbols=_parse_symbols(args.symbols),
         max_symbols=args.max_symbols,
         progress=args.progress,
         workers=args.workers,
+        min_price=args.min_price,
+        # --- Task 06 Group A ---
+        min_entry_price=args.min_entry_price,
+        min_dollar_volume=args.min_dollar_volume,
+        max_gap=args.max_gap,
+        # --- Task 06 Group B ---
+        max_return_cap=args.max_return_cap,
+        max_loss=args.max_loss,
     )
     return 0
 
@@ -857,6 +1149,16 @@ def _close_trade(
 
 def _bars_held(entry_index: int, current_index: int) -> int:
     return (current_index - entry_index) + 1
+
+
+def _median_close(df: pd.DataFrame) -> float | None:
+    if df.empty:
+        return None
+    close_col = _require_column(df, "close")
+    median = pd.to_numeric(df[close_col], errors="coerce").median()
+    if pd.isna(median):
+        return None
+    return float(median)
 
 
 def _require_column(df: pd.DataFrame, name: str) -> str:

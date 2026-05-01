@@ -22,6 +22,8 @@ class Trade:
     directional_return: float
     mfe: float | None
     mae: float | None
+    is_filtered: bool = False
+    filter_reason: str = ""
 
 
 def build_trade(
@@ -37,6 +39,8 @@ def build_trade(
     exit_reason: str,
     mfe: float | None,
     mae: float | None,
+    is_filtered: bool = False,
+    filter_reason: str = "",
 ) -> Trade:
     raw_return = (exit_price / entry_price) - 1.0
     directional_return = raw_return if side == "bullish" else -raw_return
@@ -54,6 +58,8 @@ def build_trade(
         directional_return=directional_return,
         mfe=mfe,
         mae=mae,
+        is_filtered=is_filtered,
+        filter_reason=filter_reason,
     )
 
 
@@ -82,14 +88,26 @@ def trade_to_record(trade: Trade, *, exit_rule: str, ranking_mode: str) -> dict:
     return record
 
 
-def summarize_trade_records(records: list[dict]) -> list[dict]:
+def summarize_trade_records(
+    records: list[dict],
+    *,
+    max_return_cap: float = float("inf"),
+    max_loss: float = float("-inf"),
+) -> list[dict]:
     return summarize_trade_records_by(
         records,
         group_columns=["exit_rule", "ranking_mode", "side", "entry_alignment"],
+        max_return_cap=max_return_cap,
+        max_loss=max_loss,
     )
 
 
-def summarize_symbol_trade_records(records: list[dict]) -> list[dict]:
+def summarize_symbol_trade_records(
+    records: list[dict],
+    *,
+    max_return_cap: float = float("inf"),
+    max_loss: float = float("-inf"),
+) -> list[dict]:
     return summarize_trade_records_by(
         records,
         group_columns=[
@@ -99,6 +117,8 @@ def summarize_symbol_trade_records(records: list[dict]) -> list[dict]:
             "side",
             "entry_alignment",
         ],
+        max_return_cap=max_return_cap,
+        max_loss=max_loss,
     )
 
 
@@ -106,6 +126,8 @@ def summarize_trade_records_by(
     records: list[dict],
     *,
     group_columns: list[str],
+    max_return_cap: float = float("inf"),
+    max_loss: float = float("-inf"),
 ) -> list[dict]:
     if not records:
         return []
@@ -122,10 +144,14 @@ def summarize_trade_records_by(
         if not isinstance(group_values, tuple):
             group_values = (group_values,)
         directional = pd.to_numeric(group["directional_return"], errors="coerce")
-        wins = directional[directional > 0]
-        losses = directional[directional <= 0]
-        win_rate = float((directional > 0).mean()) if not directional.empty else None
-        loss_rate = float((directional <= 0).mean()) if not directional.empty else None
+        # Apply metric-level caps for summary statistics only.
+        # max_loss is e.g. -1.0 meaning -100%; max_return_cap is e.g. 5.0 meaning +500%.
+        # Raw CSV trade records are never modified.
+        capped = directional.clip(lower=max_loss, upper=max_return_cap)
+        wins = capped[capped > 0]
+        losses = capped[capped <= 0]
+        win_rate = float((capped > 0).mean()) if not capped.empty else None
+        loss_rate = float((capped <= 0).mean()) if not capped.empty else None
         avg_win = float(wins.mean()) if not wins.empty else 0.0
         avg_loss = float(abs(losses.mean())) if not losses.empty else 0.0
         expectancy = None
@@ -148,10 +174,10 @@ def summarize_trade_records_by(
             "avg_return": float(pd.to_numeric(group["raw_return"]).mean()),
             "median_return": float(pd.to_numeric(group["raw_return"]).median()),
             "avg_directional_return": (
-                float(directional.mean()) if not directional.empty else None
+                float(capped.mean()) if not capped.empty else None
             ),
             "median_directional_return": (
-                float(directional.median()) if not directional.empty else None
+                float(capped.median()) if not capped.empty else None
             ),
             "avg_mfe": (
                 float(pd.to_numeric(group["mfe"], errors="coerce").dropna().mean())
@@ -166,10 +192,8 @@ def summarize_trade_records_by(
             "avg_bars_held": float(pd.to_numeric(group["bars_held"]).mean()),
             "expectancy": expectancy,
             "profit_factor": profit_factor,
-            "best_trade": (float(directional.max()) if not directional.empty else None),
-            "worst_trade": (
-                float(directional.min()) if not directional.empty else None
-            ),
+            "best_trade": (float(capped.max()) if not capped.empty else None),
+            "worst_trade": (float(capped.min()) if not capped.empty else None),
         }
         rows.append(row)
 

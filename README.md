@@ -204,6 +204,11 @@ PYTHONPATH=src uv run python -m market_scanner.backtest \
 prepares per-symbol Lux/SMC histories and scanner rows once per run, then
 reuses them across the exit-rule simulations.
 
+Quality filters are enabled by default: `--min-price 5`, `--min-entry-price 5`,
+`--min-dollar-volume 1000000`, `--max-gap 0.5`. Summary metrics are capped at
+`--max-return-cap 5.0` (500%) and `--max-loss -1.0` (-100%) to reduce outlier
+distortion. Raw returns in the trades CSV are never modified.
+
 ```bash
 PYTHONPATH=src uv run python -m market_scanner.backtest_execution \
   --universe-file data/scanner_universe_sample.csv \
@@ -211,6 +216,7 @@ PYTHONPATH=src uv run python -m market_scanner.backtest_execution \
   --ranking-mode recent-event \
   --exit-rule all \
   --min-trades 20 \
+  --min-price 5 \
   --max-symbols 100 \
   --progress \
   --symbols AAPL \
@@ -219,7 +225,8 @@ PYTHONPATH=src uv run python -m market_scanner.backtest_execution \
   --output-comparison reports/market_scanner/execution_rule_comparison.csv \
   --output-symbol-comparison reports/market_scanner/execution_symbol_comparison.csv \
   --output-recommendations reports/market_scanner/execution_recommended_rules.csv \
-  --output-worst-trades reports/market_scanner/execution_worst_trades.csv
+  --output-worst-trades reports/market_scanner/execution_worst_trades.csv \
+  --output-time-windows reports/market_scanner/execution_time_windows.csv
 ```
 
 Generate the operational decision report from the execution CSVs:
