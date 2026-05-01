@@ -4,6 +4,8 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from market_scanner.cache import CachedAnalyzer
+
 import pandas as pd
 from market_scanner.event_state import smc_context
 
@@ -42,6 +44,9 @@ class _ScanWorkerArgs:
     min_avg_volume_20: float
     min_avg_dollar_volume_20: float
     min_history_rows: int
+    csv_path: Path | None = None
+    cache_dir: Path | None = None
+    use_cache: bool = False
 
 
 def _scan_symbol_worker(args: _ScanWorkerArgs) -> dict:
@@ -79,10 +84,29 @@ def _scan_symbol_worker(args: _ScanWorkerArgs) -> dict:
         )
 
     try:
+        effective_lux = None
+        effective_smc = None
+        if args.use_cache and args.cache_dir is not None and args.csv_path is not None:
+            from stock_analyzer.analyzer import StockDataAnalyzer
+
+            effective_lux = CachedAnalyzer(
+                StockDataAnalyzer(signal_model="lux"),
+                csv_path=args.csv_path,
+                cache_dir=args.cache_dir,
+                model_name="lux",
+            )
+            effective_smc = CachedAnalyzer(
+                StockDataAnalyzer(signal_model="smc"),
+                csv_path=args.csv_path,
+                cache_dir=args.cache_dir,
+                model_name="smc",
+            )
         return build_scanner_row(
             symbol=symbol,
             df_slice=analysis_df,
             ranking_mode=args.ranking_mode,
+            lux_analyzer=effective_lux,
+            smc_analyzer=effective_smc,
             close=eligibility.close,
             avg_volume_20=eligibility.avg_volume_20,
             avg_dollar_volume_20=eligibility.avg_dollar_volume_20,
@@ -109,6 +133,8 @@ def scan_universe(
     analysis_bars: int | None = None,
     sort_by: str = "scanner",
     workers: int = 1,
+    use_cache: bool = False,
+    cache_dir: Path | None = None,
 ) -> tuple[pd.DataFrame, Path]:
     universe = load_selected_universe(universe_file)
     rows: list[dict] = []
@@ -126,6 +152,9 @@ def scan_universe(
                 min_avg_volume_20=min_avg_volume_20,
                 min_avg_dollar_volume_20=min_avg_dollar_volume_20,
                 min_history_rows=min_history_rows,
+                csv_path=Path(data_dir) / f"{sd.symbol}.csv",
+                cache_dir=cache_dir,
+                use_cache=use_cache,
             )
             for sd in iter_symbol_data(universe, data_dir)
         ]
@@ -193,13 +222,30 @@ def scan_universe(
                 continue
 
             try:
+                csv_path = Path(data_dir) / f"{symbol}.csv"
+                if use_cache and cache_dir is not None:
+                    effective_lux = CachedAnalyzer(
+                        analyzers.lux_analyzer,
+                        csv_path=csv_path,
+                        cache_dir=cache_dir,
+                        model_name="lux",
+                    )
+                    effective_smc = CachedAnalyzer(
+                        analyzers.smc_analyzer,
+                        csv_path=csv_path,
+                        cache_dir=cache_dir,
+                        model_name="smc",
+                    )
+                else:
+                    effective_lux = analyzers.lux_analyzer
+                    effective_smc = analyzers.smc_analyzer
                 rows.append(
                     build_scanner_row(
                         symbol=symbol,
                         df_slice=analysis_df,
                         ranking_mode=ranking_mode,
-                        lux_analyzer=analyzers.lux_analyzer,
-                        smc_analyzer=analyzers.smc_analyzer,
+                        lux_analyzer=effective_lux,
+                        smc_analyzer=effective_smc,
                         close=eligibility.close,
                         avg_volume_20=eligibility.avg_volume_20,
                         avg_dollar_volume_20=eligibility.avg_dollar_volume_20,
@@ -419,12 +465,26 @@ def build_parser() -> argparse.ArgumentParser:
         default=1,
         help="Number of parallel worker processes (default: 1)",
     )
+    # --- Cache args ---
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        default=False,
+        help="Disable on-disk Lux/SMC signal cache (default: cache enabled).",
+    )
+    parser.add_argument(
+        "--cache-dir",
+        default=None,
+        help="Override cache directory (default: data/cache).",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    cache_dir = Path(args.cache_dir) if args.cache_dir else Path("data/cache")
+    use_cache = not args.no_cache
 
     scan_universe(
         universe_file=args.universe_file,
@@ -438,6 +498,8 @@ def main(argv: list[str] | None = None) -> int:
         analysis_bars=args.analysis_bars,
         sort_by=args.sort_by,
         workers=args.workers,
+        use_cache=use_cache,
+        cache_dir=cache_dir,
     )
     return 0
 

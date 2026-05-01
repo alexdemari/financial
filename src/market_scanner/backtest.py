@@ -5,6 +5,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+from market_scanner.cache import get_or_compute_historical
+
 import pandas as pd
 
 from market_scanner.eligibility import MIN_HISTORY_ROWS
@@ -37,6 +39,9 @@ class _BacktestSymbolArgs:
     win_threshold: float
     start_date: str | None
     max_bars: int | None
+    csv_path: Path | None = None
+    cache_dir: Path | None = None
+    use_cache: bool = False
 
 
 def _backtest_symbol_worker(args: _BacktestSymbolArgs) -> list[dict]:
@@ -49,6 +54,9 @@ def _backtest_symbol_worker(args: _BacktestSymbolArgs) -> list[dict]:
         win_threshold=args.win_threshold,
         start_date=args.start_date,
         max_bars=args.max_bars,
+        csv_path=args.csv_path,
+        cache_dir=args.cache_dir,
+        use_cache=args.use_cache,
     )
 
 
@@ -252,6 +260,9 @@ def generate_symbol_events(
     profiler: BacktestProfiler | None = None,
     lux_analyzer: StockDataAnalyzer | None = None,
     smc_analyzer: StockDataAnalyzer | None = None,
+    csv_path: Path | None = None,
+    cache_dir: Path | None = None,
+    use_cache: bool = False,
 ) -> list[dict]:
     effective_min_bars = max(min_bars, SCANNER_ROW_MIN_BARS)
     max_horizon = max(horizons)
@@ -263,13 +274,41 @@ def generate_symbol_events(
     lux_analyzer = lux_analyzer or StockDataAnalyzer(signal_model="lux")
     smc_analyzer = smc_analyzer or StockDataAnalyzer(signal_model="smc")
     if profiler is None:
-        lux_historical = lux_analyzer.generate_historical_signals(symbol, df)
-        smc_historical = smc_analyzer.generate_historical_signals(symbol, df)
+        lux_historical = get_or_compute_historical(
+            analyzer=lux_analyzer,
+            symbol=symbol,
+            df=df,
+            csv_path=csv_path if use_cache else None,
+            cache_dir=cache_dir if use_cache else None,
+            model_name="lux",
+        )
+        smc_historical = get_or_compute_historical(
+            analyzer=smc_analyzer,
+            symbol=symbol,
+            df=df,
+            csv_path=csv_path if use_cache else None,
+            cache_dir=cache_dir if use_cache else None,
+            model_name="smc",
+        )
     else:
         with profiler.track("lux_historical_generation"):
-            lux_historical = lux_analyzer.generate_historical_signals(symbol, df)
+            lux_historical = get_or_compute_historical(
+                analyzer=lux_analyzer,
+                symbol=symbol,
+                df=df,
+                csv_path=csv_path if use_cache else None,
+                cache_dir=cache_dir if use_cache else None,
+                model_name="lux",
+            )
         with profiler.track("smc_historical_generation"):
-            smc_historical = smc_analyzer.generate_historical_signals(symbol, df)
+            smc_historical = get_or_compute_historical(
+                analyzer=smc_analyzer,
+                symbol=symbol,
+                df=df,
+                csv_path=csv_path if use_cache else None,
+                cache_dir=cache_dir if use_cache else None,
+                model_name="smc",
+            )
     close_column = _require_column(df, "close")
     evaluation_indexes = _resolve_evaluation_indexes(
         df=df,
@@ -431,6 +470,8 @@ def backtest_universe(
     max_bars: int | None = None,
     profile: bool = False,
     workers: int = 1,
+    use_cache: bool = False,
+    cache_dir: Path | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     horizons = horizons or list(DEFAULT_HORIZONS)
     ranking_modes = _resolve_ranking_modes(ranking_mode)
@@ -467,6 +508,9 @@ def backtest_universe(
                 win_threshold=win_threshold,
                 start_date=start_date,
                 max_bars=max_bars,
+                csv_path=Path(data_dir) / f"{sd.symbol}.csv",
+                cache_dir=cache_dir,
+                use_cache=use_cache,
             )
             for sd in eligible
         ]
@@ -480,6 +524,7 @@ def backtest_universe(
                 continue
             symbol = symbol_data.symbol
             df = symbol_data.df
+            symbol_csv_path = Path(data_dir) / f"{symbol}.csv"
             if profiler is None:
                 events.extend(
                     generate_symbol_events(
@@ -493,6 +538,9 @@ def backtest_universe(
                         max_bars=max_bars,
                         lux_analyzer=analyzers.lux_analyzer,
                         smc_analyzer=analyzers.smc_analyzer,
+                        csv_path=symbol_csv_path,
+                        cache_dir=cache_dir,
+                        use_cache=use_cache,
                     )
                 )
             else:
@@ -510,6 +558,9 @@ def backtest_universe(
                             profiler=profiler,
                             lux_analyzer=analyzers.lux_analyzer,
                             smc_analyzer=analyzers.smc_analyzer,
+                            csv_path=symbol_csv_path,
+                            cache_dir=cache_dir,
+                            use_cache=use_cache,
                         )
                     )
 
@@ -667,6 +718,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=1,
         help="Number of parallel worker processes (default: 1). Disables --profile when > 1.",
     )
+    # --- Cache args ---
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        default=False,
+        help="Disable on-disk Lux/SMC signal cache (default: cache enabled).",
+    )
+    parser.add_argument(
+        "--cache-dir",
+        default=None,
+        help="Override cache directory (default: data/cache).",
+    )
     return parser
 
 
@@ -674,6 +737,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     detailed_summary_path = args.output_summary or args.output_detailed_summary
+    cache_dir = Path(args.cache_dir) if args.cache_dir else Path("data/cache")
+    use_cache = not args.no_cache
     backtest_universe(
         universe_file=args.universe_file,
         data_dir=args.data_dir,
@@ -692,6 +757,8 @@ def main(argv: list[str] | None = None) -> int:
         max_bars=args.max_bars,
         profile=args.profile,
         workers=args.workers,
+        use_cache=use_cache,
+        cache_dir=cache_dir,
     )
     return 0
 

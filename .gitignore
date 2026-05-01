@@ -48,4 +48,5 @@ dist/
 Thumbs.db
 
 data/
+data/cache/
 CLAUDE.local.md

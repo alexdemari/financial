@@ -8,6 +8,7 @@ from time import perf_counter
 import pandas as pd
 
 from market_scanner.backtest import prepare_backtest_df
+from market_scanner.cache import get_or_compute_historical
 from market_scanner.eligibility import MIN_HISTORY_ROWS
 from market_scanner.exits import (
     exit_after_n_bars,
@@ -176,6 +177,9 @@ class _ExecutionSymbolArgs:
     min_entry_price: float = 0.0
     min_dollar_volume: float = 0.0
     max_gap: float = float("inf")
+    csv_path: Path | None = None
+    cache_dir: Path | None = None
+    use_cache: bool = False
 
 
 def _execution_symbol_worker(args: _ExecutionSymbolArgs) -> list[dict]:
@@ -184,6 +188,9 @@ def _execution_symbol_worker(args: _ExecutionSymbolArgs) -> list[dict]:
         df=args.df,
         ranking_mode=args.ranking_mode,
         min_bars=args.min_bars,
+        csv_path=args.csv_path,
+        cache_dir=args.cache_dir,
+        use_cache=args.use_cache,
     )
     if prepared_data is None:
         return []
@@ -239,6 +246,8 @@ def backtest_execution_universe(
     # Raw CSV trade records are never modified.
     max_return_cap: float = 5.0,
     max_loss: float = -1.0,
+    use_cache: bool = False,
+    cache_dir: Path | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     universe = load_selected_universe(universe_file, symbols=symbols)
     universe = _limit_universe(universe, max_symbols=max_symbols)
@@ -271,6 +280,9 @@ def backtest_execution_universe(
                 min_entry_price=min_entry_price,
                 min_dollar_volume=min_dollar_volume,
                 max_gap=max_gap,
+                csv_path=Path(data_dir) / f"{sd.symbol}.csv",
+                cache_dir=cache_dir,
+                use_cache=use_cache,
             )
             for sd in eligible
         ]
@@ -323,6 +335,9 @@ def backtest_execution_universe(
                 min_bars=min_bars,
                 lux_analyzer=analyzers.lux_analyzer,
                 smc_analyzer=analyzers.smc_analyzer,
+                csv_path=Path(data_dir) / f"{symbol_data.symbol}.csv",
+                cache_dir=cache_dir,
+                use_cache=use_cache,
             )
             if prepared_data is None:
                 if progress:
@@ -628,6 +643,9 @@ def prepare_symbol_execution_data(
     min_bars: int,
     lux_analyzer: StockDataAnalyzer | None = None,
     smc_analyzer: StockDataAnalyzer | None = None,
+    csv_path: Path | None = None,
+    cache_dir: Path | None = None,
+    use_cache: bool = False,
 ) -> PreparedSymbolExecutionData | None:
     effective_min_bars = max(min_bars, SCANNER_ROW_MIN_BARS)
     if len(df) < effective_min_bars:
@@ -635,8 +653,22 @@ def prepare_symbol_execution_data(
 
     lux_analyzer = lux_analyzer or StockDataAnalyzer(signal_model="lux")
     smc_analyzer = smc_analyzer or StockDataAnalyzer(signal_model="smc")
-    lux_historical = lux_analyzer.generate_historical_signals(symbol, df)
-    smc_historical = smc_analyzer.generate_historical_signals(symbol, df)
+    lux_historical = get_or_compute_historical(
+        analyzer=lux_analyzer,
+        symbol=symbol,
+        df=df,
+        csv_path=csv_path if use_cache else None,
+        cache_dir=cache_dir if use_cache else None,
+        model_name="lux",
+    )
+    smc_historical = get_or_compute_historical(
+        analyzer=smc_analyzer,
+        symbol=symbol,
+        df=df,
+        csv_path=csv_path if use_cache else None,
+        cache_dir=cache_dir if use_cache else None,
+        model_name="smc",
+    )
     close_column = _require_column(df, "close")
     high_column = _require_column(df, "high")
     low_column = _require_column(df, "low")
@@ -1038,12 +1070,26 @@ def build_parser() -> argparse.ArgumentParser:
             "(default -1.0 = -100%%). Raw CSV unchanged."
         ),
     )
+    # --- Cache args ---
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        default=False,
+        help="Disable on-disk Lux/SMC signal cache (default: cache enabled).",
+    )
+    parser.add_argument(
+        "--cache-dir",
+        default=None,
+        help="Override cache directory (default: data/cache).",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    cache_dir = Path(args.cache_dir) if args.cache_dir else Path("data/cache")
+    use_cache = not args.no_cache
     backtest_execution_universe(
         universe_file=args.universe_file,
         data_dir=args.data_dir,
@@ -1070,6 +1116,9 @@ def main(argv: list[str] | None = None) -> int:
         # --- Task 06 Group B ---
         max_return_cap=args.max_return_cap,
         max_loss=args.max_loss,
+        # --- Cache ---
+        use_cache=use_cache,
+        cache_dir=cache_dir,
     )
     return 0
 
