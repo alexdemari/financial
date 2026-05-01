@@ -1,6 +1,6 @@
 # Task: Paralelização do scanner e backtest
 
-**Status:** Planned
+**Status:** Completed
 **Scope:** `src/market_scanner/scan.py`, `backtest.py`, `backtest_execution.py`
 **Effort:** M
 **Depende de:** Task 02 (SQLite) recomendado para I/O seguro; pode rodar sem se CSV for read-only

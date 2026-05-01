@@ -1,6 +1,6 @@
 # Task: Profiling de escala real
 
-**Status:** Planned
+**Status:** Completed
 **Scope:** `src/market_scanner/` — read-only, sem mudanças de código
 **Effort:** 1h
 **Depende de:** —
