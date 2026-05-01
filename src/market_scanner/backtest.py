@@ -1,6 +1,8 @@
 import argparse
 import time
+from concurrent.futures import ProcessPoolExecutor
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
@@ -23,6 +25,33 @@ from stock_analyzer.analyzer import StockDataAnalyzer
 DEFAULT_HORIZONS = (3, 5, 10, 20)
 DEFAULT_MIN_BARS = 120
 DEFAULT_WIN_THRESHOLD = 0.01
+
+
+@dataclass
+class _BacktestSymbolArgs:
+    symbol: str
+    df: pd.DataFrame
+    ranking_modes: list[str]
+    min_bars: int
+    horizons: list[int]
+    win_threshold: float
+    start_date: str | None
+    max_bars: int | None
+
+
+def _backtest_symbol_worker(args: _BacktestSymbolArgs) -> list[dict]:
+    return generate_symbol_events(
+        symbol=args.symbol,
+        df=args.df,
+        ranking_modes=args.ranking_modes,
+        min_bars=args.min_bars,
+        horizons=args.horizons,
+        win_threshold=args.win_threshold,
+        start_date=args.start_date,
+        max_bars=args.max_bars,
+    )
+
+
 SCANNER_ROW_MIN_BARS = MIN_HISTORY_ROWS
 DEFAULT_REPORTS_DIR = "reports/market_scanner"
 EVENT_STATE_PRECOMPUTE_MIN_ROWS = 50
@@ -401,77 +430,88 @@ def backtest_universe(
     end_date: str | None = None,
     max_bars: int | None = None,
     profile: bool = False,
+    workers: int = 1,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     horizons = horizons or list(DEFAULT_HORIZONS)
     ranking_modes = _resolve_ranking_modes(ranking_mode)
-    profiler = BacktestProfiler() if profile else None
-    if profiler is None:
-        universe = load_selected_universe(universe_file, symbols=symbols)
-        analyzers = create_analyzers(StockDataAnalyzer)
-    else:
-        with profiler.track("data_loading"):
-            universe = load_selected_universe(universe_file, symbols=symbols)
-            analyzers = create_analyzers(StockDataAnalyzer)
-    events: list[dict] = []
+    profiler = BacktestProfiler() if (profile and workers == 1) else None
 
     def _transform_df(df: pd.DataFrame) -> pd.DataFrame:
-        return prepare_backtest_df(
-            df=df.sort_index(),
-            end_date=end_date,
-        )
+        return prepare_backtest_df(df=df.sort_index(), end_date=end_date)
 
-    if profiler is None:
+    if profiler is not None:
+        with profiler.track("data_loading"):
+            universe = load_selected_universe(universe_file, symbols=symbols)
+            symbol_data_rows = iter_symbol_data(
+                universe, data_dir, transform_df=_transform_df
+            )
+    else:
+        universe = load_selected_universe(universe_file, symbols=symbols)
         symbol_data_rows = iter_symbol_data(
             universe, data_dir, transform_df=_transform_df
         )
+
+    events: list[dict] = []
+
+    if workers > 1:
+        eligible = [
+            sd for sd in symbol_data_rows if sd.load_error is None and sd.df is not None
+        ]
+        worker_args_list = [
+            _BacktestSymbolArgs(
+                symbol=sd.symbol,
+                df=sd.df,  # type: ignore[arg-type]
+                ranking_modes=ranking_modes,
+                min_bars=min_bars,
+                horizons=horizons,
+                win_threshold=win_threshold,
+                start_date=start_date,
+                max_bars=max_bars,
+            )
+            for sd in eligible
+        ]
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            for symbol_events in pool.map(_backtest_symbol_worker, worker_args_list):
+                events.extend(symbol_events)
     else:
-        with profiler.track("data_loading"):
-            symbol_data_rows = iter_symbol_data(
-                universe,
-                data_dir,
-                transform_df=_transform_df,
-            )
-
-    for symbol_data in symbol_data_rows:
-        if symbol_data.load_error is not None or symbol_data.df is None:
-            continue
-
-        symbol = symbol_data.symbol
-        df = symbol_data.df
-
-        if profiler is None:
-            events.extend(
-                generate_symbol_events(
-                    symbol=symbol,
-                    df=df,
-                    ranking_modes=ranking_modes,
-                    min_bars=min_bars,
-                    horizons=horizons,
-                    win_threshold=win_threshold,
-                    start_date=start_date,
-                    max_bars=max_bars,
-                    lux_analyzer=analyzers.lux_analyzer,
-                    smc_analyzer=analyzers.smc_analyzer,
+        analyzers = create_analyzers(StockDataAnalyzer)
+        for symbol_data in symbol_data_rows:
+            if symbol_data.load_error is not None or symbol_data.df is None:
+                continue
+            symbol = symbol_data.symbol
+            df = symbol_data.df
+            if profiler is None:
+                events.extend(
+                    generate_symbol_events(
+                        symbol=symbol,
+                        df=df,
+                        ranking_modes=ranking_modes,
+                        min_bars=min_bars,
+                        horizons=horizons,
+                        win_threshold=win_threshold,
+                        start_date=start_date,
+                        max_bars=max_bars,
+                        lux_analyzer=analyzers.lux_analyzer,
+                        smc_analyzer=analyzers.smc_analyzer,
+                    )
                 )
-            )
-            continue
-
-        with profiler.track("per_symbol_loop"):
-            events.extend(
-                generate_symbol_events(
-                    symbol=symbol,
-                    df=df,
-                    ranking_modes=ranking_modes,
-                    min_bars=min_bars,
-                    horizons=horizons,
-                    win_threshold=win_threshold,
-                    start_date=start_date,
-                    max_bars=max_bars,
-                    profiler=profiler,
-                    lux_analyzer=analyzers.lux_analyzer,
-                    smc_analyzer=analyzers.smc_analyzer,
-                )
-            )
+            else:
+                with profiler.track("per_symbol_loop"):
+                    events.extend(
+                        generate_symbol_events(
+                            symbol=symbol,
+                            df=df,
+                            ranking_modes=ranking_modes,
+                            min_bars=min_bars,
+                            horizons=horizons,
+                            win_threshold=win_threshold,
+                            start_date=start_date,
+                            max_bars=max_bars,
+                            profiler=profiler,
+                            lux_analyzer=analyzers.lux_analyzer,
+                            smc_analyzer=analyzers.smc_analyzer,
+                        )
+                    )
 
     events_df = pd.DataFrame(events)
     if profiler is None:
@@ -621,6 +661,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print cumulative execution timings for the current run.",
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Number of parallel worker processes (default: 1). Disables --profile when > 1.",
+    )
     return parser
 
 
@@ -645,6 +691,7 @@ def main(argv: list[str] | None = None) -> int:
         end_date=args.end_date,
         max_bars=args.max_bars,
         profile=args.profile,
+        workers=args.workers,
     )
     return 0
 

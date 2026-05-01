@@ -1,4 +1,5 @@
 import argparse
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
@@ -156,6 +157,37 @@ class PreparedSymbolExecutionData:
     low_column: str
 
 
+@dataclass
+class _ExecutionSymbolArgs:
+    symbol: str
+    df: pd.DataFrame
+    ranking_mode: str
+    exit_rules: list[str]
+    min_bars: int
+
+
+def _execution_symbol_worker(args: _ExecutionSymbolArgs) -> list[dict]:
+    prepared_data = prepare_symbol_execution_data(
+        symbol=args.symbol,
+        df=args.df,
+        ranking_mode=args.ranking_mode,
+        min_bars=args.min_bars,
+    )
+    if prepared_data is None:
+        return []
+    records: list[dict] = []
+    for exit_rule in args.exit_rules:
+        trades = generate_prepared_symbol_trades(
+            prepared_data=prepared_data,
+            exit_rule=exit_rule,
+        )
+        records.extend(
+            trade_to_record(trade, exit_rule=exit_rule, ranking_mode=args.ranking_mode)
+            for trade in trades
+        )
+    return records
+
+
 def backtest_execution_universe(
     *,
     universe_file: str | Path,
@@ -180,78 +212,105 @@ def backtest_execution_universe(
     symbols: list[str] | None = None,
     max_symbols: int | None = None,
     progress: bool = False,
+    workers: int = 1,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     universe = load_selected_universe(universe_file, symbols=symbols)
     universe = _limit_universe(universe, max_symbols=max_symbols)
-    analyzers = create_analyzers(StockDataAnalyzer)
     trade_records: list[dict] = []
     exit_rules = resolve_exit_rules(exit_rule)
-    total_symbols = len(universe)
     start_time = perf_counter()
-    processed_symbols = 0
 
     def _transform_df(df: pd.DataFrame) -> pd.DataFrame:
         return prepare_backtest_df(df=df.sort_index())
 
-    for symbol_data in iter_symbol_data(universe, data_dir, transform_df=_transform_df):
-        symbol_start = perf_counter()
-        processed_symbols += 1
-        if symbol_data.load_error is not None or symbol_data.df is None:
-            if progress:
-                _print_progress(
-                    processed_symbols=processed_symbols,
-                    total_symbols=total_symbols,
-                    symbol=symbol_data.symbol,
-                    start_time=start_time,
-                    symbol_start=symbol_start,
-                    status=symbol_data.load_error,
-                )
-            continue
+    all_symbol_data = iter_symbol_data(universe, data_dir, transform_df=_transform_df)
 
-        prepared_data = prepare_symbol_execution_data(
-            symbol=symbol_data.symbol,
-            df=symbol_data.df,
-            ranking_mode=ranking_mode,
-            min_bars=min_bars,
-            lux_analyzer=analyzers.lux_analyzer,
-            smc_analyzer=analyzers.smc_analyzer,
-        )
-        if prepared_data is None:
-            if progress:
-                _print_progress(
-                    processed_symbols=processed_symbols,
-                    total_symbols=total_symbols,
-                    symbol=symbol_data.symbol,
-                    start_time=start_time,
-                    symbol_start=symbol_start,
-                    status="insufficient_history",
-                )
-            continue
-
-        symbol_trade_count = 0
-        for current_exit_rule in exit_rules:
-            symbol_trades = generate_prepared_symbol_trades(
-                prepared_data=prepared_data,
-                exit_rule=current_exit_rule,
+    if workers > 1:
+        eligible = [
+            sd for sd in all_symbol_data if sd.load_error is None and sd.df is not None
+        ]
+        worker_args_list = [
+            _ExecutionSymbolArgs(
+                symbol=sd.symbol,
+                df=sd.df,  # type: ignore[arg-type]
+                ranking_mode=ranking_mode,
+                exit_rules=exit_rules,
+                min_bars=min_bars,
             )
-            symbol_trade_count += len(symbol_trades)
-            trade_records.extend(
-                trade_to_record(
-                    trade,
-                    exit_rule=current_exit_rule,
-                    ranking_mode=ranking_mode,
-                )
-                for trade in symbol_trades
-            )
+            for sd in eligible
+        ]
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            for symbol_records in pool.map(_execution_symbol_worker, worker_args_list):
+                trade_records.extend(symbol_records)
         if progress:
-            _print_progress(
-                processed_symbols=processed_symbols,
-                total_symbols=total_symbols,
-                symbol=symbol_data.symbol,
-                start_time=start_time,
-                symbol_start=symbol_start,
-                status=f"ok trades={symbol_trade_count}",
+            print(
+                f"Processed {len(eligible)} symbols with {workers} workers "
+                f"in {perf_counter() - start_time:.1f}s"
             )
+    else:
+        analyzers = create_analyzers(StockDataAnalyzer)
+        total_symbols = len(universe)
+        processed_symbols = 0
+
+        for symbol_data in all_symbol_data:
+            symbol_start = perf_counter()
+            processed_symbols += 1
+            if symbol_data.load_error is not None or symbol_data.df is None:
+                if progress:
+                    _print_progress(
+                        processed_symbols=processed_symbols,
+                        total_symbols=total_symbols,
+                        symbol=symbol_data.symbol,
+                        start_time=start_time,
+                        symbol_start=symbol_start,
+                        status=symbol_data.load_error,
+                    )
+                continue
+
+            prepared_data = prepare_symbol_execution_data(
+                symbol=symbol_data.symbol,
+                df=symbol_data.df,
+                ranking_mode=ranking_mode,
+                min_bars=min_bars,
+                lux_analyzer=analyzers.lux_analyzer,
+                smc_analyzer=analyzers.smc_analyzer,
+            )
+            if prepared_data is None:
+                if progress:
+                    _print_progress(
+                        processed_symbols=processed_symbols,
+                        total_symbols=total_symbols,
+                        symbol=symbol_data.symbol,
+                        start_time=start_time,
+                        symbol_start=symbol_start,
+                        status="insufficient_history",
+                    )
+                continue
+
+            symbol_trade_count = 0
+            for current_exit_rule in exit_rules:
+                symbol_trades = generate_prepared_symbol_trades(
+                    prepared_data=prepared_data,
+                    exit_rule=current_exit_rule,
+                )
+                symbol_trade_count += len(symbol_trades)
+                trade_records.extend(
+                    trade_to_record(
+                        trade,
+                        exit_rule=current_exit_rule,
+                        ranking_mode=ranking_mode,
+                    )
+                    for trade in symbol_trades
+                )
+            if progress:
+                _print_progress(
+                    processed_symbols=processed_symbols,
+                    total_symbols=total_symbols,
+                    symbol=symbol_data.symbol,
+                    start_time=start_time,
+                    symbol_start=symbol_start,
+                    status=f"ok trades={symbol_trade_count}",
+                )
 
     trades_df = pd.DataFrame(trade_records)
     summary_df = pd.DataFrame(summarize_trade_records(trade_records))
@@ -690,6 +749,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Comma-separated symbol filter",
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Number of parallel worker processes (default: 1). Disables per-symbol --progress when > 1.",
+    )
     return parser
 
 
@@ -712,6 +777,7 @@ def main(argv: list[str] | None = None) -> int:
         symbols=_parse_symbols(args.symbols),
         max_symbols=args.max_symbols,
         progress=args.progress,
+        workers=args.workers,
     )
     return 0
 

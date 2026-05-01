@@ -1,6 +1,7 @@
 import argparse
 import sys
-from dataclasses import asdict
+from concurrent.futures import ProcessPoolExecutor
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import pandas as pd
@@ -29,6 +30,72 @@ from stock_analyzer.analyzer import StockDataAnalyzer
 _smc_context = smc_context
 
 
+@dataclass
+class _ScanWorkerArgs:
+    symbol: str
+    market_cap: float | None
+    df: pd.DataFrame | None
+    load_error: str | None
+    analysis_bars: int | None
+    ranking_mode: str
+    min_market_cap: float
+    min_avg_volume_20: float
+    min_avg_dollar_volume_20: float
+    min_history_rows: int
+
+
+def _scan_symbol_worker(args: _ScanWorkerArgs) -> dict:
+    symbol = args.symbol
+    market_cap = args.market_cap
+
+    if args.load_error == "missing_csv":
+        eligibility = evaluate_symbol_eligibility(
+            market_cap=market_cap,
+            df=None,
+            min_market_cap=args.min_market_cap,
+            min_avg_volume_20=args.min_avg_volume_20,
+            min_avg_dollar_volume_20=args.min_avg_dollar_volume_20,
+            min_history_rows=args.min_history_rows,
+        )
+        return _build_excluded_row(
+            symbol, market_cap, eligibility, ranking_mode=args.ranking_mode
+        )
+
+    if args.load_error is not None or args.df is None:
+        return _build_analysis_failed_row(symbol, market_cap, args.ranking_mode)
+
+    analysis_df = _analysis_window(args.df, args.analysis_bars)
+    eligibility = evaluate_symbol_eligibility(
+        market_cap=market_cap,
+        df=analysis_df,
+        min_market_cap=args.min_market_cap,
+        min_avg_volume_20=args.min_avg_volume_20,
+        min_avg_dollar_volume_20=args.min_avg_dollar_volume_20,
+        min_history_rows=args.min_history_rows,
+    )
+    if not eligibility.eligible:
+        return _build_excluded_row(
+            symbol, market_cap, eligibility, ranking_mode=args.ranking_mode
+        )
+
+    try:
+        return build_scanner_row(
+            symbol=symbol,
+            df_slice=analysis_df,
+            ranking_mode=args.ranking_mode,
+            close=eligibility.close,
+            avg_volume_20=eligibility.avg_volume_20,
+            avg_dollar_volume_20=eligibility.avg_dollar_volume_20,
+            market_cap=market_cap,
+        )
+    except Exception as exc:
+        row = _build_analysis_failed_row(
+            symbol, market_cap, args.ranking_mode, error=exc
+        )
+        row["_error_detail"] = f"{type(exc).__name__}: {exc}"
+        return row
+
+
 def scan_universe(
     universe_file: str | Path,
     data_dir: str | Path,
@@ -41,86 +108,117 @@ def scan_universe(
     min_avg_dollar_volume_20: float = 0,
     analysis_bars: int | None = None,
     sort_by: str = "scanner",
+    workers: int = 1,
 ) -> tuple[pd.DataFrame, Path]:
     universe = load_selected_universe(universe_file)
     rows: list[dict] = []
-    analyzers = create_analyzers(StockDataAnalyzer)
 
-    for symbol_data in iter_symbol_data(universe, data_dir):
-        symbol = symbol_data.symbol
-        market_cap = symbol_data.market_cap
-        df = symbol_data.df
-
-        if symbol_data.load_error == "missing_csv":
-            eligibility = evaluate_symbol_eligibility(
-                market_cap=market_cap,
-                df=None,
+    if workers > 1:
+        worker_args_list = [
+            _ScanWorkerArgs(
+                symbol=sd.symbol,
+                market_cap=sd.market_cap,
+                df=sd.df,
+                load_error=sd.load_error,
+                analysis_bars=analysis_bars,
+                ranking_mode=ranking_mode,
                 min_market_cap=min_market_cap,
                 min_avg_volume_20=min_avg_volume_20,
                 min_avg_dollar_volume_20=min_avg_dollar_volume_20,
                 min_history_rows=min_history_rows,
             )
-            rows.append(
-                _build_excluded_row(
-                    symbol,
-                    market_cap,
-                    eligibility,
-                    ranking_mode=ranking_mode,
+            for sd in iter_symbol_data(universe, data_dir)
+        ]
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            raw_rows: list[dict] = list(pool.map(_scan_symbol_worker, worker_args_list))
+        for row in raw_rows:
+            error_detail = row.pop("_error_detail", None)
+            if error_detail is not None:
+                print(
+                    f"Analysis failed for {row['symbol']}: {error_detail}",
+                    file=sys.stderr,
                 )
-            )
-            continue
+            rows.append(row)
+    else:
+        analyzers = create_analyzers(StockDataAnalyzer)
 
-        if symbol_data.load_error is not None or df is None:
-            rows.append(_build_analysis_failed_row(symbol, market_cap, ranking_mode))
-            continue
+        for symbol_data in iter_symbol_data(universe, data_dir):
+            symbol = symbol_data.symbol
+            market_cap = symbol_data.market_cap
+            df = symbol_data.df
 
-        analysis_df = _analysis_window(df, analysis_bars)
-        eligibility = evaluate_symbol_eligibility(
-            market_cap=market_cap,
-            df=analysis_df,
-            min_market_cap=min_market_cap,
-            min_avg_volume_20=min_avg_volume_20,
-            min_avg_dollar_volume_20=min_avg_dollar_volume_20,
-            min_history_rows=min_history_rows,
-        )
-        if not eligibility.eligible:
-            rows.append(
-                _build_excluded_row(
-                    symbol,
-                    market_cap,
-                    eligibility,
-                    ranking_mode=ranking_mode,
-                )
-            )
-            continue
-
-        try:
-            rows.append(
-                build_scanner_row(
-                    symbol=symbol,
-                    df_slice=analysis_df,
-                    ranking_mode=ranking_mode,
-                    lux_analyzer=analyzers.lux_analyzer,
-                    smc_analyzer=analyzers.smc_analyzer,
-                    close=eligibility.close,
-                    avg_volume_20=eligibility.avg_volume_20,
-                    avg_dollar_volume_20=eligibility.avg_dollar_volume_20,
+            if symbol_data.load_error == "missing_csv":
+                eligibility = evaluate_symbol_eligibility(
                     market_cap=market_cap,
+                    df=None,
+                    min_market_cap=min_market_cap,
+                    min_avg_volume_20=min_avg_volume_20,
+                    min_avg_dollar_volume_20=min_avg_dollar_volume_20,
+                    min_history_rows=min_history_rows,
                 )
-            )
-        except Exception as exc:
-            print(
-                f"Analysis failed for {symbol}: {type(exc).__name__}: {exc}",
-                file=sys.stderr,
-            )
-            rows.append(
-                _build_analysis_failed_row(
-                    symbol,
-                    market_cap,
-                    ranking_mode,
-                    error=exc,
+                rows.append(
+                    _build_excluded_row(
+                        symbol,
+                        market_cap,
+                        eligibility,
+                        ranking_mode=ranking_mode,
+                    )
                 )
+                continue
+
+            if symbol_data.load_error is not None or df is None:
+                rows.append(
+                    _build_analysis_failed_row(symbol, market_cap, ranking_mode)
+                )
+                continue
+
+            analysis_df = _analysis_window(df, analysis_bars)
+            eligibility = evaluate_symbol_eligibility(
+                market_cap=market_cap,
+                df=analysis_df,
+                min_market_cap=min_market_cap,
+                min_avg_volume_20=min_avg_volume_20,
+                min_avg_dollar_volume_20=min_avg_dollar_volume_20,
+                min_history_rows=min_history_rows,
             )
+            if not eligibility.eligible:
+                rows.append(
+                    _build_excluded_row(
+                        symbol,
+                        market_cap,
+                        eligibility,
+                        ranking_mode=ranking_mode,
+                    )
+                )
+                continue
+
+            try:
+                rows.append(
+                    build_scanner_row(
+                        symbol=symbol,
+                        df_slice=analysis_df,
+                        ranking_mode=ranking_mode,
+                        lux_analyzer=analyzers.lux_analyzer,
+                        smc_analyzer=analyzers.smc_analyzer,
+                        close=eligibility.close,
+                        avg_volume_20=eligibility.avg_volume_20,
+                        avg_dollar_volume_20=eligibility.avg_dollar_volume_20,
+                        market_cap=market_cap,
+                    )
+                )
+            except Exception as exc:
+                print(
+                    f"Analysis failed for {symbol}: {type(exc).__name__}: {exc}",
+                    file=sys.stderr,
+                )
+                rows.append(
+                    _build_analysis_failed_row(
+                        symbol,
+                        market_cap,
+                        ranking_mode,
+                        error=exc,
+                    )
+                )
 
     result_df = pd.DataFrame(rows)
     if not result_df.empty:
@@ -315,6 +413,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Sort basis for CSV and terminal output",
     )
     parser.add_argument("--output", required=True, help="CSV output path")
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Number of parallel worker processes (default: 1)",
+    )
     return parser
 
 
@@ -333,6 +437,7 @@ def main(argv: list[str] | None = None) -> int:
         min_avg_dollar_volume_20=args.min_avg_dollar_volume_20,
         analysis_bars=args.analysis_bars,
         sort_by=args.sort_by,
+        workers=args.workers,
     )
     return 0
 
