@@ -1,62 +1,36 @@
-# financial
+@AGENTS.md
 
-Local-first Python project for market data management and signal analysis.
+# Claude Code — extras on top of AGENTS.md
 
-## Stack
+The canonical project conventions are in `AGENTS.md` (shared with Codex). This file adds Claude-Code-specific tooling: slash commands, sub-agents, hook expectations, and cost discipline.
 
-- Python 3.11+, pandas, uv
-- CSV-based persistence (no DB, no ORM)
-- pytest for tests
+## Tooling map
 
-See @README.md for commands.
-See @docs/architecture/overview.md for architecture.
-See @docs/architecture/module-boundaries.md for module rules.
+- **`/ship`** — full quality gate (lint → test → verify → docs → commit → push). Use this instead of orchestrating the steps manually.
+- **`/verify`** — bit-identical output check vs `tests/baselines/golden.parquet`.
+- **`/bench`** — profile + record latency to `bench/history.jsonl`. Surfaces top hotspots; does not implement optimizations.
+- **`/plan-parallel`** — plan a multi-feature batch, then dispatch one sub-agent per feature in a single turn. User approves the plan before fan-out.
 
-## Run & Test
+## Sub-agents
 
-```bash
-uv run pytest
-uv run ruff check src tests
-PYTHONPATH=src uv run python -m <module>.main
-```
+- **`finder`** (Haiku) — for "where is X defined / which files reference Y". ~10× cheaper than `general-purpose`. Always prefer `finder` over `general-purpose` for pure lookups.
+- **`feature-worker`** (Sonnet) — owns one feature end-to-end on a worktree. Used by `/plan-parallel`.
+- **`general-purpose`** — only for genuinely multi-step reasoning that doesn't fit `finder` or `feature-worker`.
 
-Always run from repo root. Always use `PYTHONPATH=src`.
+## Permissions & hooks (configured in `.claude/settings.json`)
 
-## Module Boundaries — Hard Rules
+- Common shell commands (`uv run pytest`, `uv run ruff`, `git status/diff/add/commit/push`, `just *`, `rg`, `grep`) are pre-approved. Sub-agents inherit these — do not ask the user for confirmation on them.
+- A `PostToolUse` hook auto-runs `uv run ruff check --fix` on edited Python files. Lint errors do not need a separate turn.
+- `Stop` hook reminds you to `/compact` if context > 100k or `/clear` if switching tasks.
 
-- `market_scanner` MUST NOT implement indicator logic (Lux, SMC)
-- `stock_analyzer` answers single-symbol questions only
-- `trading_indicators` owns all raw technical calculations
-- `stock_data_manager` is the data layer — never triggers analysis
-- Scanner decision logic must be defined once in `market_scanner.scanner_row`
+## Cost & context discipline
 
-## What NOT to introduce
+- Prefer `Read` over re-running `Bash` to inspect state already in context.
+- For verification, use `/verify`, `/ship`, or `/bench` instead of improvising shell sequences.
+- Use `finder` for code lookups — never `general-purpose` for "where is X".
+- When a session crosses ~100k tokens of context mid-task, run `/compact`. When switching to an unrelated feature, run `/clear`.
+- Spawn parallel sub-agents in a single tool-call batch to share the prefix cache.
 
-- Redis, queues, async, distributed systems
-- External databases (Postgres, etc.)
-- Event buses or streaming
-- Refactors of unrelated modules
+## When the user says "ship it"
 
-## Things to get right
-
-- `PYTHONPATH=src` is required — never omit it
-- Tests must not hit network — mock `yfinance` at `stock_data_manager.downloader.yf`
-- DataFrames for OHLC must have at least 50 bars (SMC requires history)
-- CSV date index must be parsed as DatetimeIndex, not string
-- Do not duplicate Lux or SMC logic — reuse `trading_indicators`
-- Scanner row fields: `lux_role`, `smc_role`, `alignment`, `market_state`, `adjusted_alignment`, `action_bucket`
-
-## Git (WSL)
-
-```bash
-wsl bash -lc "cd /mnt/c/Users/alexa/Documents/development/financial && git commit -m '...'"
-```
-
-If ruff-format rewrites files during commit: re-stage and re-run the wsl commit command.
-
-## Compaction
-
-When compacting, always preserve:
-- list of modified files
-- current test status
-- any unresolved issues or open decisions
+Equivalent to `/ship`. Do not ask which steps to run.

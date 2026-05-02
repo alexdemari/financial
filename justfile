@@ -167,6 +167,32 @@ clean-cache:
 profile-backtest:
     uv run python -m src.options_tech_scanner.profile_backtest
 
+# Produce the canonical backtest output to stdout (or a file via redirection).
+# Used by /verify to compare against the golden baseline.
+bench-output:
+    uv run python -m src.backtest --config config/bench.yaml --output -
+
+# Time a single backtest run and emit JSON metrics to stdout.
+# /bench appends this to bench/history.jsonl.
+bench:
+    uv run python -m src.bench --config config/bench.yaml --json
+
+# Compare current output to the golden baseline. Exits non-zero on divergence.
+verify-identical:
+    uv run python -m src.tools.diff_outputs \
+        --baseline tests/baselines/golden.parquet \
+        --candidate <(just bench-output)
+
+# Promote the current output to the new golden baseline.
+# Use only after a deliberate semantic change.
+update-baseline:
+    just bench-output > tests/baselines/golden.parquet
+    @echo "✓ baseline updated. Commit tests/baselines/golden.parquet."
+
+# Full quality gate, no commit.
+gate: lint test verify-identical
+    @echo "✓ all gates passed"
+
 # ── AI / Agent tooling ────────────────────────────────────────────────────────
 
 # Sincroniza skills entre .claude/skills/ e .codex/skills/

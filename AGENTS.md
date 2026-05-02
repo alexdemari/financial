@@ -1,53 +1,56 @@
-# AGENTS.md
+# Project Conventions (canonical)
 
-Local-first Python project for financial market data analysis and signal generation.
+This file is the source of truth for any AI coding agent working on this repo (Claude Code, Codex CLI, etc.). Tool-specific extensions live in `CLAUDE.md` (slash commands, sub-agents, hooks). Personal/local overrides live in `CLAUDE.local.md` (gitignored).
 
-## Quick orientation
+## Environment
 
-See @README.md for all CLI commands.
-See @docs/architecture/overview.md for architecture.
-See @docs/architecture/module-boundaries.md for module ownership rules.
-See @docs/ai/context-map.md for file-to-module mapping.
+- Development happens on WSL / Ubuntu (Windows host). All shell commands assume `bash` on WSL.
+- Python is managed by `uv`; the venv is `.venv` inside the repo. **Always invoke Python tools via `uv run <cmd>`** (`uv run pytest`, `uv run ruff`, `uv run python -m ...`). Never call `pytest` or `python` bare — they may resolve to a system interpreter.
+- Editors: PyCharm / Cursor from Windows side. The agent does not need to interact with the editor; just edit files.
 
-## Test & lint (always run after changes)
+## Planning & Communication
 
-```bash
-uv run pytest
-uv run ruff check src tests
-```
+- When proposing a plan, **list the files to be modified first**, then describe changes per file. Don't describe before listing.
+- After implementing a change, **show the exact test command** that validates it (e.g. `uv run pytest tests/backtest/test_filters.py -k test_min_price -x -q`).
+- Prefer **explicit, descriptive variable names** over brevity (`min_price_threshold` over `mp`).
 
-Run targeted tests when scope is clear:
+## Testing
 
-```bash
-uv run pytest tests/stock_analyzer
-uv run pytest tests/market_scanner
-```
+- Always run the full test suite after refactors, especially parallelization or changes to function signatures (analyzers, workers, etc.). Use `uv run pytest -x -q`.
+- Verify bit-identical output when optimizing existing code paths. Use the project's `verify-identical` recipe.
+- When `workers=1` or any sequential mode exists, preserve the original code path to avoid regressions.
+- Prefer `-x -q` flags to fail fast during iteration.
 
-Always prefix with `PYTHONPATH=src` when running modules directly:
+## Code Style (Python)
 
-```bash
-PYTHONPATH=src uv run python -m stock_analyzer.main -s AAPL --model lux --local-only
-```
+- Follow `ruff` defaults. Run `uv run ruff check --fix .` before committing.
+- Type hints on all public functions and methods.
+- Prefer pure functions; isolate I/O at module boundaries.
+- Use `pathlib.Path` over `os.path`.
+- Explicit variable names — see Planning section.
 
-## Hard constraints — never violate
+## Commit Practices
 
-- `market_scanner` MUST NOT implement indicator logic (Lux, SMC) — those belong in `trading_indicators`
-- `stock_analyzer` answers single-symbol questions only — never universe scanning
-- `stock_data_manager` is the data layer — analysis modules never trigger downloads
-- Scanner row fields must come from `market_scanner.scanner_row`, not be reimplemented elsewhere
-- No Redis, async, queues, distributed systems, or external databases
+- Commit messages: imperative mood, conventional-commit-ish prefix: `feat:`, `fix:`, `refactor:`, `perf:`, `docs:`, `test:`, `chore:`.
+- Body explains *why*, not *what*. The diff already shows what.
+- After completing a feature or refactor, update relevant docs (justfile, README, etc.) and commit/push as a final step unless told otherwise.
 
-## What to get right
+## Domain — Backtest Engine
 
-- Tests must not hit network — mock `yfinance` at `stock_data_manager.downloader.yf`
-- DataFrames for OHLC must use `DatetimeIndex`, never string index
-- Minimum 50 bars required for SMC calculations
-- Do not duplicate Lux or SMC logic — always reuse `trading_indicators`
+- **Bit-identical output is a hard contract** for any refactor that does not explicitly change semantics. If you change semantics deliberately, say so in the commit body.
+- Treat the SQLite cache as **write-once-read-many**. Never mutate cached rows in-place; invalidate and rewrite instead.
+- Temporal split logic must respect the `embargo` parameter; do not leak future data into training windows.
+- Performance work must report before/after timings and confirm bit-identical (or document the deliberate divergence).
 
-## Git (WSL only)
+## Sub-Agents & Parallelism (general)
 
-```bash
-wsl bash -lc "cd /mnt/c/Users/alexa/Documents/development/financial && git commit -m '...'"
-```
+- When delegating to parallel sub-agents, dispatch them in a **single batch** (one tool-call turn) so the prefix cache is shared.
+- The orchestrator must verify sub-agent work (run tests, read changes) before declaring tasks complete.
+- Run integration tests after fan-out completes and before any commit.
 
-If ruff-format rewrites files during commit: re-stage and re-run.
+## What NOT to do
+
+- Do not re-read large files you've already read in this session unless they may have changed.
+- Do not improvise long shell command sequences when a `just` recipe exists for it. If a recipe is missing, propose adding it instead of hardcoding the sequence.
+- Do not push directly to `main` without an explicit instruction.
+- Do not edit `.venv/`, `bench/history.jsonl`, or `tests/baselines/` unless the task explicitly requires it.
