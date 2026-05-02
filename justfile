@@ -44,7 +44,7 @@ type-check:
     uv run mypy src tests
 
 # Check code quality
-check: format lint type-check test
+check: format lint-fix type-check test
 
 # Clean cache files (Linux compatible)
 clean:
