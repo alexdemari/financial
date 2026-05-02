@@ -1,0 +1,39 @@
+# Configuração fixa para benchmark de performance.
+# Usado por: just bench  e  just bench-output
+# NÃO alterar sem atualizar tests/baselines/golden.parquet (just update-baseline).
+
+universe_file: data/scanner_universe_sample.csv
+data_dir: data/stocks/1D
+
+ranking_mode: recent-event
+
+# Horizons reduzidos para manter o bench rápido (~segundos, não minutos).
+# Se precisar de cobertura completa, use market-scanner-backtest diretamente.
+horizons: "3,5,10,20"
+
+min_bars: 120
+win_threshold: 0.01
+
+# Outputs do bench vão para um subdiretório isolado — não sobrescrevem
+# os relatórios normais em reports/market_scanner/.
+output_events: reports/bench/backtest_events.csv
+output_detailed_summary: reports/bench/backtest_detailed_summary.csv
+output_decision_summary: reports/bench/backtest_decision_summary.csv
+output_lux_summary: reports/bench/backtest_lux_summary.csv
+output_smc_summary: reports/bench/backtest_smc_summary.csv
+
+# Fixar um subconjunto de símbolos garante reprodutibilidade independente
+# do universe_file crescer. Deixe null para usar o universe_file completo.
+# Exemplo: "PETR4.SA,VALE3.SA,ITUB4.SA,BBDC4.SA,ABEV3.SA"
+symbols: null
+
+# Janela temporal fixa: resultados determinísticos mesmo com novos dados chegando.
+start_date: "2023-01-01"
+end_date: "2024-12-31"
+
+# max_bars: null  — sem limite; use um inteiro (ex: 500) para acelerar em dev.
+max_bars: null
+
+workers: 1
+use_cache: true
+cache_dir: data/cache

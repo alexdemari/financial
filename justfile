@@ -170,12 +170,12 @@ profile-backtest:
 # Produce the canonical backtest output to stdout (or a file via redirection).
 # Used by /verify to compare against the golden baseline.
 bench-output config="config/bench.yaml":
-    uv run python -m market_scanner.backtest --config {{config}} --output -
+    uv run python -m src.bench --config {{config}}
 
 # Time a single backtest run and emit JSON metrics to stdout.
 # /bench appends this to bench/history.jsonl.
 bench config="config/bench.yaml":
-    uv run python -m market_scanner.backtest --config {{config}} --json
+    uv run python -m src.bench --config {{config}} --json
 
 # Compare current output to the golden baseline. Exits non-zero on divergence.
 verify-identical:
