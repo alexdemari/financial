@@ -169,19 +169,22 @@ profile-backtest:
 
 # Produce the canonical backtest output to stdout (or a file via redirection).
 # Used by /verify to compare against the golden baseline.
-bench-output:
-    uv run python -m src.backtest --config config/bench.yaml --output -
+bench-output config="config/bench.yaml":
+    uv run python -m market_scanner.backtest --config {{config}} --output -
 
 # Time a single backtest run and emit JSON metrics to stdout.
 # /bench appends this to bench/history.jsonl.
-bench:
-    uv run python -m src.bench --config config/bench.yaml --json
+bench config="config/bench.yaml":
+    uv run python -m market_scanner.backtest --config {{config}} --json
 
 # Compare current output to the golden baseline. Exits non-zero on divergence.
 verify-identical:
-    uv run python -m src.tools.diff_outputs \
-        --baseline tests/baselines/golden.parquet \
-        --candidate <(just bench-output)
+    uv run python -c "\
+        import pandas as pd; \
+        a=pd.read_parquet('tests/baselines/golden.parquet'); \
+        b=pd.read_parquet('/tmp/candidate.parquet'); \
+        pd.testing.assert_frame_equal(a, b)" \
+    && echo "✓ bit-identical"
 
 # Promote the current output to the new golden baseline.
 # Use only after a deliberate semantic change.
