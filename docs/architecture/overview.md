@@ -11,6 +11,7 @@ Its current goal is:
 - analyze one symbol at a time with reusable signal models
 - scan many symbols with Scanner V3 decision logic
 - validate signal quality with the current backtest
+- generate a daily actionable report crossing fresh signals with backtest-qualified setups
 
 The codebase is synchronous, CLI-driven, and file-based. There is no required
 cloud infrastructure, queue, worker fleet, or distributed runtime in the
@@ -50,6 +51,12 @@ market_scanner
 backtest
   -> replays Scanner V3 historically
   -> measures signal quality, not options PnL
+
+daily_report
+  -> post-processes scan CSV + execution_recommended_rules.csv
+  -> filters fresh signals (lux/smc days since event)
+  -> ranks top candidates qualified by backtest
+  -> renders actionable markdown report
 ```
 
 ---
@@ -130,7 +137,7 @@ This means:
 The current operating sequence is:
 
 ```text
-Data -> Analysis -> Decision -> Validation -> Execution
+Data -> Analysis -> Decision -> Validation -> Daily Report
 ```
 
 Meaning:
@@ -139,7 +146,7 @@ Meaning:
 - `stock_analyzer` owns per-symbol analysis
 - `market_scanner` owns multi-symbol decision
 - the current backtest owns signal validation
-- execution remains downstream and optional
+- `daily_report` crosses fresh scanner signals with backtest-qualified setups
 
 ---
 

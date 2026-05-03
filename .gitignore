@@ -51,3 +51,4 @@ data/
 data/cache/
 CLAUDE.local.md
 settings.local.json
+tests/baselines

@@ -240,6 +240,17 @@ PYTHONPATH=src uv run python -m market_scanner.operational_report \
   --output-ranking reports/market_scanner/execution_operational_ranking.csv
 ```
 
+Generate the daily actionable report (fresh signals + qualified top candidates):
+
+```bash
+PYTHONPATH=src uv run python -m market_scanner.daily_report \
+  --scan reports/market_scanner/scan_daily.csv \
+  --recommendations reports/market_scanner/execution_recommended_rules.csv \
+  --max-days 2 \
+  --top 20 \
+  --output reports/market_scanner/daily_report.md
+```
+
 ---
 
 ## Current Project Status
@@ -257,24 +268,3 @@ with the real system state, especially around:
 - `stock_analyzer`
 - `market_scanner`
 - current scanner backtest (`market_scanner.backtest`)
-
-## Primeiro uso no Claude Code
-
-```bash
-cd <path>/financial
-claude
-```
-
-Claude Code vai carregar `CLAUDE.md` automaticamente.
-
-Para usar um subagente:
-```
-Use the code-reviewer agent on the last commit
-```
-
-Para usar um slash command:
-```
-/review
-/tests stock_analyzer
-/feature add execution summary to operational_report
-```

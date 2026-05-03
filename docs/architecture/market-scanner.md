@@ -46,6 +46,7 @@ reports and backtest
 - scanner reporting
 - signal-quality backtesting orchestration
 - execution-capture backtesting orchestration
+- daily actionable report (fresh signals + backtest cross-reference)
 
 In practice, this includes:
 
@@ -72,6 +73,10 @@ Internally, the package is now organized around a small set of roles:
   - historical replay and signal validation
 - `backtest_execution.py`
   - trade-style execution capture validation
+- `operational_report.py`
+  - backtest-driven asset ranking and qualification report
+- `daily_report.py`
+  - daily actionable report: fresh signals crossed with backtest-qualified setups
 - `exits.py`
   - isolated execution exit rules
 - `trades.py`
