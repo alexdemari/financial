@@ -110,6 +110,9 @@ analyzer symbol="AAPL" model="rsi-sma":
 market-scanner universe_file="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" output="reports/market_scanner/scan.csv" ranking_mode="snapshot" top="10" workers="1":
     uv run python -m market_scanner.scan --universe-file {{universe_file}} --data-dir {{data_dir}} --output {{output}} --ranking-mode {{ranking_mode}} --top {{top}} --workers {{workers}}
 
+daily-report scan="reports/market_scanner/scan_daily.csv" recommendations="reports/market_scanner/execution_recommended_rules.csv" max_days="2" top="20" output="reports/market_scanner/daily_report.md":
+    uv run python -m market_scanner.daily_report --scan {{scan}} --recommendations {{recommendations}} --max-days {{max_days}} --top {{top}} --output {{output}}
+
 market-scanner-backtest universe_file="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" output_detailed_summary="reports/market_scanner/backtest_detailed_summary.csv" output_decision_summary="reports/market_scanner/backtest_decision_summary.csv" output_lux_summary="reports/market_scanner/backtest_lux_summary.csv" output_smc_summary="reports/market_scanner/backtest_smc_summary.csv" ranking_mode="recent-event" workers="1":
     uv run python -m market_scanner.backtest --universe-file {{universe_file}} --data-dir {{data_dir}} --output-detailed-summary {{output_detailed_summary}} --output-decision-summary {{output_decision_summary}} --output-lux-summary {{output_lux_summary}} --output-smc-summary {{output_smc_summary}} --ranking-mode {{ranking_mode}} --workers {{workers}}
 

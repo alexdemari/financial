@@ -1,6 +1,6 @@
 # Task: Daily Operational Report (Fase 1)
 
-**Status:** Planned
+**Status:** Completed
 **Scope:** `src/market_scanner/daily_report.py` (novo), `tests/market_scanner/test_daily_report.py` (novo), `README.md` (atualizar)
 **Effort:** M
 **Depende de:** `execution_recommended_rules.csv` gerado pelo backtest (já existe)

@@ -1,6 +1,6 @@
 # Task: Cache de cálculos Lux/SMC em disco
 
-**Status:** Planned
+**Status:** Completed
 **Scope:** `src/market_scanner/cache.py` (novo), `src/market_scanner/scan.py`, `backtest.py`
 **Effort:** S
 **Depende de:** Task 02 (SQLite) recomendado — SQLite resolve parte da necessidade; avaliar sobreposição antes de implementar
