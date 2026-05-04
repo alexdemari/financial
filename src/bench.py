@@ -69,7 +69,9 @@ def _peak_mem_mb() -> float:
 # ---------------------------------------------------------------------------
 
 
-def run_bench(config_path: str | Path, emit_json: bool = False) -> int:
+def run_bench(
+    config_path: str | Path, emit_json: bool = False, output: str | None = None
+) -> int:
     # Import tardio para não pagar o custo antes de medir
     from market_scanner.backtest import backtest_universe
 
@@ -135,6 +137,18 @@ def run_bench(config_path: str | Path, emit_json: bool = False) -> int:
 
     backtest_universe(**kwargs)
 
+    if output:
+        import shutil
+
+        result_path = Path(
+            cfg.get(
+                "output_decision_summary",
+                "reports/bench/backtest_decision_summary.csv",
+            )
+        )
+        if result_path.exists():
+            shutil.copy(result_path, output)
+
     wall_s = round(time.perf_counter() - t0_wall, 3)
     cpu_s = round(time.process_time() - t0_cpu, 3)
     peak_mem_mb = round(_peak_mem_mb(), 1)
@@ -181,12 +195,19 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="emit_json",
         help="Emite métricas em JSON para stdout (para bench/history.jsonl)",
     )
+    parser.add_argument(
+        "--output",
+        default=None,
+        help="Write backtest result CSV to this path (optional)",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
-    return run_bench(config_path=args.config, emit_json=args.emit_json)
+    return run_bench(
+        config_path=args.config, emit_json=args.emit_json, output=args.output
+    )
 
 
 if __name__ == "__main__":

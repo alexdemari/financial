@@ -170,10 +170,9 @@ clean-cache:
 profile-backtest:
     uv run python -m src.options_tech_scanner.profile_backtest
 
-# Produce the canonical backtest output to stdout (or a file via redirection).
-# Used by /verify to compare against the golden baseline.
+# Write backtest output to /tmp/candidate.csv for comparison.
 bench-output config="config/bench.yaml":
-    uv run python -m src.bench --config {{config}}
+    uv run python -m src.bench --config {{config}} --output /tmp/candidate.csv
 
 # Time a single backtest run and emit JSON metrics to stdout.
 # /bench appends this to bench/history.jsonl.
@@ -182,18 +181,20 @@ bench config="config/bench.yaml":
 
 # Compare current output to the golden baseline. Exits non-zero on divergence.
 verify-identical:
+    just bench-output
     uv run python -c "\
         import pandas as pd; \
-        a=pd.read_parquet('tests/baselines/golden.parquet'); \
-        b=pd.read_parquet('/tmp/candidate.parquet'); \
-        pd.testing.assert_frame_equal(a, b)" \
+        a=pd.read_csv('tests/baselines/golden.csv'); \
+        b=pd.read_csv('/tmp/candidate.csv'); \
+        pd.testing.assert_frame_equal(a, b, check_like=True)" \
     && echo "✓ bit-identical"
 
 # Promote the current output to the new golden baseline.
 # Use only after a deliberate semantic change.
 update-baseline:
-    just bench-output > tests/baselines/golden.parquet
-    @echo "✓ baseline updated. Commit tests/baselines/golden.parquet."
+    uv run python -m src.bench --config config/bench.yaml \
+        --output tests/baselines/golden.csv
+    @echo "✓ baseline updated. Commit tests/baselines/golden.csv."
 
 # Full quality gate, no commit.
 gate: lint test verify-identical

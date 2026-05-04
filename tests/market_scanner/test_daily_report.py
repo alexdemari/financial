@@ -254,3 +254,60 @@ def test_render_stats_labels_candidates_when_recommendations_absent() -> None:
     assert "- Candidatos frescos (sem filtro backtest): 2" in md
     assert "- Qualificados pelo backtest:" not in md
     assert "- No Top 1: 1" in md
+
+
+def test_fresh_signals_section_shows_only_candidates() -> None:
+    scan_df = pd.DataFrame(
+        [
+            _make_scan_row("NVDA", action_bucket="candidate", lux_days=1),
+            _make_scan_row("AAPL", action_bucket="watchlist", lux_days=1),
+        ]
+    )
+    md = render_daily_report(scan_df, None, max_days=2, top=20)
+
+    # Section 1 header changed
+    assert "Sinais Frescos — Candidates" in md
+    # NVDA is candidate — shown
+    assert "NVDA" in md
+    # AAPL is watchlist — excluded from section 1
+    # (AAPL may appear in bucket summary, so check it's not in the fresh table)
+    fresh_section = md.split("## 2.")[0]
+    assert "AAPL" not in fresh_section
+    # Stats still counts both in total fresh, but candidates fresh = 1
+    assert "- Com sinal fresco" in md
+    assert "- Candidates frescos: 1" in md
+
+
+def test_global_rec_source_shown_in_top_20() -> None:
+    recs = pd.DataFrame(
+        [
+            _make_rec_row(None, "bullish", "global", total_trades=147396),
+        ]
+    )
+    scan_df = pd.DataFrame(
+        [
+            _make_scan_row("BTBT", action_bucket="candidate", lux_days=1),
+        ]
+    )
+    md = render_daily_report(scan_df, recs, max_days=2, top=20)
+
+    assert "global" in md
+    # The large aggregate number must NOT appear — it would be misleading
+    assert "147396" not in md
+
+
+def test_symbol_rec_source_shown_in_top_20() -> None:
+    recs = pd.DataFrame(
+        [
+            _make_rec_row("NVDA", "bullish", "symbol", total_trades=30),
+        ]
+    )
+    scan_df = pd.DataFrame(
+        [
+            _make_scan_row("NVDA", action_bucket="candidate", lux_days=1),
+        ]
+    )
+    md = render_daily_report(scan_df, recs, max_days=2, top=20)
+
+    assert "symbol" in md
+    assert "30" in md

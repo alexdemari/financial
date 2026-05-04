@@ -28,6 +28,7 @@ _TOP_DISPLAY_COLUMNS = [
     "rank",
     "symbol",
     "side",
+    "rec_source",
     "market_state",
     "consistency_score",
     "recommended_exit_rule",
@@ -119,6 +120,7 @@ def _get_recommendation_metrics(
     qualified_recs: pd.DataFrame,
 ) -> dict:
     empty: dict = {col: pd.NA for col in _REC_METRIC_COLUMNS}
+    empty["rec_source"] = "—"
     if side is None or qualified_recs.empty:
         return empty
 
@@ -129,14 +131,18 @@ def _get_recommendation_metrics(
     ]
     if not symbol_row.empty:
         row = symbol_row.iloc[0]
-        return {col: row.get(col, pd.NA) for col in _REC_METRIC_COLUMNS}
+        result = {col: row.get(col, pd.NA) for col in _REC_METRIC_COLUMNS}
+        result["rec_source"] = "symbol"
+        return result
 
     global_row = qualified_recs[
         qualified_recs["scope"].eq("global") & qualified_recs["side"].eq(side)
     ]
     if not global_row.empty:
         row = global_row.iloc[0]
-        return {col: row.get(col, pd.NA) for col in _REC_METRIC_COLUMNS}
+        result = {col: row.get(col, pd.NA) for col in _REC_METRIC_COLUMNS}
+        result["rec_source"] = "global"
+        return result
 
     return empty
 
@@ -214,6 +220,7 @@ def build_candidate_selection(
     else:
         for col in _REC_METRIC_COLUMNS:
             top_df[col] = pd.NA
+        top_df["rec_source"] = "—"
 
     return CandidateSelection(
         top_df=top_df,
@@ -260,6 +267,11 @@ def render_daily_report(
 
     date_str = generated_at.strftime("%Y-%m-%d")
     fresh_df = filter_fresh_signals(scan_df, max_days)
+    fresh_candidates_df = (
+        fresh_df[fresh_df["action_bucket"].eq(CANDIDATE)].copy()
+        if not fresh_df.empty
+        else fresh_df.copy()
+    )
     candidate_selection = build_candidate_selection(fresh_df, recommendations_df, top)
     top_df = candidate_selection.top_df
     bucket_summary = build_bucket_summary(scan_df)
@@ -277,9 +289,9 @@ def render_daily_report(
     lines = [
         f"# Daily Report — {date_str}",
         "",
-        f"## 1. Sinais Frescos (últimos {max_days} dias)",
+        f"## 1. Sinais Frescos — Candidates (últimos {max_days} dias)",
         "",
-        _fresh_table(fresh_df),
+        _fresh_table(fresh_candidates_df),
         "",
         f"## 2. Top {top} Operacional",
         "",
@@ -293,6 +305,7 @@ def render_daily_report(
         "",
         f"- Total símbolos no scan: {len(scan_df)}",
         f"- Com sinal fresco (≤ {max_days} dias): {len(fresh_df)}",
+        f"- Candidates frescos: {len(fresh_candidates_df)}",
         candidate_count_line,
         f"- No Top {top}: {top_count}",
         "",
@@ -331,6 +344,16 @@ def _top_table(top_df: pd.DataFrame) -> str:
             display[col] = display[col].map(_format_percent)
         elif col == "profit_factor":
             display[col] = display[col].map(_format_decimal)
+        elif col == "total_trades":
+            rec_source_col = (
+                display.get("rec_source") if "rec_source" in display.columns else None
+            )
+            display[col] = display.apply(
+                lambda r, c=col: "global"
+                if (rec_source_col is not None and r.get("rec_source") == "global")
+                else ("—" if pd.isna(r[c]) else r[c]),
+                axis=1,
+            )
         else:
             display[col] = display[col].fillna("—")
 
