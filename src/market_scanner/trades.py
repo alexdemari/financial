@@ -24,6 +24,7 @@ class Trade:
     mae: float | None
     is_filtered: bool = False
     filter_reason: str = ""
+    strategy: str = "none"
 
 
 def build_trade(
@@ -41,6 +42,7 @@ def build_trade(
     mae: float | None,
     is_filtered: bool = False,
     filter_reason: str = "",
+    strategy: str = "none",
 ) -> Trade:
     raw_return = (exit_price / entry_price) - 1.0
     directional_return = raw_return if side == "bullish" else -raw_return
@@ -60,6 +62,7 @@ def build_trade(
         mae=mae,
         is_filtered=is_filtered,
         filter_reason=filter_reason,
+        strategy=strategy,
     )
 
 
@@ -96,7 +99,13 @@ def summarize_trade_records(
 ) -> list[dict]:
     return summarize_trade_records_by(
         records,
-        group_columns=["exit_rule", "ranking_mode", "side", "entry_alignment"],
+        group_columns=[
+            "exit_rule",
+            "ranking_mode",
+            "side",
+            "strategy",
+            "entry_alignment",
+        ],
         max_return_cap=max_return_cap,
         max_loss=max_loss,
     )
@@ -133,6 +142,10 @@ def summarize_trade_records_by(
         return []
 
     trades_df = pd.DataFrame(records)
+    # Ensure optional columns used in grouping have defaults so older records
+    # without the field do not raise KeyError.
+    if "strategy" in group_columns and "strategy" not in trades_df.columns:
+        trades_df["strategy"] = "none"
     rows: list[dict] = []
 
     grouped = trades_df.groupby(

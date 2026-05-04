@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pandas as pd
 
 from market_scanner.backtest_execution import (
+    _entry_strategy,
     backtest_execution_universe,
     build_execution_recommendations,
     build_worst_trades_report,
@@ -1631,6 +1632,99 @@ def test_no_filter_mode_no_trades_filtered(monkeypatch):
     )
 
     assert all(not t.is_filtered for t in trades)
+
+
+# --- Strategy dimension tests ---
+
+
+def test_entry_strategy_lux_only():
+    row = {"lux_days_since_active_event": 1, "smc_days_since_active_event": 5}
+    assert _entry_strategy(row, max_days=2) == "lux"
+
+
+def test_entry_strategy_smc_only():
+    row = {"lux_days_since_active_event": 5, "smc_days_since_active_event": 1}
+    assert _entry_strategy(row, max_days=2) == "smc"
+
+
+def test_entry_strategy_dual():
+    row = {"lux_days_since_active_event": 1, "smc_days_since_active_event": 2}
+    assert _entry_strategy(row, max_days=2) == "dual"
+
+
+def test_entry_strategy_none():
+    row = {"lux_days_since_active_event": 5, "smc_days_since_active_event": 5}
+    assert _entry_strategy(row, max_days=2) == "none"
+
+
+def test_strategy_column_in_recommendation_output(tmp_path, monkeypatch):
+    """End-to-end: build recommendations and verify strategy column is present."""
+    df = make_ohlc_df()
+
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.load_selected_universe",
+        lambda universe_file, symbols=None: pd.DataFrame(
+            {"symbol": ["AAPL"], "market_cap": [2_000_000_000]}
+        ),
+    )
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.create_analyzers",
+        lambda analyzer_cls: SimpleNamespace(
+            lux_analyzer=FakeAnalyzer(),
+            smc_analyzer=FakeAnalyzer(),
+        ),
+    )
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.iter_symbol_data",
+        lambda universe, data_dir, transform_df=None: [
+            SymbolData(
+                symbol="AAPL",
+                market_cap=2_000_000_000,
+                df=transform_df(df) if transform_df else df,
+                load_error=None,
+            )
+        ],
+    )
+
+    def fake_build_scanner_row_from_history(
+        symbol, *, close, lux_historical, smc_historical, index, ranking_mode, **kwargs
+    ):
+        if index == 199:
+            return make_row(
+                adjusted_alignment="bullish_aligned",
+                action_bucket="candidate",
+                lux_days_since_active_event=1,
+                smc_days_since_active_event=5,
+            )
+        return make_row(
+            adjusted_alignment="bullish_watchlist",
+            action_bucket="watchlist",
+        )
+
+    monkeypatch.setattr(
+        "market_scanner.backtest_execution.build_scanner_row_from_history",
+        fake_build_scanner_row_from_history,
+    )
+
+    backtest_execution_universe(
+        universe_file=tmp_path / "universe.csv",
+        data_dir=tmp_path / "data",
+        ranking_mode="recent-event",
+        exit_rule="bucket_downgrade",
+        output_trades=tmp_path / "execution_trades.csv",
+        output_summary=tmp_path / "execution_summary.csv",
+        output_comparison=tmp_path / "execution_rule_comparison.csv",
+        output_symbol_comparison=tmp_path / "execution_symbol_comparison.csv",
+        output_recommendations=tmp_path / "execution_recommended_rules.csv",
+        output_worst_trades=tmp_path / "execution_worst_trades.csv",
+        min_trades=1,
+    )
+
+    recommendations_df = pd.read_csv(tmp_path / "execution_recommended_rules.csv")
+    assert "strategy" in recommendations_df.columns
+
+    comparison_df = pd.read_csv(tmp_path / "execution_rule_comparison.csv")
+    assert "strategy" in comparison_df.columns
 
 
 def test_is_filtered_and_filter_reason_columns_in_trades_csv(tmp_path, monkeypatch):

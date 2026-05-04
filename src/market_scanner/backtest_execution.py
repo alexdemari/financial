@@ -60,6 +60,7 @@ COMPARISON_COLUMNS = [
     "exit_rule",
     "ranking_mode",
     "side",
+    "strategy",
     "entry_alignment",
     "total_trades",
     "win_rate",
@@ -100,6 +101,7 @@ RECOMMENDATION_COLUMNS = [
     "scope",
     "symbol",
     "side",
+    "strategy",
     "recommended_exit_rule",
     "qualified",
     "qualification_reason",
@@ -122,6 +124,7 @@ WORST_TRADES_COLUMNS = [
     "report_reason",
     "symbol",
     "side",
+    "strategy",
     "entry_date",
     "entry_price",
     "exit_date",
@@ -146,6 +149,7 @@ class OpenPosition:
     entry_date: str
     entry_price: float
     entry_alignment: str
+    strategy: str = "none"  # lux / smc / dual / none
 
 
 @dataclass(frozen=True)
@@ -248,6 +252,7 @@ def backtest_execution_universe(
     max_loss: float = -1.0,
     use_cache: bool = False,
     cache_dir: Path | None = None,
+    strategy_filter: str = "all",
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     universe = load_selected_universe(universe_file, symbols=symbols)
     universe = _limit_universe(universe, max_symbols=max_symbols)
@@ -405,6 +410,11 @@ def backtest_execution_universe(
         symbol_comparison_df=symbol_comparison_df,
         min_trades=min_trades,
     )
+
+    if strategy_filter != "all":
+        comparison_df = _filter_df_by_strategy(comparison_df, strategy_filter)
+        recommendations_df = _filter_df_by_strategy(recommendations_df, strategy_filter)
+
     worst_trades_df = build_worst_trades_report(trades_df)
     write_csv_report(trades_df, output_trades)
     write_csv_report(summary_df, output_summary)
@@ -799,6 +809,7 @@ def generate_prepared_symbol_trades(
         if open_position is None and not exited_this_bar:
             side = _entry_side(bar.row)
             if side is not None:
+                entry_strategy_tag = _entry_strategy(bar.row)
                 volume = float(
                     prepared_data.df.iloc[bar.index][prepared_data.volume_column]
                 )
@@ -831,6 +842,7 @@ def generate_prepared_symbol_trades(
                             mae=None,
                             is_filtered=True,
                             filter_reason=filter_reason,
+                            strategy=entry_strategy_tag,
                         )
                     )
                 else:
@@ -841,6 +853,7 @@ def generate_prepared_symbol_trades(
                         entry_date=bar.date,
                         entry_price=bar.close,
                         entry_alignment=str(bar.row["adjusted_alignment"]),
+                        strategy=entry_strategy_tag,
                     )
 
     if open_position is not None:
@@ -1082,6 +1095,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Override cache directory (default: data/cache).",
     )
+    # --- Strategy filter ---
+    parser.add_argument(
+        "--strategy",
+        choices=["lux", "smc", "dual", "all"],
+        default="all",
+        help=(
+            "Filter output by entry strategy tag. 'dual' entries qualify for both "
+            "'lux' and 'smc'. Default: all (no filter)."
+        ),
+    )
     return parser
 
 
@@ -1119,8 +1142,27 @@ def main(argv: list[str] | None = None) -> int:
         # --- Cache ---
         use_cache=use_cache,
         cache_dir=cache_dir,
+        strategy_filter=args.strategy,
     )
     return 0
+
+
+ENTRY_STRATEGY_MAX_DAYS = 2
+
+
+def _entry_strategy(row: dict, max_days: int = ENTRY_STRATEGY_MAX_DAYS) -> str:
+    """Determine entry strategy tag based on how recently each signal was active."""
+    lux_days = row.get("lux_days_since_active_event")
+    smc_days = row.get("smc_days_since_active_event")
+    lux_fresh = lux_days is not None and lux_days <= max_days
+    smc_fresh = smc_days is not None and smc_days <= max_days
+    if lux_fresh and smc_fresh:
+        return "dual"
+    if lux_fresh:
+        return "lux"
+    if smc_fresh:
+        return "smc"
+    return "none"
 
 
 def _entry_side(row: dict) -> TradeSide | None:
@@ -1193,6 +1235,7 @@ def _close_trade(
         exit_reason=exit_reason,
         mfe=mfe,
         mae=mae,
+        strategy=open_position.strategy,
     )
 
 
@@ -1215,6 +1258,21 @@ def _require_column(df: pd.DataFrame, name: str) -> str:
     if name not in lowered:
         raise ValueError(f"DataFrame must contain a '{name}' column")
     return lowered[name]
+
+
+def _filter_df_by_strategy(df: pd.DataFrame, strategy_filter: str) -> pd.DataFrame:
+    """Filter a DataFrame to rows whose strategy matches strategy_filter.
+
+    'dual' entries qualify for both 'lux' and 'smc' filters.
+    """
+    if df.empty or "strategy" not in df.columns:
+        return df
+    if strategy_filter == "dual":
+        mask = df["strategy"] == "dual"
+    else:
+        # lux or smc: include exact match and "dual" entries
+        mask = df["strategy"].isin([strategy_filter, "dual"])
+    return df[mask].reset_index(drop=True)
 
 
 def _parse_symbols(raw_symbols: str | None) -> list[str] | None:
@@ -1374,6 +1432,7 @@ def _build_recommendation_row(
         "scope": scope,
         "symbol": symbol,
         "side": side,
+        "strategy": best.get("strategy", "none"),
         "recommended_exit_rule": best.get("exit_rule"),
         "qualified": best.get("qualified"),
         "qualification_reason": best.get("qualification_reason"),
