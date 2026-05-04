@@ -153,7 +153,7 @@ daily universe="data/scanner_universe_filtered.csv" \
       top="20" \
       workers="8":
     uv run python -m stock_data_manager.main \
-      --universe-file {{universe}} --data-dir {{data_dir}}
+      -f {{universe}} -d {{data_dir}}
     uv run python -m market_scanner.scan \
       --universe-file {{universe}} \
       --data-dir {{data_dir}} \
@@ -182,7 +182,6 @@ weekly universe="data/scanner_universe_filtered.csv" \
       --exit-rule all \
       --min-trades {{min_trades}} \
       --min-price 5 \
-      --max-symbols 500 \
       --workers {{workers}} \
       --output-trades reports/market_scanner/execution_trades.csv \
       --output-summary reports/market_scanner/execution_summary.csv \
