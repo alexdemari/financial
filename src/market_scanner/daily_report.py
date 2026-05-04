@@ -268,18 +268,54 @@ def build_candidate_selection(
         pool = pool.sort_values(sort_keys, ascending=sort_asc, na_position="last")
         pool = pool.drop(columns="_sum_days")
 
+    backtest_filter_applied = _has_recommendations(recommendations_df)
+    qualified_recs = _filter_qualified_recommendations(recommendations_df, strategy)
+    if backtest_filter_applied:
+        symbol_pairs, global_sides, symbols_with_symbol_rec = build_qualified_set(
+            qualified_recs
+        )
+        mask = pool.apply(
+            lambda row: _is_pair_qualified(
+                row["symbol"],
+                row.get("side"),
+                symbol_pairs,
+                global_sides,
+                symbols_with_symbol_rec,
+            ),
+            axis=1,
+        )
+        pool = pool[mask].copy()
+
+    candidate_count = len(pool)
+    if pool.empty:
+        return CandidateSelection(
+            top_df=pd.DataFrame(),
+            candidate_count=candidate_count,
+            backtest_filter_applied=backtest_filter_applied,
+        )
+
     top_df = pool.head(top).copy()
     top_df.insert(0, "rank", range(1, len(top_df) + 1))
 
-    # No backtest filter in this feature — fill metrics with NA
-    for col in _REC_METRIC_COLUMNS:
-        top_df[col] = pd.NA
-    top_df["rec_source"] = "—"
+    if backtest_filter_applied:
+        metrics = top_df.apply(
+            lambda row: _get_recommendation_metrics(
+                row["symbol"], row.get("side"), qualified_recs
+            ),
+            axis=1,
+        )
+        metrics_df = pd.DataFrame(list(metrics), index=top_df.index)
+        for col in metrics_df.columns:
+            top_df[col] = metrics_df[col]
+    else:
+        for col in _REC_METRIC_COLUMNS:
+            top_df[col] = pd.NA
+        top_df["rec_source"] = "—"
 
     return CandidateSelection(
         top_df=top_df,
         candidate_count=candidate_count,
-        backtest_filter_applied=False,
+        backtest_filter_applied=backtest_filter_applied,
     )
 
 
@@ -289,10 +325,19 @@ def _has_recommendations(recommendations_df: pd.DataFrame | None) -> bool:
 
 def _filter_qualified_recommendations(
     recommendations_df: pd.DataFrame | None,
+    strategy: RankingStrategy | None = None,
 ) -> pd.DataFrame:
     if recommendations_df is None or recommendations_df.empty:
         return pd.DataFrame()
-    return recommendations_df[recommendations_df["qualified"].eq(True)].copy()
+    qualified = recommendations_df[recommendations_df["qualified"].eq(True)].copy()
+    if strategy is not None and "strategy" in qualified.columns:
+        strategy_val = strategy.value
+        qualified = qualified[
+            qualified["strategy"].eq(strategy_val)
+            | qualified["strategy"].eq("dual")
+            | qualified["strategy"].isna()
+        ]
+    return qualified
 
 
 def build_bucket_summary(scan_df: pd.DataFrame) -> pd.DataFrame:
@@ -314,10 +359,10 @@ def _render_strategy_section(
     section_num: int,
     top: int,
     max_days: int,
+    recommendations_df: pd.DataFrame | None = None,
 ) -> list[str]:
-    """Render a single strategy section and return lines."""
     candidate_selection = build_candidate_selection(
-        fresh_df, None, top, max_days, strategy
+        fresh_df, recommendations_df, top, max_days, strategy
     )
     top_df = candidate_selection.top_df
     header = f"## {section_num}. Top {top} — {strategy.value.upper()}"
@@ -394,7 +439,9 @@ def render_daily_report(
     next_section = 2
     for strat in strategies_to_render:
         lines.extend(
-            _render_strategy_section(fresh_df, strat, next_section, top, max_days)
+            _render_strategy_section(
+                fresh_df, strat, next_section, top, max_days, recommendations_df
+            )
         )
         next_section += 1
 

@@ -112,13 +112,12 @@ def test_top_20_cross_references_backtest_qualified() -> None:
         ]
     )
     fresh = filter_fresh_signals(scan_df, max_days=2)
-    # No backtest filter in this feature; both lux-fresh symbols appear
     top_df = build_top_candidates(fresh, recs, top=20, strategy=RankingStrategy.lux)
 
     symbols = set(top_df["symbol"]) if not top_df.empty else set()
     assert "NVDA" in symbols
-    # TSLA is lux-fresh and backtest filter is not applied, so it now appears
-    assert "TSLA" in symbols
+    # TSLA has qualified=False → excluded by backtest filter
+    assert "TSLA" not in symbols
 
 
 def test_top_20_uses_symbol_recommendation_when_available() -> None:
@@ -150,13 +149,11 @@ def test_top_20_uses_symbol_recommendation_when_available() -> None:
     top_df = build_top_candidates(fresh, recs, top=20, strategy=RankingStrategy.lux)
 
     assert not top_df.empty
-    # Backtest filter not applied; NVDA appears but rec metrics are NA
     row = top_df[top_df["symbol"] == "NVDA"].iloc[0]
-    assert pd.isna(row["recommended_exit_rule"])
+    assert row["recommended_exit_rule"] == "symbol_rule"
 
 
 def test_top_20_falls_back_to_global_recommendation() -> None:
-    """Backtest metrics are Feature C; rec columns are NA in current feature."""
     recs = pd.DataFrame(
         [
             _make_rec_row(
@@ -178,8 +175,7 @@ def test_top_20_falls_back_to_global_recommendation() -> None:
 
     assert not top_df.empty
     row = top_df[top_df["symbol"] == "AAPL"].iloc[0]
-    # Backtest metrics not populated in this feature
-    assert pd.isna(row["recommended_exit_rule"])
+    assert row["recommended_exit_rule"] == "global_rule"
 
 
 def test_build_qualified_set_ignores_symbol_scope_without_symbol() -> None:
@@ -523,3 +519,112 @@ def test_strategy_all_renders_three_sections() -> None:
     assert "— LUX" in md
     assert "— SMC" in md
     assert "— DUAL" in md
+
+
+# ---------------------------------------------------------------------------
+# New tests — Feature C: backtest filter wired per strategy
+# ---------------------------------------------------------------------------
+
+
+def test_backtest_filter_applied_per_strategy_with_strategy_column() -> None:
+    """Qualified rec with strategy=lux qualifies symbol in lux section only."""
+    recs = pd.DataFrame(
+        [
+            _make_rec_row("NVDA", "bullish", "symbol", qualified=True),
+        ]
+    )
+    recs["strategy"] = "lux"
+
+    scan_df = pd.DataFrame(
+        [
+            _make_scan_row("NVDA", lux_days=1, smc_days=1),
+        ]
+    )
+    fresh = filter_fresh_signals(scan_df, max_days=2)
+
+    # lux section: NVDA qualifies
+    top_lux = build_top_candidates(fresh, recs, top=20, strategy=RankingStrategy.lux)
+    assert not top_lux.empty
+    assert "NVDA" in set(top_lux["symbol"])
+
+    # smc section: rec is tagged lux; dual also qualifies for lux → NVDA excluded from smc
+    top_smc = build_top_candidates(fresh, recs, top=20, strategy=RankingStrategy.smc)
+    assert top_smc.empty
+
+
+def test_dual_rec_qualifies_both_lux_and_smc_sections() -> None:
+    """Rec tagged strategy=dual qualifies symbol in both lux and smc sections."""
+    recs = pd.DataFrame(
+        [
+            _make_rec_row("AAPL", "bullish", "symbol", qualified=True),
+        ]
+    )
+    recs["strategy"] = "dual"
+
+    scan_df = pd.DataFrame(
+        [
+            _make_scan_row("AAPL", lux_days=1, smc_days=1),
+        ]
+    )
+    fresh = filter_fresh_signals(scan_df, max_days=2)
+
+    top_lux = build_top_candidates(fresh, recs, top=20, strategy=RankingStrategy.lux)
+    top_smc = build_top_candidates(fresh, recs, top=20, strategy=RankingStrategy.smc)
+    top_dual = build_top_candidates(fresh, recs, top=20, strategy=RankingStrategy.dual)
+
+    assert "AAPL" in set(top_lux["symbol"])
+    assert "AAPL" in set(top_smc["symbol"])
+    assert "AAPL" in set(top_dual["symbol"])
+
+
+def test_backward_compat_no_strategy_column_applies_filter_unfiltered() -> None:
+    """Recs without strategy column apply to all strategies (backward compat)."""
+    recs = pd.DataFrame(
+        [
+            _make_rec_row("MSFT", "bullish", "symbol", qualified=True),
+        ]
+    )
+    # No strategy column — old format
+
+    scan_df = pd.DataFrame(
+        [
+            _make_scan_row("MSFT", lux_days=1, smc_days=1),
+        ]
+    )
+    fresh = filter_fresh_signals(scan_df, max_days=2)
+
+    top_lux = build_top_candidates(fresh, recs, top=20, strategy=RankingStrategy.lux)
+    top_smc = build_top_candidates(fresh, recs, top=20, strategy=RankingStrategy.smc)
+
+    assert "MSFT" in set(top_lux["symbol"])
+    assert "MSFT" in set(top_smc["symbol"])
+
+
+def test_strategy_sections_in_render_use_backtest_filter() -> None:
+    """render_daily_report passes recommendations to each strategy section."""
+    recs = pd.DataFrame(
+        [
+            _make_rec_row("NVDA", "bullish", "symbol", qualified=True),
+        ]
+    )
+    recs["strategy"] = "lux"
+
+    scan_df = pd.DataFrame(
+        [
+            _make_scan_row("NVDA", lux_days=1, smc_days=1),
+            _make_scan_row("AAPL", lux_days=1, smc_days=1),
+        ]
+    )
+    md = render_daily_report(scan_df, recs, max_days=2, top=20, strategy=None)
+
+    # Extract only the Top LUX ranking table (between LUX and SMC headers)
+    lux_ranking = md.split("— LUX")[1].split("— SMC")[0]
+    smc_ranking = md.split("— SMC")[1].split("— DUAL")[0]
+
+    # NVDA qualified for lux → appears in LUX ranking
+    assert "NVDA" in lux_ranking
+    # AAPL not qualified for lux → absent from LUX ranking
+    assert "AAPL" not in lux_ranking
+    # Neither qualifies for smc (rec is lux-only) → SMC ranking empty
+    assert "NVDA" not in smc_ranking
+    assert "AAPL" not in smc_ranking
