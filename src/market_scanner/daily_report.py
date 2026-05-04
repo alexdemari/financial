@@ -2,6 +2,7 @@ import argparse
 import shutil
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from enum import Enum
 from pathlib import Path
 
 import pandas as pd
@@ -28,6 +29,7 @@ _FRESH_DISPLAY_COLUMNS = [
 _TOP_DISPLAY_COLUMNS = [
     "rank",
     "symbol",
+    "action_bucket",
     "side",
     "rec_source",
     "market_state",
@@ -48,6 +50,12 @@ _REC_METRIC_COLUMNS = [
     "avg_mae",
     "total_trades",
 ]
+
+
+class RankingStrategy(str, Enum):
+    lux = "lux"
+    smc = "smc"
+    dual = "dual"
 
 
 @dataclass(frozen=True)
@@ -152,81 +160,126 @@ def build_top_candidates(
     fresh_df: pd.DataFrame,
     qualified_recs: pd.DataFrame | None,
     top: int,
+    max_days: int = DEFAULT_MAX_DAYS,
+    strategy: RankingStrategy = RankingStrategy.lux,
 ) -> pd.DataFrame:
-    return build_candidate_selection(fresh_df, qualified_recs, top).top_df
+    return build_candidate_selection(
+        fresh_df, qualified_recs, top, max_days, strategy
+    ).top_df
 
 
 def build_candidate_selection(
     fresh_df: pd.DataFrame,
     recommendations_df: pd.DataFrame | None,
     top: int,
+    max_days: int = DEFAULT_MAX_DAYS,
+    strategy: RankingStrategy = RankingStrategy.lux,
 ) -> CandidateSelection:
-    candidates = fresh_df[fresh_df["action_bucket"].eq(CANDIDATE)].copy()
-    if candidates.empty:
+    # Pool = all buckets (no action_bucket filter)
+    pool = fresh_df.copy()
+    if pool.empty:
         return CandidateSelection(
             top_df=pd.DataFrame(),
             candidate_count=0,
-            backtest_filter_applied=_has_recommendations(recommendations_df),
+            backtest_filter_applied=False,
         )
 
-    if "adjusted_alignment" in candidates.columns:
-        candidates["side"] = candidates["adjusted_alignment"].map(infer_side)
+    if "adjusted_alignment" in pool.columns:
+        pool["side"] = pool["adjusted_alignment"].map(infer_side)
     else:
-        candidates["side"] = None
+        pool["side"] = None
 
-    backtest_filter_applied = _has_recommendations(recommendations_df)
-    qualified_recs = _filter_qualified_recommendations(recommendations_df)
-    if backtest_filter_applied:
-        symbol_pairs, global_sides, symbols_with_symbol_rec = build_qualified_set(
-            qualified_recs
-        )
-        mask = candidates.apply(
-            lambda row: _is_pair_qualified(
-                row["symbol"],
-                row.get("side"),
-                symbol_pairs,
-                global_sides,
-                symbols_with_symbol_rec,
-            ),
-            axis=1,
-        )
-        candidates = candidates[mask].copy()
+    lux_col = "lux_days_since_active_event"
+    smc_col = "smc_days_since_active_event"
 
-    candidate_count = len(candidates)
-    if candidates.empty:
+    # Strategy-specific filter
+    if strategy == RankingStrategy.lux:
+        if lux_col in pool.columns:
+            mask = pool[lux_col].notna() & pool[lux_col].le(max_days)
+            pool = pool[mask].copy()
+        else:
+            pool = pool.iloc[0:0].copy()
+    elif strategy == RankingStrategy.smc:
+        if smc_col in pool.columns:
+            mask = pool[smc_col].notna() & pool[smc_col].le(max_days)
+            pool = pool[mask].copy()
+        else:
+            pool = pool.iloc[0:0].copy()
+    elif strategy == RankingStrategy.dual:
+        lux_mask = (
+            pool[lux_col].notna() & pool[lux_col].le(max_days)
+            if lux_col in pool.columns
+            else pd.Series(False, index=pool.index)
+        )
+        smc_mask = (
+            pool[smc_col].notna() & pool[smc_col].le(max_days)
+            if smc_col in pool.columns
+            else pd.Series(False, index=pool.index)
+        )
+        pool = pool[lux_mask & smc_mask].copy()
+
+    candidate_count = len(pool)
+    if pool.empty:
         return CandidateSelection(
             top_df=pd.DataFrame(),
             candidate_count=candidate_count,
-            backtest_filter_applied=backtest_filter_applied,
+            backtest_filter_applied=False,
         )
 
-    if "consistency_score" in candidates.columns:
-        candidates = candidates.sort_values(
-            "consistency_score", ascending=False, na_position="last"
-        )
+    # Strategy-specific sort
+    if strategy == RankingStrategy.lux:
+        sort_keys: list[str] = []
+        sort_asc: list[bool] = []
+        if lux_col in pool.columns:
+            sort_keys.append(lux_col)
+            sort_asc.append(True)
+        if "consistency_score" in pool.columns:
+            sort_keys.append("consistency_score")
+            sort_asc.append(False)
+        if sort_keys:
+            pool = pool.sort_values(sort_keys, ascending=sort_asc, na_position="last")
 
-    top_df = candidates.head(top).copy()
+    elif strategy == RankingStrategy.smc:
+        sort_keys = []
+        sort_asc = []
+        if smc_col in pool.columns:
+            sort_keys.append(smc_col)
+            sort_asc.append(True)
+        if "consistency_score" in pool.columns:
+            sort_keys.append("consistency_score")
+            sort_asc.append(False)
+        if sort_keys:
+            pool = pool.sort_values(sort_keys, ascending=sort_asc, na_position="last")
+
+    elif strategy == RankingStrategy.dual:
+        lux_vals = (
+            pool[lux_col] if lux_col in pool.columns else pd.Series(0, index=pool.index)
+        )
+        smc_vals = (
+            pool[smc_col] if smc_col in pool.columns else pd.Series(0, index=pool.index)
+        )
+        pool = pool.copy()
+        pool["_sum_days"] = lux_vals + smc_vals
+        sort_keys = ["_sum_days"]
+        sort_asc = [True]
+        if "consistency_score" in pool.columns:
+            sort_keys.append("consistency_score")
+            sort_asc.append(False)
+        pool = pool.sort_values(sort_keys, ascending=sort_asc, na_position="last")
+        pool = pool.drop(columns="_sum_days")
+
+    top_df = pool.head(top).copy()
     top_df.insert(0, "rank", range(1, len(top_df) + 1))
 
-    if backtest_filter_applied:
-        metrics = top_df.apply(
-            lambda row: _get_recommendation_metrics(
-                row["symbol"], row.get("side"), qualified_recs
-            ),
-            axis=1,
-        )
-        metrics_df = pd.DataFrame(list(metrics), index=top_df.index)
-        for col in metrics_df.columns:
-            top_df[col] = metrics_df[col]
-    else:
-        for col in _REC_METRIC_COLUMNS:
-            top_df[col] = pd.NA
-        top_df["rec_source"] = "—"
+    # No backtest filter in this feature — fill metrics with NA
+    for col in _REC_METRIC_COLUMNS:
+        top_df[col] = pd.NA
+    top_df["rec_source"] = "—"
 
     return CandidateSelection(
         top_df=top_df,
         candidate_count=candidate_count,
-        backtest_filter_applied=backtest_filter_applied,
+        backtest_filter_applied=False,
     )
 
 
@@ -255,6 +308,27 @@ def build_bucket_summary(scan_df: pd.DataFrame) -> pd.DataFrame:
     return summary.sort_values("_priority").drop(columns="_priority")
 
 
+def _render_strategy_section(
+    fresh_df: pd.DataFrame,
+    strategy: RankingStrategy,
+    section_num: int,
+    top: int,
+    max_days: int,
+) -> list[str]:
+    """Render a single strategy section and return lines."""
+    candidate_selection = build_candidate_selection(
+        fresh_df, None, top, max_days, strategy
+    )
+    top_df = candidate_selection.top_df
+    header = f"## {section_num}. Top {top} — {strategy.value.upper()}"
+    return [
+        header,
+        "",
+        _top_table(top_df),
+        "",
+    ]
+
+
 def render_daily_report(
     scan_df: pd.DataFrame,
     recommendations_df: pd.DataFrame | None = None,
@@ -262,6 +336,7 @@ def render_daily_report(
     max_days: int = DEFAULT_MAX_DAYS,
     top: int = DEFAULT_TOP,
     generated_at: datetime | None = None,
+    strategy: RankingStrategy | None = None,
 ) -> str:
     if generated_at is None:
         generated_at = datetime.now(UTC)
@@ -273,42 +348,72 @@ def render_daily_report(
         if not fresh_df.empty
         else fresh_df.copy()
     )
-    candidate_selection = build_candidate_selection(fresh_df, recommendations_df, top)
-    top_df = candidate_selection.top_df
     bucket_summary = build_bucket_summary(scan_df)
-    top_count = len(top_df) if not top_df.empty else 0
-    if candidate_selection.backtest_filter_applied:
-        candidate_count_line = (
-            f"- Qualificados pelo backtest: {candidate_selection.candidate_count}"
-        )
-    else:
-        candidate_count_line = (
-            "- Candidatos frescos (sem filtro backtest): "
-            f"{candidate_selection.candidate_count}"
-        )
 
-    lines = [
+    # Count fresh signals per strategy for stats
+    lux_col = "lux_days_since_active_event"
+    smc_col = "smc_days_since_active_event"
+    lux_fresh_count = 0
+    smc_fresh_count = 0
+    dual_fresh_count = 0
+    if not fresh_df.empty:
+        lux_mask = (
+            fresh_df[lux_col].notna() & fresh_df[lux_col].le(max_days)
+            if lux_col in fresh_df.columns
+            else pd.Series(False, index=fresh_df.index)
+        )
+        smc_mask = (
+            fresh_df[smc_col].notna() & fresh_df[smc_col].le(max_days)
+            if smc_col in fresh_df.columns
+            else pd.Series(False, index=fresh_df.index)
+        )
+        lux_fresh_count = int(lux_mask.sum())
+        smc_fresh_count = int(smc_mask.sum())
+        dual_fresh_count = int((lux_mask & smc_mask).sum())
+
+    lines: list[str] = [
         f"# Daily Report — {date_str}",
         "",
         f"## 1. Sinais Frescos — Candidates (últimos {max_days} dias)",
         "",
         _fresh_table(fresh_candidates_df),
         "",
-        f"## 2. Top {top} Operacional",
-        "",
-        _top_table(top_df),
-        "",
-        "## 3. Sumário por Bucket",
+    ]
+
+    # Strategy sections
+    strategies_to_render: list[RankingStrategy]
+    if strategy is None:
+        strategies_to_render = [
+            RankingStrategy.lux,
+            RankingStrategy.smc,
+            RankingStrategy.dual,
+        ]
+    else:
+        strategies_to_render = [strategy]
+
+    next_section = 2
+    for strat in strategies_to_render:
+        lines.extend(
+            _render_strategy_section(fresh_df, strat, next_section, top, max_days)
+        )
+        next_section += 1
+
+    bucket_section = next_section
+    stats_section = next_section + 1
+
+    lines += [
+        f"## {bucket_section}. Sumário por Bucket",
         "",
         _bucket_table(bucket_summary),
         "",
-        "## 4. Stats",
+        f"## {stats_section}. Stats",
         "",
         f"- Total símbolos no scan: {len(scan_df)}",
         f"- Com sinal fresco (≤ {max_days} dias): {len(fresh_df)}",
         f"- Candidates frescos: {len(fresh_candidates_df)}",
-        candidate_count_line,
-        f"- No Top {top}: {top_count}",
+        f"- Frescos LUX (≤ {max_days} dias): {lux_fresh_count}",
+        f"- Frescos SMC (≤ {max_days} dias): {smc_fresh_count}",
+        f"- Frescos DUAL (≤ {max_days} dias): {dual_fresh_count}",
         "",
     ]
     return "\n".join(lines)
@@ -390,6 +495,7 @@ def write_daily_report(
     archive_dir: str | Path | None = None,
     max_days: int = DEFAULT_MAX_DAYS,
     top: int = DEFAULT_TOP,
+    strategy: RankingStrategy | None = None,
 ) -> str:
     """Write the Markdown report to disk and return the report content."""
     scan_df = pd.read_csv(scan_path)
@@ -404,6 +510,7 @@ def write_daily_report(
         recommendations_df,
         max_days=max_days,
         top=top,
+        strategy=strategy,
     )
 
     output = Path(output_path)
@@ -449,12 +556,26 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Directory to save a dated copy: YYYY-MM-DD.md and YYYY-MM-DD_candidates.csv",
     )
+    parser.add_argument(
+        "--strategy",
+        choices=["lux", "smc", "dual", "all"],
+        default="all",
+        help="Ranking strategy to render (default: all)",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    strategy_arg = args.strategy
+    strategy: RankingStrategy | None
+    if strategy_arg == "all":
+        strategy = None
+    else:
+        strategy = RankingStrategy(strategy_arg)
+
     write_daily_report(
         scan_path=args.scan,
         recommendations_path=args.recommendations,
@@ -463,6 +584,7 @@ def main(argv: list[str] | None = None) -> int:
         archive_dir=args.archive_dir,
         max_days=args.max_days,
         top=args.top,
+        strategy=strategy,
     )
     print(f"Exported daily report: {args.output}")
     return 0
