@@ -251,6 +251,34 @@ PYTHONPATH=src uv run python -m market_scanner.daily_report \
   --output reports/market_scanner/daily_report.md
 ```
 
+`--archive-dir` saves a dated copy alongside the fixed report:
+
+```bash
+PYTHONPATH=src uv run python -m market_scanner.daily_report \
+  --scan reports/market_scanner/scan_daily.csv \
+  --output reports/market_scanner/daily_report.md \
+  --output-candidates reports/market_scanner/daily_candidates.csv \
+  --archive-dir reports/market_scanner/daily
+# writes: reports/market_scanner/daily/YYYY-MM-DD.md
+#         reports/market_scanner/daily/YYYY-MM-DD_candidates.csv
+```
+
+### Operational workflows (just recipes)
+
+Run the full morning routine in one command (data update → scan → daily report):
+
+```bash
+just daily
+```
+
+Regenerate `execution_recommended_rules.csv` (run weekly or after model changes):
+
+```bash
+just weekly
+```
+
+Both recipes accept overrides: `just daily workers=4 top=30`.
+
 ---
 
 ## Current Project Status
