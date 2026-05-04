@@ -110,6 +110,14 @@ analyzer symbol="AAPL" model="rsi-sma":
 market-scanner universe_file="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" output="reports/market_scanner/scan.csv" ranking_mode="snapshot" top="20" workers="8":
     uv run python -m market_scanner.scan --universe-file {{universe_file}} --data-dir {{data_dir}} --output {{output}} --ranking-mode {{ranking_mode}} --top {{top}} --workers {{workers}}
 
+scan-daily universe="data/scanner_universe_filtered.csv" data_dir="data/stocks/1D" workers="8":
+    uv run python -m market_scanner.scan \
+      --universe-file {{universe}} \
+      --data-dir {{data_dir}} \
+      --ranking-mode recent-event \
+      --output reports/market_scanner/scan_daily.csv \
+      --workers {{workers}}
+
 daily-report scan="reports/market_scanner/scan_daily.csv" recommendations="reports/market_scanner/execution_recommended_rules.csv" max_days="2" top="20" output="reports/market_scanner/daily_report.md":
     uv run python -m market_scanner.daily_report --scan {{scan}} --recommendations {{recommendations}} --max-days {{max_days}} --top {{top}} --output {{output}}
 
