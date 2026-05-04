@@ -143,6 +143,56 @@ market-scanner-execution-backtest-late-state universe_file="data/scanner_univers
 market-scanner-execution-backtest-opposite-signal universe_file="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" output_trades="reports/market_scanner/execution_trades_opposite_signal.csv" output_summary="reports/market_scanner/execution_summary_opposite_signal.csv" output_comparison="reports/market_scanner/execution_rule_comparison_opposite_signal.csv" ranking_mode="recent-event" min_trades="20" workers="1":
     uv run python -m market_scanner.backtest_execution --universe-file {{universe_file}} --data-dir {{data_dir}} --output-trades {{output_trades}} --output-summary {{output_summary}} --output-comparison {{output_comparison}} --ranking-mode {{ranking_mode}} --exit-rule opposite_signal --min-trades {{min_trades}} --workers {{workers}}
 
+# ── Operational workflows ─────────────────────────────────────────────────────
+
+# Rotina diária completa: atualiza dados → scan → daily report
+# Salva report fixo + cópia datada em reports/market_scanner/daily/
+daily universe="data/scanner_universe_filtered.csv" \
+      data_dir="data/stocks/1D" \
+      max_days="2" \
+      top="20" \
+      workers="8":
+    uv run python -m stock_data_manager.main \
+      --universe-file {{universe}} --data-dir {{data_dir}}
+    uv run python -m market_scanner.scan \
+      --universe-file {{universe}} \
+      --data-dir {{data_dir}} \
+      --ranking-mode recent-event \
+      --output reports/market_scanner/scan_daily.csv \
+      --workers {{workers}}
+    uv run python -m market_scanner.daily_report \
+      --scan reports/market_scanner/scan_daily.csv \
+      --recommendations reports/market_scanner/execution_recommended_rules.csv \
+      --max-days {{max_days}} \
+      --top {{top}} \
+      --output reports/market_scanner/daily_report.md \
+      --output-candidates reports/market_scanner/daily_candidates.csv \
+      --archive-dir reports/market_scanner/daily
+    @echo "✓ Daily report: reports/market_scanner/daily_report.md"
+
+# Regenera execution_recommended_rules.csv (rodar semanalmente ou após mudanças)
+weekly universe="data/scanner_universe_filtered.csv" \
+       data_dir="data/stocks/1D" \
+       min_trades="20" \
+       workers="8":
+    uv run python -m market_scanner.backtest_execution \
+      --universe-file {{universe}} \
+      --data-dir {{data_dir}} \
+      --ranking-mode recent-event \
+      --exit-rule all \
+      --min-trades {{min_trades}} \
+      --min-price 5 \
+      --max-symbols 500 \
+      --workers {{workers}} \
+      --output-trades reports/market_scanner/execution_trades.csv \
+      --output-summary reports/market_scanner/execution_summary.csv \
+      --output-comparison reports/market_scanner/execution_rule_comparison.csv \
+      --output-symbol-comparison reports/market_scanner/execution_symbol_comparison.csv \
+      --output-recommendations reports/market_scanner/execution_recommended_rules.csv \
+      --output-worst-trades reports/market_scanner/execution_worst_trades.csv \
+      --output-time-windows reports/market_scanner/execution_time_windows.csv
+    @echo "✓ execution_recommended_rules.csv atualizado"
+
 ibkr-option-chain symbol expiration max_strikes="10" option-type="BOTH" strike-step="5":
     uv run python -m src.ibkr.main --symbol {{symbol}} --expiration {{expiration}} --max-strikes {{max_strikes}} --option-type {{option-type}} --strike-step {{strike-step}}
 

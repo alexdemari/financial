@@ -6,6 +6,7 @@ from market_scanner.daily_report import (
     filter_fresh_signals,
     infer_side,
     render_daily_report,
+    write_daily_report,
 )
 
 
@@ -311,3 +312,69 @@ def test_symbol_rec_source_shown_in_top_20() -> None:
 
     assert "symbol" in md
     assert "30" in md
+
+
+def test_archive_dir_creates_dated_copy(tmp_path) -> None:
+    from datetime import datetime
+
+    scan_df = pd.DataFrame([_make_scan_row("NVDA", lux_days=1)])
+    scan_csv = tmp_path / "scan.csv"
+    scan_df.to_csv(scan_csv, index=False)
+
+    output_md = tmp_path / "daily_report.md"
+    archive_dir = tmp_path / "archive"
+
+    report = write_daily_report(
+        scan_path=scan_csv,
+        output_path=output_md,
+        archive_dir=archive_dir,
+    )
+
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    dated_md = archive_dir / f"{date_str}.md"
+
+    assert dated_md.exists(), f"Expected dated copy at {dated_md}"
+    assert dated_md.read_text(encoding="utf-8") == report
+    assert dated_md.read_text(encoding="utf-8") == output_md.read_text(encoding="utf-8")
+
+
+def test_archive_dir_copies_candidates_csv_when_provided(tmp_path) -> None:
+    from datetime import datetime
+
+    scan_df = pd.DataFrame([_make_scan_row("NVDA", lux_days=1)])
+    scan_csv = tmp_path / "scan.csv"
+    scan_df.to_csv(scan_csv, index=False)
+
+    candidates_csv = tmp_path / "candidates.csv"
+    scan_df.to_csv(candidates_csv, index=False)
+
+    output_md = tmp_path / "daily_report.md"
+    archive_dir = tmp_path / "archive"
+
+    write_daily_report(
+        scan_path=scan_csv,
+        output_path=output_md,
+        output_candidates=candidates_csv,
+        archive_dir=archive_dir,
+    )
+
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    dated_csv = archive_dir / f"{date_str}_candidates.csv"
+    assert dated_csv.exists(), f"Expected dated candidates at {dated_csv}"
+
+
+def test_archive_dir_absent_preserves_original_behavior(tmp_path) -> None:
+    scan_df = pd.DataFrame([_make_scan_row("NVDA", lux_days=1)])
+    scan_csv = tmp_path / "scan.csv"
+    scan_df.to_csv(scan_csv, index=False)
+
+    output_md = tmp_path / "daily_report.md"
+
+    report = write_daily_report(
+        scan_path=scan_csv,
+        output_path=output_md,
+    )
+
+    assert output_md.exists()
+    assert "Daily Report" in report
+    assert not (tmp_path / "archive").exists()

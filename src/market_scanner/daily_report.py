@@ -1,4 +1,5 @@
 import argparse
+import shutil
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -385,6 +386,8 @@ def write_daily_report(
     scan_path: str | Path,
     recommendations_path: str | Path | None = None,
     output_path: str | Path,
+    output_candidates: str | Path | None = None,
+    archive_dir: str | Path | None = None,
     max_days: int = DEFAULT_MAX_DAYS,
     top: int = DEFAULT_TOP,
 ) -> str:
@@ -406,6 +409,19 @@ def write_daily_report(
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(report, encoding="utf-8")
+
+    if archive_dir is not None:
+        archive = Path(archive_dir)
+        archive.mkdir(parents=True, exist_ok=True)
+        date_str = datetime.now().strftime("%Y-%m-%d")
+
+        dated_md = archive / f"{date_str}.md"
+        dated_md.write_text(report, encoding="utf-8")
+
+        if output_candidates is not None and Path(output_candidates).exists():
+            dated_csv = archive / f"{date_str}_candidates.csv"
+            shutil.copy(output_candidates, dated_csv)
+
     return report
 
 
@@ -423,6 +439,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         default="reports/market_scanner/daily_report.md",
     )
+    parser.add_argument(
+        "--output-candidates",
+        default=None,
+        help="Path for candidates CSV output (optional)",
+    )
+    parser.add_argument(
+        "--archive-dir",
+        default=None,
+        help="Directory to save a dated copy: YYYY-MM-DD.md and YYYY-MM-DD_candidates.csv",
+    )
     return parser
 
 
@@ -433,6 +459,8 @@ def main(argv: list[str] | None = None) -> int:
         scan_path=args.scan,
         recommendations_path=args.recommendations,
         output_path=args.output,
+        output_candidates=args.output_candidates,
+        archive_dir=args.archive_dir,
         max_days=args.max_days,
         top=args.top,
     )
