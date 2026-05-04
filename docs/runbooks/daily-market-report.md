@@ -3,32 +3,63 @@
 ## Purpose
 
 Generate an actionable daily report crossing fresh scanner signals with
-backtest-qualified setups.
+backtest-qualified setups, ranked separately per strategy.
 
-Output: `reports/market_scanner/daily_report.md` — 4 sections:
+Output: `reports/market_scanner/daily_report.md` — sections:
 
 1. **Sinais Frescos** — all symbols with a Lux or SMC event within N days
-2. **Top 20 Operacional** — `candidate` bucket + fresh signal + backtest-qualified
-3. **Sumário por Bucket** — count per action bucket for today's scan
-4. **Stats** — totals: scan size, fresh, qualified, in top 20
+2. **Top N — LUX** — ranked by `lux_days` asc, filtered by lux-qualified backtest recs
+3. **Top N — SMC** — ranked by `smc_days` asc, filtered by smc-qualified backtest recs
+4. **Top N — DUAL** — requires both signals fresh, ranked by `lux_days + smc_days` asc
+5. **Sumário por Bucket** — count per action bucket for today's scan
+6. **Stats** — fresh counts per strategy
+
+Pool for rankings is **all action buckets** (not just `candidate`). `action_bucket`
+is visible as a column in each ranking table.
 
 ---
 
-## Full Daily Routine
+## Quick Commands
+
+```bash
+# Full morning routine (data + scan + report)
+just daily
+
+# Scanner + report only (skip data download)
+PYTHONPATH=src uv run python -m market_scanner.scan \
+  --universe-file data/scanner_universe_filtered.csv \
+  --data-dir data/stocks/1D \
+  --ranking-mode recent-event \
+  --output reports/market_scanner/scan_daily.csv \
+  --workers 8
+just daily-report
+
+# Single strategy report
+PYTHONPATH=src uv run python -m market_scanner.daily_report \
+  --scan reports/market_scanner/scan_daily.csv \
+  --recommendations reports/market_scanner/execution_recommended_rules.csv \
+  --strategy lux \
+  --output reports/market_scanner/daily_report_lux.md
+```
+
+---
+
+## Full Daily Routine (manual)
 
 ```bash
 # 1. Update data
 PYTHONPATH=src uv run python -m stock_data_manager.main \
-  -s data/scanner_universe_filtered.csv
+  -f data/scanner_universe_filtered.csv -d data/stocks/1D
 
 # 2. Run scanner
 PYTHONPATH=src uv run python -m market_scanner.scan \
   --universe-file data/scanner_universe_filtered.csv \
   --data-dir data/stocks/1D \
   --ranking-mode recent-event \
-  --output reports/market_scanner/scan_daily.csv
+  --output reports/market_scanner/scan_daily.csv \
+  --workers 8
 
-# 3. Generate daily report
+# 3. Generate report (all strategies)
 PYTHONPATH=src uv run python -m market_scanner.daily_report \
   --scan reports/market_scanner/scan_daily.csv \
   --recommendations reports/market_scanner/execution_recommended_rules.csv \
@@ -37,56 +68,64 @@ PYTHONPATH=src uv run python -m market_scanner.daily_report \
   --output reports/market_scanner/daily_report.md
 ```
 
-Open `reports/market_scanner/daily_report.md`.
-
 ---
 
 ## Key Parameters
 
 | Flag | Default | When to change |
 |------|---------|----------------|
-| `--max-days` | `2` | Use `1` for tighter filter (today/yesterday only). Use `5` for wider watchlist window. |
-| `--top` | `20` | Use `10` for shorter list, only the strongest. |
-| `--recommendations` | required | Omit entirely if `execution_recommended_rules.csv` is stale — Top 20 will list fresh candidates without backtest filter. |
+| `--max-days` | `2` | Use `1` for tighter filter. Use `5` for wider window. |
+| `--top` | `20` | Use `10` for shorter list. |
+| `--strategy` | `all` | `lux`, `smc`, `dual`, or `all` (renders all 3 sections). |
+| `--recommendations` | optional | Omit to list fresh signals without backtest filter. |
 
 ---
 
-## How Top 20 Qualification Works
+## How Rankings Work Per Strategy
 
-A symbol appears in Top 20 only when **all three** conditions are true:
+**LUX**: pool = all symbols where `lux_days_since_active_event <= max_days`.
+Sort: `lux_days` asc, then `consistency_score` desc.
 
-1. `action_bucket == candidate`
-2. `lux_days_since_active_event <= max_days` OR `smc_days_since_active_event <= max_days`
-3. `(symbol, side)` is qualified by backtest:
-   - prefers `scope=symbol` recommendation from `execution_recommended_rules.csv`
-   - falls back to `scope=global` recommendation for the inferred side if no symbol-level recommendation exists
+**SMC**: pool = all symbols where `smc_days_since_active_event <= max_days`.
+Sort: `smc_days` asc, then `consistency_score` desc.
 
-Side is inferred from `adjusted_alignment`:
+**DUAL**: pool = symbols where **both** `lux_days <= max_days` AND `smc_days <= max_days`.
+Sort: `lux_days + smc_days` asc, then `consistency_score` desc.
+
+### Backtest filter (when `--recommendations` provided)
+
+A symbol is shown only when `(symbol, side)` is qualified:
+- prefers `scope=symbol` recommendation
+- falls back to `scope=global` for the inferred side
+
+Recommendations are filtered by `strategy` column when present:
+- `strategy=lux` rec qualifies lux and dual sections
+- `strategy=dual` rec qualifies lux, smc, and dual sections
+- No `strategy` column (old format): applies to all sections (backward compat)
+
+Side inferred from `adjusted_alignment`:
 - `bullish_aligned` → `bullish`
 - `bearish_aligned` → `bearish`
-- anything else → not operated
+- anything else → excluded
 
 ---
 
 ## Recommendation File Cadence
 
 `execution_recommended_rules.csv` is generated by `market_scanner.backtest_execution`.
-It does **not** need to run daily — regenerate weekly or after universe changes.
+Regenerate weekly or after universe changes. The file now includes a `strategy` column
+(lux/smc/dual) — regenerate with `just weekly` to activate per-strategy filtering.
 
 ```bash
-# Regenerate recommendations (weekly or on-demand)
-PYTHONPATH=src uv run python -m market_scanner.backtest_execution \
-  --universe-file data/scanner_universe_filtered.csv \
-  --data-dir data/stocks/1D \
-  --output-recommendations reports/market_scanner/execution_recommended_rules.csv \
-  [... other flags]
+just weekly
 ```
+
+Until regenerated, backward compat applies: old files without `strategy` column
+pass through without strategy-based filtering.
 
 ---
 
 ## Without Recommendations
-
-If `execution_recommended_rules.csv` is unavailable or intentionally skipped:
 
 ```bash
 PYTHONPATH=src uv run python -m market_scanner.daily_report \
@@ -95,8 +134,7 @@ PYTHONPATH=src uv run python -m market_scanner.daily_report \
   --output reports/market_scanner/daily_report.md
 ```
 
-Top 20 will list fresh `candidate` symbols sorted by `consistency_score`,
-without backtest cross-reference.
+Rankings show all fresh symbols sorted by signal recency + consistency, no backtest filter.
 
 ---
 
@@ -106,5 +144,5 @@ without backtest cross-reference.
 |------|-------------|
 | `src/market_scanner/daily_report.py` | Implementation |
 | `reports/market_scanner/scan_daily.csv` | Input: today's scan |
-| `reports/market_scanner/execution_recommended_rules.csv` | Input: backtest qualification |
+| `reports/market_scanner/execution_recommended_rules.csv` | Input: backtest qualification (weekly) |
 | `reports/market_scanner/daily_report.md` | Output: daily report |

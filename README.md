@@ -240,7 +240,7 @@ PYTHONPATH=src uv run python -m market_scanner.operational_report \
   --output-ranking reports/market_scanner/execution_operational_ranking.csv
 ```
 
-Generate the daily actionable report (fresh signals + qualified top candidates):
+Generate the daily actionable report (fresh signals + per-strategy rankings):
 
 ```bash
 PYTHONPATH=src uv run python -m market_scanner.daily_report \
@@ -250,6 +250,9 @@ PYTHONPATH=src uv run python -m market_scanner.daily_report \
   --top 20 \
   --output reports/market_scanner/daily_report.md
 ```
+
+Renders three strategy sections (LUX / SMC / DUAL). Use `--strategy lux` to render
+one section only. Pool is all action buckets; backtest filter applies per strategy.
 
 `--archive-dir` saves a dated copy alongside the fixed report:
 
