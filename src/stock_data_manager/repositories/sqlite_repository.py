@@ -52,6 +52,7 @@ class SqlitePriceDataRepository(PriceDataRepository):
         return sqlite3.connect(self.db_path)
 
     def _ensure_schema(self) -> None:
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         sql = _SCHEMA_PATH.read_text()
         with self._connect() as conn:
             conn.executescript(sql)

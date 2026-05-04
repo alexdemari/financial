@@ -9,6 +9,8 @@ import pytest
 
 from stock_data_manager.repositories.csv_repository import CsvPriceDataRepository
 from stock_data_manager.repositories.sqlite_repository import SqlitePriceDataRepository
+from stock_data_manager.implementations.sqlite_reader import SQLiteReader
+from stock_data_manager.implementations.sqlite_writer import SQLiteWriter
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +106,15 @@ def test_list_symbols_returns_all_saved(tmp_path):
     assert sorted(symbols) == ["AAPL", "GOOG", "MSFT"]
 
 
+def test_sqlite_repository_creates_parent_directory(tmp_path):
+    db_path = tmp_path / "nested" / "prices.db"
+    repo = SqlitePriceDataRepository(str(db_path))
+
+    repo.save_symbol("AAPL", make_ohlcv_df())
+
+    assert db_path.exists()
+
+
 def test_csv_and_sqlite_load_equivalent(tmp_path):
     """
     Create a minimal CSV, load via CsvPriceDataRepository, save to SQLite via
@@ -151,3 +162,19 @@ def test_csv_and_sqlite_load_equivalent(tmp_path):
     # Index must be tz-aware in both
     assert df_from_csv.index.tz is not None
     assert df_from_sqlite.index.tz is not None
+
+
+def test_sqlite_reader_and_writer_use_symbol_from_filepath(tmp_path):
+    db_path = str(tmp_path / "test.db")
+    filepath = tmp_path / "AAPL.csv"
+    df = make_ohlcv_df()
+
+    writer = SQLiteWriter(db_path)
+    reader = SQLiteReader(db_path)
+
+    writer.write(df, filepath)
+    loaded = reader.read(filepath)
+
+    assert loaded is not None
+    assert len(loaded) == len(df)
+    assert list(loaded["Close"]) == pytest.approx(list(df["Close"]))
