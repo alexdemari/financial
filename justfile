@@ -6,49 +6,60 @@ export PYTHONPATH := "src"
 default:
     just --list
 
-# Install project in development mode
+
+# ── Dev environment ───────────────────────────────────────────────────────────
+
 install:
     uv sync --dev
 
-# Setup development environment
 setup: install
     uv run pre-commit install
 
-# Run tests
+update:
+    uv sync --upgrade
+
+audit:
+    uv run pip-audit
+
+
+# ── Code quality ──────────────────────────────────────────────────────────────
+
 test:
     uv run pytest -n 2
 
-test-stock-data-manager:
-    .venv/bin/python -m pytest tests/stock_data_manager -q
+# Run tests for a specific module: just test-module market_scanner
+test-module module:
+    uv run pytest tests/{{module}} -v -q
 
-test-cov:
-    uv run pytest --cov=src/stock_data_manager --cov-report=html
-    @echo "Relatório de cobertura: htmlcov/index.html"
-
-# Run specific test file
 test-file FILE:
     uv run pytest {{FILE}} -v
 
-# Lint code
+test-cov:
+    uv run pytest --cov=src --cov-report=html
+    @echo "Coverage report: htmlcov/index.html"
+
 lint:
     uv run ruff check src tests
 
 lint-fix:
     uv run ruff check --fix src tests
 
-# Format code
 format:
     uv run ruff format src tests
 
 type-check:
     uv run mypy src tests
 
-# Check code quality
+# Full local quality check before committing
 check: format lint-fix type-check test
 
-# Clean cache files (Linux compatible)
+pre-commit:
+    uv run pre-commit run --all-files
+
+
+# ── Clean ─────────────────────────────────────────────────────────────────────
+
 clean:
-    rm -rf __pycache__
     find . -type d -name "__pycache__" -exec rm -rf {} +
     rm -rf build dist htmlcov .pytest_cache
     rm -f .coverage
@@ -57,59 +68,58 @@ clean-data:
     rm -rf data/stocks/*.csv
     rm -rf logs/*.log
 
-# Build Docker image
+clean-cache:
+    rm -rf ./cache/joblib/*
+    rm -rf data/cache/
+
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+
 docker-build:
     podman build -t stock_data_manager .
 
-# Run with Docker
 docker-run:
     podman run -v ${PWD}/data:/app/data stock_data_manager
 
-# Update dependencies
-update:
-    uv sync --upgrade
 
-# Security audit
-audit:
-    uv run pip-audit
+# ── Data download ─────────────────────────────────────────────────────────────
 
-# Pre-commit hooks
-pre-commit:
-    uv run pre-commit run --all-files
+# Download one or more symbols: just download "AAPL MSFT GOOGL"
+download symbols interval="1d":
+    uv run python -m stock_data_manager.main -s {{symbols}} -i {{interval}}
 
-pre-commit-ready:
-    uv run ruff format src tests
-    uv run ruff check src tests
-    uv run pre-commit run --all-files
+# Download from universe file: just download-file data/scanner_universe_filtered.csv
+download-file file interval="1d":
+    uv run python -m stock_data_manager.main -f {{file}} -i {{interval}}
 
-# Download commands
-download symbol interval="1d":
-    uv run python -m src.stock_data_manager.main -s {{symbol}} -i {{interval}}
+# Download full history from universe file
+download-file-full file interval="1d":
+    uv run python -m stock_data_manager.main -f {{file}} --full -i {{interval}}
 
-download-many symbols interval="1d":
-    uv run python -m src.stock_data_manager.main -s {{symbols}} -i {{interval}}
-
-download-from-file file interval="1d":
-    uv run python -m src.stock_data_manager.main -f {{file}} -i {{interval}}
-
-download--from-file-full file interval="1d":
-    uv run python -m src.stock_data_manager.main -f {{file}} --full -i {{interval}}
-
-download-br interval="1d":
-    uv run python -m src.stock_data_manager.main -s PETR4.SA VALE3.SA BBDC4.SA ITUB4.SA ABEV3.SA -i {{interval}}
-
-download-us interval="1d":
-    uv run python -m src.stock_data_manager.main -s AAPL MSFT GOOGL AMZN META -i {{interval}}
-
+# Download all US symbols from JSON index
 download-all-us interval="1d" base_dir=justfile_directory():
-    uv run python -m src.stock_data_manager.main -a {{base_dir}}/data/us_symbols.json -i {{interval}}
+    uv run python -m stock_data_manager.main -a {{base_dir}}/data/us_symbols.json -i {{interval}}
 
-analyzer symbol="AAPL" model="rsi-sma":
+
+# ── Analysis ──────────────────────────────────────────────────────────────────
+
+analyzer symbol="AAPL" model="lux":
     uv run python -m stock_analyzer.main -s {{symbol}} --model {{model}}
 
-market-scanner universe_file="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" output="reports/market_scanner/scan.csv" ranking_mode="snapshot" top="20" workers="8":
-    uv run python -m market_scanner.scan --universe-file {{universe_file}} --data-dir {{data_dir}} --output {{output}} --ranking-mode {{ranking_mode}} --top {{top}} --workers {{workers}}
 
+# ── Scanner ───────────────────────────────────────────────────────────────────
+
+# Full universe scan — snapshot for exploration
+scan universe="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" \
+     output="reports/market_scanner/scan.csv" ranking_mode="snapshot" workers="8":
+    uv run python -m market_scanner.scan \
+      --universe-file {{universe}} \
+      --data-dir {{data_dir}} \
+      --output {{output}} \
+      --ranking-mode {{ranking_mode}} \
+      --workers {{workers}}
+
+# Daily scan — recent-event mode, filtered universe
 scan-daily universe="data/scanner_universe_filtered.csv" data_dir="data/stocks/1D" workers="8":
     uv run python -m market_scanner.scan \
       --universe-file {{universe}} \
@@ -118,47 +128,20 @@ scan-daily universe="data/scanner_universe_filtered.csv" data_dir="data/stocks/1
       --output reports/market_scanner/scan_daily.csv \
       --workers {{workers}}
 
-daily-report scan="reports/market_scanner/scan_daily.csv" recommendations="reports/market_scanner/execution_recommended_rules.csv" max_days="2" top="20" output="reports/market_scanner/daily_report.md":
-    uv run python -m market_scanner.daily_report --scan {{scan}} --recommendations {{recommendations}} --max-days {{max_days}} --top {{top}} --output {{output}}
+# Daily report from existing scan + recommendations
+# strategy: all | lux | smc | dual (default: all)
+daily-report scan="reports/market_scanner/scan_daily.csv" \
+             recommendations="reports/market_scanner/execution_recommended_rules.csv" \
+             max_days="2" top="20" strategy="all" \
+             output="reports/market_scanner/daily_report.md":
+    uv run python -m market_scanner.daily_report \
+      --scan {{scan}} \
+      --recommendations {{recommendations}} \
+      --max-days {{max_days}} \
+      --top {{top}} \
+      --strategy {{strategy}} \
+      --output {{output}}
 
-daily-report-lux scan="reports/market_scanner/scan_daily.csv" recommendations="reports/market_scanner/execution_recommended_rules.csv" max_days="2" top="20" output="reports/market_scanner/daily_report_lux.md":
-    uv run python -m market_scanner.daily_report --scan {{scan}} --recommendations {{recommendations}} --max-days {{max_days}} --top {{top}} --strategy lux --output {{output}}
-
-daily-report-smc scan="reports/market_scanner/scan_daily.csv" recommendations="reports/market_scanner/execution_recommended_rules.csv" max_days="2" top="20" output="reports/market_scanner/daily_report_smc.md":
-    uv run python -m market_scanner.daily_report --scan {{scan}} --recommendations {{recommendations}} --max-days {{max_days}} --top {{top}} --strategy smc --output {{output}}
-
-daily-report-dual scan="reports/market_scanner/scan_daily.csv" recommendations="reports/market_scanner/execution_recommended_rules.csv" max_days="2" top="20" output="reports/market_scanner/daily_report_dual.md":
-    uv run python -m market_scanner.daily_report --scan {{scan}} --recommendations {{recommendations}} --max-days {{max_days}} --top {{top}} --strategy dual --output {{output}}
-
-market-scanner-backtest universe_file="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" output_detailed_summary="reports/market_scanner/backtest_detailed_summary.csv" output_decision_summary="reports/market_scanner/backtest_decision_summary.csv" output_lux_summary="reports/market_scanner/backtest_lux_summary.csv" output_smc_summary="reports/market_scanner/backtest_smc_summary.csv" ranking_mode="recent-event" workers="1":
-    uv run python -m market_scanner.backtest --universe-file {{universe_file}} --data-dir {{data_dir}} --output-detailed-summary {{output_detailed_summary}} --output-decision-summary {{output_decision_summary}} --output-lux-summary {{output_lux_summary}} --output-smc-summary {{output_smc_summary}} --ranking-mode {{ranking_mode}} --workers {{workers}}
-
-market-scanner-execution-backtest universe_file="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" output_trades="reports/market_scanner/execution_trades.csv" output_summary="reports/market_scanner/execution_summary.csv" output_comparison="reports/market_scanner/execution_rule_comparison.csv" ranking_mode="recent-event" exit_rule="bucket_downgrade" min_trades="20" workers="1":
-    uv run python -m market_scanner.backtest_execution --universe-file {{universe_file}} --data-dir {{data_dir}} --output-trades {{output_trades}} --output-summary {{output_summary}} --output-comparison {{output_comparison}} --ranking-mode {{ranking_mode}} --exit-rule {{exit_rule}} --min-trades {{min_trades}} --workers {{workers}}
-
-market-scanner-execution-backtest-all universe_file="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" output_trades="reports/market_scanner/execution_trades.csv" output_summary="reports/market_scanner/execution_summary.csv" output_comparison="reports/market_scanner/execution_rule_comparison.csv" ranking_mode="recent-event" min_trades="20" workers="1":
-    uv run python -m market_scanner.backtest_execution --universe-file {{universe_file}} --data-dir {{data_dir}} --output-trades {{output_trades}} --output-summary {{output_summary}} --output-comparison {{output_comparison}} --ranking-mode {{ranking_mode}} --exit-rule all --min-trades {{min_trades}} --workers {{workers}}
-
-market-scanner-execution-backtest-bucket-downgrade universe_file="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" output_trades="reports/market_scanner/execution_trades_bucket_downgrade.csv" output_summary="reports/market_scanner/execution_summary_bucket_downgrade.csv" output_comparison="reports/market_scanner/execution_rule_comparison_bucket_downgrade.csv" ranking_mode="recent-event" min_trades="20" workers="1":
-    uv run python -m market_scanner.backtest_execution --universe-file {{universe_file}} --data-dir {{data_dir}} --output-trades {{output_trades}} --output-summary {{output_summary}} --output-comparison {{output_comparison}} --ranking-mode {{ranking_mode}} --exit-rule bucket_downgrade --min-trades {{min_trades}} --workers {{workers}}
-
-market-scanner-execution-backtest-bars-5 universe_file="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" output_trades="reports/market_scanner/execution_trades_bars_5.csv" output_summary="reports/market_scanner/execution_summary_bars_5.csv" output_comparison="reports/market_scanner/execution_rule_comparison_bars_5.csv" ranking_mode="recent-event" min_trades="20" workers="1":
-    uv run python -m market_scanner.backtest_execution --universe-file {{universe_file}} --data-dir {{data_dir}} --output-trades {{output_trades}} --output-summary {{output_summary}} --output-comparison {{output_comparison}} --ranking-mode {{ranking_mode}} --exit-rule bars_5 --min-trades {{min_trades}} --workers {{workers}}
-
-market-scanner-execution-backtest-bars-10 universe_file="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" output_trades="reports/market_scanner/execution_trades_bars_10.csv" output_summary="reports/market_scanner/execution_summary_bars_10.csv" output_comparison="reports/market_scanner/execution_rule_comparison_bars_10.csv" ranking_mode="recent-event" min_trades="20" workers="1":
-    uv run python -m market_scanner.backtest_execution --universe-file {{universe_file}} --data-dir {{data_dir}} --output-trades {{output_trades}} --output-summary {{output_summary}} --output-comparison {{output_comparison}} --ranking-mode {{ranking_mode}} --exit-rule bars_10 --min-trades {{min_trades}} --workers {{workers}}
-
-market-scanner-execution-backtest-bars-20 universe_file="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" output_trades="reports/market_scanner/execution_trades_bars_20.csv" output_summary="reports/market_scanner/execution_summary_bars_20.csv" output_comparison="reports/market_scanner/execution_rule_comparison_bars_20.csv" ranking_mode="recent-event" min_trades="20" workers="1":
-    uv run python -m market_scanner.backtest_execution --universe-file {{universe_file}} --data-dir {{data_dir}} --output-trades {{output_trades}} --output-summary {{output_summary}} --output-comparison {{output_comparison}} --ranking-mode {{ranking_mode}} --exit-rule bars_20 --min-trades {{min_trades}} --workers {{workers}}
-
-market-scanner-execution-backtest-alignment-break universe_file="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" output_trades="reports/market_scanner/execution_trades_alignment_break.csv" output_summary="reports/market_scanner/execution_summary_alignment_break.csv" output_comparison="reports/market_scanner/execution_rule_comparison_alignment_break.csv" ranking_mode="recent-event" min_trades="20" workers="1":
-    uv run python -m market_scanner.backtest_execution --universe-file {{universe_file}} --data-dir {{data_dir}} --output-trades {{output_trades}} --output-summary {{output_summary}} --output-comparison {{output_comparison}} --ranking-mode {{ranking_mode}} --exit-rule alignment_break --min-trades {{min_trades}} --workers {{workers}}
-
-market-scanner-execution-backtest-late-state universe_file="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" output_trades="reports/market_scanner/execution_trades_late_state.csv" output_summary="reports/market_scanner/execution_summary_late_state.csv" output_comparison="reports/market_scanner/execution_rule_comparison_late_state.csv" ranking_mode="recent-event" min_trades="20" workers="1":
-    uv run python -m market_scanner.backtest_execution --universe-file {{universe_file}} --data-dir {{data_dir}} --output-trades {{output_trades}} --output-summary {{output_summary}} --output-comparison {{output_comparison}} --ranking-mode {{ranking_mode}} --exit-rule late_state --min-trades {{min_trades}} --workers {{workers}}
-
-market-scanner-execution-backtest-opposite-signal universe_file="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" output_trades="reports/market_scanner/execution_trades_opposite_signal.csv" output_summary="reports/market_scanner/execution_summary_opposite_signal.csv" output_comparison="reports/market_scanner/execution_rule_comparison_opposite_signal.csv" ranking_mode="recent-event" min_trades="20" workers="1":
-    uv run python -m market_scanner.backtest_execution --universe-file {{universe_file}} --data-dir {{data_dir}} --output-trades {{output_trades}} --output-summary {{output_summary}} --output-comparison {{output_comparison}} --ranking-mode {{ranking_mode}} --exit-rule opposite_signal --min-trades {{min_trades}} --workers {{workers}}
 
 # ── Operational workflows ─────────────────────────────────────────────────────
 
@@ -188,15 +171,17 @@ daily universe="data/scanner_universe_filtered.csv" \
     @echo "✓ Daily report: reports/market_scanner/daily_report.md"
 
 # Regenera execution_recommended_rules.csv (rodar semanalmente ou após mudanças)
+# exit_rule: all | alignment_break | opposite_signal | bucket_downgrade | bars_5 | bars_10 | bars_20 | late_state
 weekly universe="data/scanner_universe_filtered.csv" \
        data_dir="data/stocks/1D" \
+       exit_rule="all" \
        min_trades="20" \
        workers="8":
     uv run python -m market_scanner.backtest_execution \
       --universe-file {{universe}} \
       --data-dir {{data_dir}} \
       --ranking-mode recent-event \
-      --exit-rule all \
+      --exit-rule {{exit_rule}} \
       --min-trades {{min_trades}} \
       --min-price 5 \
       --workers {{workers}} \
@@ -209,39 +194,29 @@ weekly universe="data/scanner_universe_filtered.csv" \
       --output-time-windows reports/market_scanner/execution_time_windows.csv
     @echo "✓ execution_recommended_rules.csv atualizado"
 
-ibkr-option-chain symbol expiration max_strikes="10" option-type="BOTH" strike-step="5":
-    uv run python -m src.ibkr.main --symbol {{symbol}} --expiration {{expiration}} --max-strikes {{max_strikes}} --option-type {{option-type}} --strike-step {{strike-step}}
 
-options-analyzer:
-    uv run python -m src.options_tech_scanner.options_analyzer
+# ── Backtest ──────────────────────────────────────────────────────────────────
 
-options-tech-scanner data_dir=justfile_directory() mode="core":
-    uv run python -m src.options_tech_scanner.main --data-dir {{data_dir}} --mode {{mode}} --scan --verbose
+backtest universe="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" \
+          ranking_mode="recent-event" workers="1":
+    uv run python -m market_scanner.backtest \
+      --universe-file {{universe}} \
+      --data-dir {{data_dir}} \
+      --output-detailed-summary reports/market_scanner/backtest_detailed_summary.csv \
+      --output-decision-summary reports/market_scanner/backtest_decision_summary.csv \
+      --output-lux-summary reports/market_scanner/backtest_lux_summary.csv \
+      --output-smc-summary reports/market_scanner/backtest_smc_summary.csv \
+      --ranking-mode {{ranking_mode}} \
+      --workers {{workers}}
 
-options-tech-scanner-backtest data_dir=justfile_directory():
-    uv run python -m src.options_tech_scanner.main --data-dir {{data_dir}} --backtest
 
-options-tech-scanner-backtest-relaxed data_dir=justfile_directory():
-    uv run python -m src.options_tech_scanner.main --data-dir {{data_dir}} --backtest --mode relaxed
+# ── Benchmark & quality gate ──────────────────────────────────────────────────
 
-options-tech-scanner-backtest-45 data_dir=justfile_directory():
-    uv run python -m src.options_tech_scanner.main --data-dir {{data_dir}} --backtest --lookahead 45
-
-options-tech-scanner-full data_dir=justfile_directory():
-    uv run python -m src.options_tech_scanner.main --data-dir {{data_dir}} --scan --backtest
-
-clean-cache:
-    rm -rf ./cache/joblib/*
-
-profile-backtest:
-    uv run python -m src.options_tech_scanner.profile_backtest
-
-# Write backtest output to /tmp/candidate.csv for comparison.
+# Write backtest output to /tmp/candidate.csv for comparison
 bench-output config="config/bench.yaml":
     uv run python -m src.bench --config {{config}} --output /tmp/candidate.csv
 
-# Time a single backtest run and emit JSON metrics to stdout.
-# /bench appends this to bench/history.jsonl.
+# Time a single backtest run and emit JSON metrics to stdout
 bench config="config/bench.yaml":
     uv run python -m src.bench --config {{config}} --json
 
@@ -262,14 +237,25 @@ update-baseline:
         --output tests/baselines/golden.csv
     @echo "✓ baseline updated. Commit tests/baselines/golden.csv."
 
-# Full quality gate, no commit.
+# Full quality gate: lint + test + verify-identical
 gate: lint test verify-identical
     @echo "✓ all gates passed"
+
+
+# ── IBKR ─────────────────────────────────────────────────────────────────────
+
+ibkr-option-chain symbol expiration max_strikes="10" option-type="BOTH" strike-step="5":
+    uv run python -m src.ibkr.main \
+      --symbol {{symbol}} \
+      --expiration {{expiration}} \
+      --max-strikes {{max_strikes}} \
+      --option-type {{option-type}} \
+      --strike-step {{strike-step}}
+
 
 # ── AI / Agent tooling ────────────────────────────────────────────────────────
 
 # Sincroniza skills entre .claude/skills/ e .codex/skills/
-# Skills usam o mesmo formato (YAML frontmatter) nos dois ambientes
 sync-skills:
     @echo "Sincronizando skills: .claude/skills/ → .codex/skills/"
     @mkdir -p .codex/skills
