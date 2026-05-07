@@ -14,6 +14,13 @@ This file is the source of truth for any AI coding agent working on this repo (C
 - After implementing a change, **show the exact test command** that validates it (e.g. `uv run pytest tests/backtest/test_filters.py -k test_min_price -x -q`).
 - Prefer **explicit, descriptive variable names** over brevity (`min_price_threshold` over `mp`).
 
+## Behavioral Constraints
+
+1. Don't assume. Don't hide confusion. Surface tradeoffs.
+2. Minimum code that solves the problem. Nothing speculative.
+3. Touch only what you must. Clean up only your own mess.
+4. Define success criteria. Loop until verified.
+
 ## Testing
 
 - Always run the full test suite after refactors, especially parallelization or changes to function signatures (analyzers, workers, etc.). Use `uv run pytest -x -q`.
@@ -23,10 +30,8 @@ This file is the source of truth for any AI coding agent working on this repo (C
 
 ## Code Style (Python)
 
-- Follow `ruff` defaults. Run `uv run ruff check --fix .` before committing.
 - Type hints on all public functions and methods.
 - Prefer pure functions; isolate I/O at module boundaries.
-- Use `pathlib.Path` over `os.path`.
 - Explicit variable names — see Planning section.
 
 ## Commit Practices
@@ -54,3 +59,7 @@ This file is the source of truth for any AI coding agent working on this repo (C
 - Do not improvise long shell command sequences when a `just` recipe exists for it. If a recipe is missing, propose adding it instead of hardcoding the sequence.
 - Do not push directly to `main` without an explicit instruction.
 - Do not edit `.venv/`, `bench/history.jsonl`, or `tests/baselines/` unless the task explicitly requires it.
+
+## Compliance & Safety (non-negotiable)
+- Never log or expose raw financial data / PII in outputs or tests.
+- Temporal split logic must respect `embargo`; leaking future data into training windows is a silent correctness bug with no test signal.
