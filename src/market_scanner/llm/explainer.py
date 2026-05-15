@@ -58,8 +58,9 @@ def generate_explanations(
     provider: LLMProvider,
     *,
     output_format: str = "markdown",
+    max_tokens: int = 4000,
 ) -> str:
     sanitized = [_sanitize_row(r) for r in rows]
     json_rows = json.dumps(sanitized, indent=2, default=str)
     prompt = f"{_SYSTEM_INSTRUCTION}\n\n{_USER_PROMPT_TEMPLATE.format(json_rows=json_rows, output_format=output_format)}"
-    return provider.generate(prompt)
+    return provider.generate(prompt, max_tokens=max_tokens)
