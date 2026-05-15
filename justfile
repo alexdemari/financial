@@ -145,6 +145,24 @@ daily-report scan="reports/market_scanner/scan_daily.csv" \
       --smc-min-pf {{smc_min_pf}} \
       --output {{output}}
 
+# Daily report + LLM explanation (requires ANTHROPIC_API_KEY or OPENAI_API_KEY)
+# provider: anthropic | openai | local  model: optional override  top_n: candidates to explain
+daily-report-llm provider="anthropic" model="" top_n="" format="markdown":
+    uv run python -m market_scanner.daily_report \
+      --scan reports/market_scanner/scan_daily.csv \
+      --recommendations reports/market_scanner/execution_recommended_rules.csv \
+      --max-days 2 --top 20 --strategy all \
+      --smc-watchlist-days 10 --smc-min-pf 5.0 \
+      --output reports/market_scanner/daily_report.md \
+      --output-candidates reports/market_scanner/daily_candidates.csv \
+      --archive-dir reports/market_scanner/daily \
+      --llm-explain \
+      --llm-provider {{provider}} \
+      {{ if model != "" { "--llm-model " + model } else { "" } }} \
+      {{ if top_n != "" { "--llm-top-n " + top_n } else { "" } }} \
+      --llm-output-format {{format}}
+    @echo "✓ LLM report written to reports/market_scanner/"
+
 
 # ── Operational workflows ─────────────────────────────────────────────────────
 
