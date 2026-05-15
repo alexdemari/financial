@@ -1,5 +1,7 @@
 # Justfile - Cross-platform task runner (WSL/Linux first)
 
+set dotenv-load
+
 export PYTHONPATH := "src"
 
 # Default recipe
