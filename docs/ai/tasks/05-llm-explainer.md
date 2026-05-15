@@ -3,11 +3,11 @@
 You are working on a local-first Python financial analysis system.
 
 ---
-status: planned
-last-updated: 2026-05
+status: completed
+last-updated: 2026-05-15
 target: market_scanner
 providers: openai, anthropic, local
-integration-point: daily_report.py (not scan.py — top-N already computed there)
+integration-point: daily_report.py
 ---
 
 ## Context
