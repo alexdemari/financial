@@ -13,6 +13,8 @@ from market_scanner.market_state import AVOID, CANDIDATE, NEEDS_REVIEW, WATCHLIS
 
 DEFAULT_MAX_DAYS = 2
 DEFAULT_TOP = 20
+DEFAULT_SMC_WATCHLIST_DAYS = 10
+DEFAULT_SMC_MIN_PF = 5.0
 
 _PERCENT_COLUMNS = {"expectancy", "avg_mae"}
 
@@ -42,6 +44,17 @@ _TOP_DISPLAY_COLUMNS = [
 ]
 
 _BUCKET_PRIORITY = {CANDIDATE: 0, WATCHLIST: 1, NEEDS_REVIEW: 2, AVOID: 3}
+
+_SMC_WATCHLIST_DISPLAY_COLUMNS = [
+    "symbol",
+    "market_state",
+    "smc_days_since_active_event",
+    "smc_active_event",
+    "profit_factor",
+    "expectancy",
+    "avg_mae",
+    "total_trades",
+]
 
 _REC_METRIC_COLUMNS = [
     "recommended_exit_rule",
@@ -73,7 +86,19 @@ def infer_side(adjusted_alignment: str) -> str | None:
     return None
 
 
-def filter_fresh_signals(scan_df: pd.DataFrame, max_days: int) -> pd.DataFrame:
+def infer_side_from_event(event: str) -> str | None:
+    if event == "BUY":
+        return "bullish"
+    if event == "SELL":
+        return "bearish"
+    return None
+
+
+def filter_fresh_signals(
+    scan_df: pd.DataFrame,
+    max_days: int,
+    strategy: "RankingStrategy | None" = None,
+) -> pd.DataFrame:
     lux_col = "lux_days_since_active_event"
     smc_col = "smc_days_since_active_event"
 
@@ -85,7 +110,18 @@ def filter_fresh_signals(scan_df: pd.DataFrame, max_days: int) -> pd.DataFrame:
     if smc_col in scan_df.columns:
         smc_fresh = scan_df[smc_col].notna() & scan_df[smc_col].le(max_days)
 
-    return scan_df[lux_fresh | smc_fresh].copy()
+    if strategy is None:
+        mask = lux_fresh | smc_fresh
+    elif strategy == RankingStrategy.lux:
+        mask = lux_fresh
+    elif strategy == RankingStrategy.smc:
+        mask = smc_fresh
+    elif strategy == RankingStrategy.dual:
+        mask = lux_fresh & smc_fresh
+    else:
+        mask = lux_fresh | smc_fresh
+
+    return scan_df[mask].copy()
 
 
 def build_qualified_set(
@@ -184,7 +220,21 @@ def build_candidate_selection(
             backtest_filter_applied=False,
         )
 
-    if "adjusted_alignment" in pool.columns:
+    if strategy == RankingStrategy.lux:
+        lux_event_col = "lux_active_event"
+        pool["side"] = (
+            pool[lux_event_col].map(infer_side_from_event)
+            if lux_event_col in pool.columns
+            else None
+        )
+    elif strategy == RankingStrategy.smc:
+        smc_event_col = "smc_active_event"
+        pool["side"] = (
+            pool[smc_event_col].map(infer_side_from_event)
+            if smc_event_col in pool.columns
+            else None
+        )
+    elif "adjusted_alignment" in pool.columns:
         pool["side"] = pool["adjusted_alignment"].map(infer_side)
     else:
         pool["side"] = None
@@ -353,6 +403,61 @@ def build_bucket_summary(scan_df: pd.DataFrame) -> pd.DataFrame:
     return summary.sort_values("_priority").drop(columns="_priority")
 
 
+def build_smc_high_conviction_watchlist(
+    scan_df: pd.DataFrame,
+    recommendations_df: pd.DataFrame | None,
+    *,
+    min_profit_factor: float = DEFAULT_SMC_MIN_PF,
+    max_days: int = DEFAULT_SMC_WATCHLIST_DAYS,
+) -> pd.DataFrame:
+    if scan_df.empty or not _has_recommendations(recommendations_df):
+        return pd.DataFrame()
+
+    smc_col = "smc_days_since_active_event"
+    smc_event_col = "smc_active_event"
+
+    if smc_col not in scan_df.columns:
+        return pd.DataFrame()
+
+    pool = scan_df[scan_df["action_bucket"].eq(NEEDS_REVIEW)].copy()
+    smc_mask = pool[smc_col].notna() & pool[smc_col].le(max_days)
+    pool = pool[smc_mask].copy()
+
+    if pool.empty:
+        return pd.DataFrame()
+
+    pool["side"] = (
+        pool[smc_event_col].map(infer_side_from_event)
+        if smc_event_col in pool.columns
+        else None
+    )
+
+    qualified_recs = _filter_qualified_recommendations(
+        recommendations_df, RankingStrategy.smc
+    )
+    if qualified_recs.empty:
+        return pd.DataFrame()
+
+    metrics = pool.apply(
+        lambda row: _get_recommendation_metrics(
+            row["symbol"], row.get("side"), qualified_recs
+        ),
+        axis=1,
+    )
+    metrics_df = pd.DataFrame(list(metrics), index=pool.index)
+    for col in metrics_df.columns:
+        pool[col] = metrics_df[col]
+
+    pool = pool[pool["rec_source"].eq("symbol")].copy()
+    pool["profit_factor"] = pd.to_numeric(pool["profit_factor"], errors="coerce")
+    pool = pool[pool["profit_factor"].gt(min_profit_factor)].copy()
+
+    if pool.empty:
+        return pd.DataFrame()
+
+    return pool.sort_values("profit_factor", ascending=False).reset_index(drop=True)
+
+
 def _render_strategy_section(
     fresh_df: pd.DataFrame,
     strategy: RankingStrategy,
@@ -382,12 +487,14 @@ def render_daily_report(
     top: int = DEFAULT_TOP,
     generated_at: datetime | None = None,
     strategy: RankingStrategy | None = None,
+    smc_watchlist_days: int = DEFAULT_SMC_WATCHLIST_DAYS,
+    smc_min_pf: float = DEFAULT_SMC_MIN_PF,
 ) -> str:
     if generated_at is None:
         generated_at = datetime.now(UTC)
 
     date_str = generated_at.strftime("%Y-%m-%d")
-    fresh_df = filter_fresh_signals(scan_df, max_days)
+    fresh_df = filter_fresh_signals(scan_df, max_days, strategy)
     fresh_candidates_df = (
         fresh_df[fresh_df["action_bucket"].eq(CANDIDATE)].copy()
         if not fresh_df.empty
@@ -444,6 +551,22 @@ def render_daily_report(
             )
         )
         next_section += 1
+
+    smc_watchlist_df = build_smc_high_conviction_watchlist(
+        scan_df,
+        recommendations_df,
+        min_profit_factor=smc_min_pf,
+        max_days=smc_watchlist_days,
+    )
+    lines += [
+        f"## {next_section}. SMC High Conviction — Aguardando Trigger",
+        "",
+        f"_needs\\_review com SMC ≤ {smc_watchlist_days} dias e profit\\_factor > {smc_min_pf}_",
+        "",
+        _smc_watchlist_table(smc_watchlist_df),
+        "",
+    ]
+    next_section += 1
 
     bucket_section = next_section
     stats_section = next_section + 1
@@ -513,6 +636,30 @@ def _top_table(top_df: pd.DataFrame) -> str:
     return tabulate(display, headers="keys", tablefmt="github", showindex=False)
 
 
+def _smc_watchlist_table(watchlist_df: pd.DataFrame) -> str:
+    if watchlist_df.empty:
+        return "_No high conviction SMC setups awaiting trigger._"
+
+    col_rename = {
+        "smc_days_since_active_event": "smc_days",
+        "smc_active_event": "smc_event",
+    }
+    display = watchlist_df.loc[
+        :, [c for c in _SMC_WATCHLIST_DISPLAY_COLUMNS if c in watchlist_df.columns]
+    ].copy()
+    display = display.rename(columns=col_rename)
+
+    for col in display.columns:
+        if col in _PERCENT_COLUMNS:
+            display[col] = display[col].map(_format_percent)
+        elif col == "profit_factor":
+            display[col] = display[col].map(_format_decimal)
+        else:
+            display[col] = display[col].fillna("—")
+
+    return tabulate(display, headers="keys", tablefmt="github", showindex=False)
+
+
 def _bucket_table(bucket_df: pd.DataFrame) -> str:
     if bucket_df.empty:
         return "_No data._"
@@ -543,6 +690,8 @@ def write_daily_report(
     max_days: int = DEFAULT_MAX_DAYS,
     top: int = DEFAULT_TOP,
     strategy: RankingStrategy | None = None,
+    smc_watchlist_days: int = DEFAULT_SMC_WATCHLIST_DAYS,
+    smc_min_pf: float = DEFAULT_SMC_MIN_PF,
 ) -> str:
     """Write the Markdown report to disk and return the report content."""
     scan_df = pd.read_csv(scan_path)
@@ -558,6 +707,8 @@ def write_daily_report(
         max_days=max_days,
         top=top,
         strategy=strategy,
+        smc_watchlist_days=smc_watchlist_days,
+        smc_min_pf=smc_min_pf,
     )
 
     output = Path(output_path)
@@ -609,6 +760,18 @@ def build_parser() -> argparse.ArgumentParser:
         default="all",
         help="Ranking strategy to render (default: all)",
     )
+    parser.add_argument(
+        "--smc-watchlist-days",
+        type=int,
+        default=DEFAULT_SMC_WATCHLIST_DAYS,
+        help="Max SMC signal age (days) for high conviction watchlist (default: 10)",
+    )
+    parser.add_argument(
+        "--smc-min-pf",
+        type=float,
+        default=DEFAULT_SMC_MIN_PF,
+        help="Min profit_factor for SMC high conviction watchlist (default: 5.0)",
+    )
     return parser
 
 
@@ -632,6 +795,8 @@ def main(argv: list[str] | None = None) -> int:
         max_days=args.max_days,
         top=args.top,
         strategy=strategy,
+        smc_watchlist_days=args.smc_watchlist_days,
+        smc_min_pf=args.smc_min_pf,
     )
     print(f"Exported daily report: {args.output}")
     return 0

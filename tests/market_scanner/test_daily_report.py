@@ -3,6 +3,7 @@ import pandas as pd
 from market_scanner.daily_report import (
     RankingStrategy,
     build_qualified_set,
+    build_smc_high_conviction_watchlist,
     build_top_candidates,
     filter_fresh_signals,
     infer_side,
@@ -29,7 +30,7 @@ def _make_scan_row(
         "lux_days_since_active_event": lux_days,
         "smc_days_since_active_event": smc_days,
         "lux_active_event": "BUY" if lux_days is not None else None,
-        "smc_active_event": "OB" if smc_days is not None else None,
+        "smc_active_event": "BUY" if smc_days is not None else None,
     }
 
 
@@ -598,6 +599,184 @@ def test_backward_compat_no_strategy_column_applies_filter_unfiltered() -> None:
 
     assert "MSFT" in set(top_lux["symbol"])
     assert "MSFT" in set(top_smc["symbol"])
+
+
+# ---------------------------------------------------------------------------
+# New tests — SMC High Conviction Watchlist
+# ---------------------------------------------------------------------------
+
+
+def _make_smc_watchlist_recs(
+    symbol: str,
+    profit_factor: float = 8.0,
+    expectancy: float = 0.04,
+    strategy: str = "smc",
+) -> dict:
+    row = _make_rec_row(
+        symbol,
+        "bullish",
+        "symbol",
+        qualified=True,
+        profit_factor=profit_factor,
+        expectancy=expectancy,
+    )
+    row["strategy"] = strategy
+    return row
+
+
+def test_smc_watchlist_returns_needs_review_with_high_pf() -> None:
+    scan_df = pd.DataFrame(
+        [
+            _make_scan_row("WEC", action_bucket="needs_review", smc_days=5),
+            _make_scan_row("DUK", action_bucket="needs_review", smc_days=3),
+        ]
+    )
+    recs = pd.DataFrame(
+        [
+            _make_smc_watchlist_recs("WEC", profit_factor=11.65),
+            _make_smc_watchlist_recs("DUK", profit_factor=11.22),
+        ]
+    )
+    result = build_smc_high_conviction_watchlist(
+        scan_df, recs, min_profit_factor=5.0, max_days=10
+    )
+
+    assert not result.empty
+    symbols = set(result["symbol"])
+    assert "WEC" in symbols
+    assert "DUK" in symbols
+
+
+def test_smc_watchlist_excludes_candidates() -> None:
+    scan_df = pd.DataFrame(
+        [
+            _make_scan_row("WEC", action_bucket="needs_review", smc_days=5),
+            _make_scan_row("AAPL", action_bucket="candidate", smc_days=5),
+        ]
+    )
+    recs = pd.DataFrame(
+        [
+            _make_smc_watchlist_recs("WEC", profit_factor=8.0),
+            _make_smc_watchlist_recs("AAPL", profit_factor=8.0),
+        ]
+    )
+    result = build_smc_high_conviction_watchlist(
+        scan_df, recs, min_profit_factor=5.0, max_days=10
+    )
+
+    symbols = set(result["symbol"]) if not result.empty else set()
+    assert "WEC" in symbols
+    assert "AAPL" not in symbols
+
+
+def test_smc_watchlist_excludes_stale_signals() -> None:
+    scan_df = pd.DataFrame(
+        [
+            _make_scan_row("WEC", action_bucket="needs_review", smc_days=5),
+            _make_scan_row("OLD", action_bucket="needs_review", smc_days=15),
+        ]
+    )
+    recs = pd.DataFrame(
+        [
+            _make_smc_watchlist_recs("WEC", profit_factor=8.0),
+            _make_smc_watchlist_recs("OLD", profit_factor=8.0),
+        ]
+    )
+    result = build_smc_high_conviction_watchlist(
+        scan_df, recs, min_profit_factor=5.0, max_days=10
+    )
+
+    symbols = set(result["symbol"]) if not result.empty else set()
+    assert "WEC" in symbols
+    assert "OLD" not in symbols
+
+
+def test_smc_watchlist_excludes_low_profit_factor() -> None:
+    scan_df = pd.DataFrame(
+        [
+            _make_scan_row("HIGH", action_bucket="needs_review", smc_days=5),
+            _make_scan_row("LOW", action_bucket="needs_review", smc_days=5),
+        ]
+    )
+    recs = pd.DataFrame(
+        [
+            _make_smc_watchlist_recs("HIGH", profit_factor=8.0),
+            _make_smc_watchlist_recs("LOW", profit_factor=3.0),
+        ]
+    )
+    result = build_smc_high_conviction_watchlist(
+        scan_df, recs, min_profit_factor=5.0, max_days=10
+    )
+
+    symbols = set(result["symbol"]) if not result.empty else set()
+    assert "HIGH" in symbols
+    assert "LOW" not in symbols
+
+
+def test_smc_watchlist_excludes_global_recs() -> None:
+    scan_df = pd.DataFrame(
+        [
+            _make_scan_row("GLOB", action_bucket="needs_review", smc_days=5),
+        ]
+    )
+    rec = _make_rec_row(None, "bullish", "global", qualified=True, profit_factor=9.0)
+    rec["strategy"] = "smc"
+    recs = pd.DataFrame([rec])
+    result = build_smc_high_conviction_watchlist(
+        scan_df, recs, min_profit_factor=5.0, max_days=10
+    )
+
+    assert result.empty
+
+
+def test_smc_watchlist_sorted_by_profit_factor_desc() -> None:
+    scan_df = pd.DataFrame(
+        [
+            _make_scan_row("LOW_PF", action_bucket="needs_review", smc_days=3),
+            _make_scan_row("HIGH_PF", action_bucket="needs_review", smc_days=3),
+        ]
+    )
+    recs = pd.DataFrame(
+        [
+            _make_smc_watchlist_recs("LOW_PF", profit_factor=6.0),
+            _make_smc_watchlist_recs("HIGH_PF", profit_factor=11.0),
+        ]
+    )
+    result = build_smc_high_conviction_watchlist(
+        scan_df, recs, min_profit_factor=5.0, max_days=10
+    )
+
+    assert not result.empty
+    assert result.iloc[0]["symbol"] == "HIGH_PF"
+    assert result.iloc[1]["symbol"] == "LOW_PF"
+
+
+def test_smc_watchlist_empty_without_recommendations() -> None:
+    scan_df = pd.DataFrame(
+        [
+            _make_scan_row("WEC", action_bucket="needs_review", smc_days=5),
+        ]
+    )
+    result = build_smc_high_conviction_watchlist(
+        scan_df, None, min_profit_factor=5.0, max_days=10
+    )
+    assert result.empty
+
+
+def test_render_contains_smc_watchlist_section() -> None:
+    scan_df = pd.DataFrame(
+        [
+            _make_scan_row("WEC", action_bucket="needs_review", smc_days=5),
+        ]
+    )
+    rec = _make_smc_watchlist_recs("WEC", profit_factor=11.65)
+    recs = pd.DataFrame([rec])
+    md = render_daily_report(
+        scan_df, recs, max_days=2, top=20, smc_watchlist_days=10, smc_min_pf=5.0
+    )
+
+    assert "SMC High Conviction" in md
+    assert "WEC" in md
 
 
 def test_strategy_sections_in_render_use_backtest_filter() -> None:

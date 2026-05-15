@@ -11,8 +11,9 @@ Output: `reports/market_scanner/daily_report.md` — sections:
 2. **Top N — LUX** — ranked by `lux_days` asc, filtered by lux-qualified backtest recs
 3. **Top N — SMC** — ranked by `smc_days` asc, filtered by smc-qualified backtest recs
 4. **Top N — DUAL** — requires both signals fresh, ranked by `lux_days + smc_days` asc
-5. **Sumário por Bucket** — count per action bucket for today's scan
-6. **Stats** — fresh counts per strategy
+5. **SMC High Conviction — Aguardando Trigger** — `needs_review` with SMC ≤ 10 days and `profit_factor > 5`, symbol-scoped recs only, sorted by `profit_factor` desc
+6. **Sumário por Bucket** — count per action bucket for today's scan
+7. **Stats** — fresh counts per strategy
 
 Pool for rankings is **all action buckets** (not just `candidate`). `action_bucket`
 is visible as a column in each ranking table.
@@ -78,6 +79,8 @@ PYTHONPATH=src uv run python -m market_scanner.daily_report \
 | `--top` | `20` | Use `10` for shorter list. |
 | `--strategy` | `all` | `lux`, `smc`, `dual`, or `all` (renders all 3 sections). |
 | `--recommendations` | optional | Omit to list fresh signals without backtest filter. |
+| `--smc-watchlist-days` | `10` | Max SMC signal age for high conviction watchlist. |
+| `--smc-min-pf` | `5.0` | Min profit_factor threshold for SMC watchlist. |
 
 ---
 
