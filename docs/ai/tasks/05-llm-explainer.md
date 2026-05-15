@@ -4,9 +4,10 @@ You are working on a local-first Python financial analysis system.
 
 ---
 status: planned
-last-updated: 2026-04
-target: market_scanner (migrated from options_tech_scanner)
+last-updated: 2026-05
+target: market_scanner
 providers: openai, anthropic, local
+integration-point: daily_report.py (not scan.py — top-N already computed there)
 ---
 
 ## Context
@@ -102,7 +103,7 @@ Suggested defaults:
 --llm-explain: false
 --llm-provider: value from LLM_PROVIDER env var, fallback to anthropic
 --llm-model: value from LLM_MODEL env var, provider-specific fallback allowed
-  (openai default: gpt-4o-mini | anthropic default: claude-haiku-4-5)
+  (openai default: gpt-4o-mini | anthropic default: claude-haiku-4-5-20251001)
 --llm-top-n: same as --top
 --llm-output-format: markdown
 ```
@@ -299,7 +300,7 @@ Requirements:
 
 - use the official `anthropic` Python SDK
 - read API key from `ANTHROPIC_API_KEY`
-- do not hardcode the model — default to `claude-haiku-4-5` (fast and cheap)
+- do not hardcode the model — default to `claude-haiku-4-5-20251001` (fast and cheap)
 - fail gracefully with a clear error if not configured
 - keep the implementation isolated from scanner logic
 
@@ -311,7 +312,7 @@ import os
 
 class AnthropicProvider:
     def __init__(self, model: str | None = None):
-        self.model = model or os.getenv("LLM_MODEL") or "claude-haiku-4-5"
+        self.model = model or os.getenv("LLM_MODEL") or "claude-haiku-4-5-20251001"
 
     def generate(
         self,
@@ -546,14 +547,15 @@ Do not make JSON parsing mandatory unless the project already has a pattern for 
 
 ---
 
-## 11. Integration with `scan.py`
+## 11. Integration with `daily_report.py`
 
-Add the LLM step after:
+**Note:** original spec targeted `scan.py`. Updated to `daily_report.py` — top-N
+selection already happens there (`build_top_candidates`), making it the natural
+integration point. `scan.py` output (CSV) remains untouched.
 
-- scanner rows are computed
-- V2 fields are computed
-- top-N selection is available
-- CSV writing remains unaffected
+Add the LLM step inside `write_daily_report`, after the report markdown is built
+and before writing to disk. Alternatively, add a separate `--llm-explain` flag
+to the `daily_report` CLI.
 
 Pseudo-flow:
 
@@ -584,8 +586,8 @@ if args.llm_explain:
 Important:
 
 - catch broad provider errors at the integration boundary
-- do not fail the scan because of LLM issues
-- do not alter CSV output if LLM fails
+- do not fail daily report generation because of LLM issues
+- do not alter markdown or CSV output if LLM fails
 
 ---
 
@@ -748,7 +750,8 @@ Document:
 Add a short example:
 
 ```bash
-python -m market_scanner.scan \
+python -m market_scanner.daily_report \
+  --scan reports/market_scanner/scan_daily.csv \
   --top 10 \
   --llm-explain \
   --llm-provider openai \

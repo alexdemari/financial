@@ -133,6 +133,7 @@ scan-daily universe="data/scanner_universe_filtered.csv" data_dir="data/stocks/1
 daily-report scan="reports/market_scanner/scan_daily.csv" \
              recommendations="reports/market_scanner/execution_recommended_rules.csv" \
              max_days="2" top="20" strategy="all" \
+             smc_watchlist_days="10" smc_min_pf="5.0" \
              output="reports/market_scanner/daily_report.md":
     uv run python -m market_scanner.daily_report \
       --scan {{scan}} \
@@ -140,6 +141,8 @@ daily-report scan="reports/market_scanner/scan_daily.csv" \
       --max-days {{max_days}} \
       --top {{top}} \
       --strategy {{strategy}} \
+      --smc-watchlist-days {{smc_watchlist_days}} \
+      --smc-min-pf {{smc_min_pf}} \
       --output {{output}}
 
 
@@ -151,7 +154,9 @@ daily universe="data/scanner_universe_filtered.csv" \
       data_dir="data/stocks/1D" \
       max_days="2" \
       top="20" \
-      workers="8":
+      workers="8" \
+      smc_watchlist_days="10" \
+      smc_min_pf="5.0":
     uv run python -m stock_data_manager.main \
       -f {{universe}} -d {{data_dir}}
     uv run python -m market_scanner.scan \
@@ -165,6 +170,8 @@ daily universe="data/scanner_universe_filtered.csv" \
       --recommendations reports/market_scanner/execution_recommended_rules.csv \
       --max-days {{max_days}} \
       --top {{top}} \
+      --smc-watchlist-days {{smc_watchlist_days}} \
+      --smc-min-pf {{smc_min_pf}} \
       --output reports/market_scanner/daily_report.md \
       --output-candidates reports/market_scanner/daily_candidates.csv \
       --archive-dir reports/market_scanner/daily

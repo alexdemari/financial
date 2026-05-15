@@ -53,3 +53,9 @@ Thumbs.db
 CLAUDE.local.md
 settings.local.json
 tests/baselines
+
+# Experimental / on hold
+src/ibkr/
+courses_all.csv
+courses_all.json
+skill_hub_courses.py
