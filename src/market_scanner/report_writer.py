@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -82,6 +83,20 @@ SMC_ROLE_PRIORITY = {
     "bearish_watch": 3,
     "neutral": 4,
 }
+
+
+def write_llm_report(
+    content: str,
+    *,
+    output_format: str,
+    output_dir: Path,
+) -> Path:
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    suffix = "json" if output_format == "json" else "md"
+    path = output_dir / f"scanner_llm_report_{timestamp}.{suffix}"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    return path
 
 
 def write_csv_report(df: pd.DataFrame, output_path: str | Path) -> Path:

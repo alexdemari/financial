@@ -15,6 +15,8 @@ DEFAULT_MAX_DAYS = 2
 DEFAULT_TOP = 20
 DEFAULT_SMC_WATCHLIST_DAYS = 10
 DEFAULT_SMC_MIN_PF = 5.0
+DEFAULT_LLM_PROVIDER = "anthropic"
+DEFAULT_LLM_OUTPUT_FORMAT = "markdown"
 
 _PERCENT_COLUMNS = {"expectancy", "avg_mae"}
 
@@ -692,6 +694,11 @@ def write_daily_report(
     strategy: RankingStrategy | None = None,
     smc_watchlist_days: int = DEFAULT_SMC_WATCHLIST_DAYS,
     smc_min_pf: float = DEFAULT_SMC_MIN_PF,
+    llm_explain: bool = False,
+    llm_provider: str = DEFAULT_LLM_PROVIDER,
+    llm_model: str | None = None,
+    llm_top_n: int | None = None,
+    llm_output_format: str = DEFAULT_LLM_OUTPUT_FORMAT,
 ) -> str:
     """Write the Markdown report to disk and return the report content."""
     scan_df = pd.read_csv(scan_path)
@@ -727,7 +734,66 @@ def write_daily_report(
             dated_csv = archive / f"{date_str}_candidates.csv"
             shutil.copy(output_candidates, dated_csv)
 
+    if llm_explain:
+        _run_llm_explanation(
+            scan_df=scan_df,
+            recommendations_df=recommendations_df,
+            top=llm_top_n if llm_top_n is not None else top,
+            max_days=max_days,
+            strategy=strategy,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            llm_output_format=llm_output_format,
+            output_dir=Path(output_path).parent,
+        )
+
     return report
+
+
+def _run_llm_explanation(
+    *,
+    scan_df: pd.DataFrame,
+    recommendations_df: pd.DataFrame | None,
+    top: int,
+    max_days: int,
+    strategy: RankingStrategy | None,
+    llm_provider: str,
+    llm_model: str | None,
+    llm_output_format: str,
+    output_dir: Path,
+) -> None:
+    try:
+        from market_scanner.llm.explainer import generate_explanations
+        from market_scanner.llm.factory import get_llm_provider
+        from market_scanner.report_writer import write_llm_report
+
+        fresh_df = filter_fresh_signals(scan_df, max_days, strategy)
+        top_df = build_top_candidates(
+            fresh_df,
+            recommendations_df,
+            top=top,
+            max_days=max_days,
+            strategy=strategy or RankingStrategy.smc,
+        )
+
+        if top_df.empty:
+            print("WARNING: LLM explanation skipped: no top candidates found")
+            return
+
+        provider = get_llm_provider(llm_provider, llm_model)
+        rows = top_df.to_dict(orient="records")
+        explanations = generate_explanations(
+            rows, provider, output_format=llm_output_format
+        )
+        report_path = write_llm_report(
+            explanations,
+            output_format=llm_output_format,
+            output_dir=output_dir,
+        )
+        print(f"LLM explanation report written to: {report_path}")
+
+    except Exception as exc:
+        print(f"WARNING: LLM explanation skipped: {exc}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -772,6 +838,34 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_SMC_MIN_PF,
         help="Min profit_factor for SMC high conviction watchlist (default: 5.0)",
     )
+    parser.add_argument(
+        "--llm-explain",
+        action="store_true",
+        default=False,
+        help="Generate LLM explanation report for top-N candidates (default: off)",
+    )
+    parser.add_argument(
+        "--llm-provider",
+        default=DEFAULT_LLM_PROVIDER,
+        help="LLM provider: anthropic | openai | local (default: anthropic)",
+    )
+    parser.add_argument(
+        "--llm-model",
+        default=None,
+        help="LLM model name (provider default used if omitted)",
+    )
+    parser.add_argument(
+        "--llm-top-n",
+        type=int,
+        default=None,
+        help="Number of candidates to explain (default: same as --top)",
+    )
+    parser.add_argument(
+        "--llm-output-format",
+        choices=["markdown", "json"],
+        default=DEFAULT_LLM_OUTPUT_FORMAT,
+        help="Output format for LLM report (default: markdown)",
+    )
     return parser
 
 
@@ -797,6 +891,11 @@ def main(argv: list[str] | None = None) -> int:
         strategy=strategy,
         smc_watchlist_days=args.smc_watchlist_days,
         smc_min_pf=args.smc_min_pf,
+        llm_explain=args.llm_explain,
+        llm_provider=args.llm_provider,
+        llm_model=args.llm_model,
+        llm_top_n=args.llm_top_n,
+        llm_output_format=args.llm_output_format,
     )
     print(f"Exported daily report: {args.output}")
     return 0
