@@ -41,23 +41,45 @@ def _calls_df(strike: float, bid: float, ask: float, oi: int, vol: int) -> pd.Da
 
 
 def test_classify_good():
-    assert _classify(6000, 300, 9.0) == VERDICT_GOOD
+    assert _classify(6000, 300, 9.0, iv_rank=None) == VERDICT_GOOD
 
 
 def test_classify_ok_oi_boundary():
-    assert _classify(1000, 50, 20.0) == VERDICT_OK
+    assert _classify(1000, 50, 20.0, iv_rank=None) == VERDICT_OK
 
 
 def test_classify_illiquid_spread_too_wide():
-    assert _classify(6000, 300, 25.0) == VERDICT_ILLIQUID
+    assert _classify(6000, 300, 25.0, iv_rank=None) == VERDICT_ILLIQUID
 
 
 def test_classify_illiquid_low_oi():
-    assert _classify(500, 300, 9.0) == VERDICT_ILLIQUID
+    assert _classify(500, 300, 9.0, iv_rank=None) == VERDICT_ILLIQUID
 
 
 def test_classify_none_spread_is_illiquid():
-    assert _classify(10000, 500, None) == VERDICT_ILLIQUID
+    assert _classify(10000, 500, None, iv_rank=None) == VERDICT_ILLIQUID
+
+
+def test_classify_good_with_high_iv_rank():
+    assert _classify(6000, 300, 9.0, iv_rank=50.0) == VERDICT_GOOD
+
+
+def test_classify_good_downgraded_by_low_iv_rank():
+    # Good liquidity but iv_rank < 30 → not GOOD; check if OK (iv_rank ≥ 15)
+    assert _classify(6000, 300, 9.0, iv_rank=20.0) == VERDICT_OK
+
+
+def test_classify_ok_downgraded_by_very_low_iv_rank():
+    # OK liquidity but iv_rank < 15 → ILLIQUID
+    assert _classify(1000, 50, 20.0, iv_rank=10.0) == VERDICT_ILLIQUID
+
+
+def test_classify_iv_rank_boundary_good():
+    assert _classify(6000, 300, 9.0, iv_rank=30.0) == VERDICT_GOOD
+
+
+def test_classify_iv_rank_boundary_ok():
+    assert _classify(1000, 50, 20.0, iv_rank=15.0) == VERDICT_OK
 
 
 # --- fetch_options_liquidity ---

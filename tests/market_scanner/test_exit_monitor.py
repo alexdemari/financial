@@ -263,3 +263,80 @@ def test_opposite_signal_rule_fires():
     result = evaluate_positions([pos], scan, as_of_date=date(2026, 5, 10))
     assert result.iloc[0]["exit_status"] == EXIT_STATUS_EXIT
     assert "opposite_signal" in result.iloc[0]["exit_reason"]
+
+
+# ---------------------------------------------------------------------------
+# DTE alerts
+# ---------------------------------------------------------------------------
+
+
+def test_dte_exit_fires_within_exit_threshold():
+    pos = _make_position(
+        option_expiry=date(2026, 5, 15),  # 5 days from as_of → ≤ 7
+        recommended_exit_rule="alignment_break",
+    )
+    scan = _scan_df(_make_scan_row(symbol="AAPL", adjusted_alignment="bullish_aligned"))
+    result = evaluate_positions(
+        [pos], scan, as_of_date=date(2026, 5, 10), dte_exit_days=7, dte_watch_days=14
+    )
+    assert result.iloc[0]["exit_status"] == EXIT_STATUS_EXIT
+    assert "DTE" in result.iloc[0]["exit_reason"]
+
+
+def test_dte_watch_fires_within_watch_threshold():
+    pos = _make_position(
+        option_expiry=date(2026, 5, 20),  # 10 days → ≤ 14 but > 7
+        recommended_exit_rule="alignment_break",
+    )
+    scan = _scan_df(_make_scan_row(symbol="AAPL", adjusted_alignment="bullish_aligned"))
+    result = evaluate_positions(
+        [pos], scan, as_of_date=date(2026, 5, 10), dte_exit_days=7, dte_watch_days=14
+    )
+    assert result.iloc[0]["exit_status"] == EXIT_STATUS_WATCH
+    assert "DTE" in result.iloc[0]["exit_reason"]
+
+
+def test_dte_hold_when_far_expiry():
+    pos = _make_position(
+        option_expiry=date(2026, 8, 20),  # 100+ days → no DTE trigger
+        recommended_exit_rule="alignment_break",
+    )
+    scan = _scan_df(_make_scan_row(symbol="AAPL", adjusted_alignment="bullish_aligned"))
+    result = evaluate_positions(
+        [pos], scan, as_of_date=date(2026, 5, 10), dte_exit_days=7, dte_watch_days=14
+    )
+    assert result.iloc[0]["exit_status"] == EXIT_STATUS_HOLD
+
+
+def test_dte_exit_overrides_hold_from_rule():
+    # alignment_break rule → HOLD (alignment intact), but DTE ≤ 7 → EXIT wins
+    pos = _make_position(
+        option_expiry=date(2026, 5, 14),  # 4 days → EXIT
+        recommended_exit_rule="alignment_break",
+    )
+    scan = _scan_df(_make_scan_row(symbol="AAPL", adjusted_alignment="bullish_aligned"))
+    result = evaluate_positions(
+        [pos], scan, as_of_date=date(2026, 5, 10), dte_exit_days=7, dte_watch_days=14
+    )
+    assert result.iloc[0]["exit_status"] == EXIT_STATUS_EXIT
+
+
+def test_dte_column_present_in_result():
+    pos = _make_position(option_expiry=date(2026, 8, 1))
+    scan = _scan_df(_make_scan_row(symbol="AAPL"))
+    result = evaluate_positions([pos], scan, as_of_date=date(2026, 5, 10))
+    assert "dte" in result.columns
+    assert result.iloc[0]["dte"] == (date(2026, 8, 1) - date(2026, 5, 10)).days
+
+
+def test_dte_configurable_thresholds():
+    pos = _make_position(
+        option_expiry=date(2026, 5, 20),  # 10 days
+        recommended_exit_rule="alignment_break",
+    )
+    scan = _scan_df(_make_scan_row(symbol="AAPL", adjusted_alignment="bullish_aligned"))
+    # With tight thresholds: exit=15, watch=20 → 10 days = EXIT
+    result = evaluate_positions(
+        [pos], scan, as_of_date=date(2026, 5, 10), dte_exit_days=15, dte_watch_days=20
+    )
+    assert result.iloc[0]["exit_status"] == EXIT_STATUS_EXIT

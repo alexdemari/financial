@@ -722,6 +722,10 @@ def _options_table(options_df: pd.DataFrame) -> str:
     display["atm_spread_pct"] = display["atm_spread_pct"].map(
         lambda v: f"{v:.1f}%" if pd.notna(v) else "—"
     )
+    if "iv_rank" in display.columns:
+        display["iv_rank"] = display["iv_rank"].map(
+            lambda v: f"{v:.0f}" if pd.notna(v) else "—"
+        )
     display = display.fillna("—")
     return tabulate(display, headers="keys", tablefmt="github", showindex=False)
 

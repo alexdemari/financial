@@ -13,11 +13,13 @@ from dataclasses import dataclass
 import pandas as pd
 
 try:
+    import numpy as np
     import yfinance as yf
 
     _YF_AVAILABLE = True
 except ImportError:
     yf = None  # type: ignore[assignment]
+    np = None  # type: ignore[assignment]
     _YF_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
@@ -26,10 +28,12 @@ logger = logging.getLogger(__name__)
 _GOOD_MIN_OI = 5_000
 _GOOD_MAX_SPREAD_PCT = 10.0
 _GOOD_MIN_VOL = 200
+_GOOD_MIN_IV_RANK = 30.0
 
 _OK_MIN_OI = 1_000
 _OK_MAX_SPREAD_PCT = 20.0
 _OK_MIN_VOL = 50
+_OK_MIN_IV_RANK = 15.0
 
 VERDICT_GOOD = "GOOD"
 VERDICT_OK = "OK"
@@ -46,6 +50,7 @@ OPTIONS_DISPLAY_COLUMNS = [
     "total_oi",
     "daily_vol",
     "atm_spread_pct",
+    "iv_rank",
     "nearest_expiry",
     "verdict",
 ]
@@ -60,27 +65,60 @@ class OptionsMetrics:
     total_oi: int
     daily_vol: int
     atm_spread_pct: float | None
+    iv_rank: float | None
     nearest_expiry: str | None
     verdict: str
     error: str | None = None
 
 
-def _classify(total_oi: int, daily_vol: int, spread_pct: float | None) -> str:
+def _classify(
+    total_oi: int,
+    daily_vol: int,
+    spread_pct: float | None,
+    iv_rank: float | None,
+) -> str:
     if spread_pct is None:
         return VERDICT_ILLIQUID
+    iv_ok_good = iv_rank is None or iv_rank >= _GOOD_MIN_IV_RANK
+    iv_ok_ok = iv_rank is None or iv_rank >= _OK_MIN_IV_RANK
     if (
         total_oi >= _GOOD_MIN_OI
         and spread_pct <= _GOOD_MAX_SPREAD_PCT
         and daily_vol >= _GOOD_MIN_VOL
+        and iv_ok_good
     ):
         return VERDICT_GOOD
     if (
         total_oi >= _OK_MIN_OI
         and spread_pct <= _OK_MAX_SPREAD_PCT
         and daily_vol >= _OK_MIN_VOL
+        and iv_ok_ok
     ):
         return VERDICT_OK
     return VERDICT_ILLIQUID
+
+
+def _compute_iv_rank(ticker: "yf.Ticker") -> float | None:  # type: ignore[name-defined]
+    """HV-proxy IV rank: 30-day realized vol rank over 1Y window."""
+    if np is None:
+        return None
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            hist = ticker.history(period="1y")
+        if hist.empty or len(hist) < 32:
+            return None
+        log_ret = np.log(hist["Close"] / hist["Close"].shift(1)).dropna()
+        hv = log_ret.rolling(30).std() * np.sqrt(252) * 100
+        hv = hv.dropna()
+        if len(hv) < 2:
+            return None
+        low, high, current = float(hv.min()), float(hv.max()), float(hv.iloc[-1])
+        if high == low:
+            return None
+        return round((current - low) / (high - low) * 100, 1)
+    except Exception:
+        return None
 
 
 def _fetch_one(symbol: str, side: str | None) -> OptionsMetrics:
@@ -93,6 +131,7 @@ def _fetch_one(symbol: str, side: str | None) -> OptionsMetrics:
             total_oi=0,
             daily_vol=0,
             atm_spread_pct=None,
+            iv_rank=None,
             nearest_expiry=None,
             verdict=VERDICT_ERROR,
             error="yfinance not installed",
@@ -113,6 +152,7 @@ def _fetch_one(symbol: str, side: str | None) -> OptionsMetrics:
                 total_oi=0,
                 daily_vol=0,
                 atm_spread_pct=None,
+                iv_rank=None,
                 nearest_expiry=None,
                 verdict=VERDICT_NO_OPTIONS,
             )
@@ -140,7 +180,8 @@ def _fetch_one(symbol: str, side: str | None) -> OptionsMetrics:
             if mid > 0:
                 spread_pct = round((ask - bid) / mid * 100, 1)
 
-        verdict = _classify(total_oi, daily_vol, spread_pct)
+        iv_rank = _compute_iv_rank(t)
+        verdict = _classify(total_oi, daily_vol, spread_pct, iv_rank)
 
         return OptionsMetrics(
             symbol=symbol,
@@ -150,6 +191,7 @@ def _fetch_one(symbol: str, side: str | None) -> OptionsMetrics:
             total_oi=total_oi,
             daily_vol=daily_vol,
             atm_spread_pct=spread_pct,
+            iv_rank=iv_rank,
             nearest_expiry=exps[0],
             verdict=verdict,
         )
@@ -164,6 +206,7 @@ def _fetch_one(symbol: str, side: str | None) -> OptionsMetrics:
             total_oi=0,
             daily_vol=0,
             atm_spread_pct=None,
+            iv_rank=None,
             nearest_expiry=None,
             verdict=VERDICT_ERROR,
             error=str(exc),
@@ -198,6 +241,7 @@ def fetch_options_liquidity(
                 "total_oi": m.total_oi,
                 "daily_vol": m.daily_vol,
                 "atm_spread_pct": m.atm_spread_pct,
+                "iv_rank": m.iv_rank,
                 "nearest_expiry": m.nearest_expiry or "—",
                 "verdict": m.verdict,
             }

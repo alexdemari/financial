@@ -34,6 +34,9 @@ _BARS_N_RULES: dict[str, int] = {
 }
 _WATCH_BUFFER = 2  # days before bars_N limit to raise WATCH
 
+DEFAULT_DTE_EXIT_DAYS = 7
+DEFAULT_DTE_WATCH_DAYS = 14
+
 _POSITIONS_EVAL_COLUMNS = [
     "symbol",
     "side",
@@ -43,6 +46,7 @@ _POSITIONS_EVAL_COLUMNS = [
     "option_expiry",
     "entry_date",
     "days_held",
+    "dte",
     "premium_paid",
     "contracts",
     "delta",
@@ -78,55 +82,93 @@ def _lookup_exit_rule(
     return str(rows.iloc[0]["recommended_exit_rule"])
 
 
+def _dte_status(
+    expiry: date,
+    as_of: date,
+    dte_exit_days: int,
+    dte_watch_days: int,
+) -> tuple[str, str] | None:
+    """Return (status, reason) if DTE threshold breached, else None."""
+    dte = (expiry - as_of).days
+    if dte <= dte_exit_days:
+        return EXIT_STATUS_EXIT, f"DTE: {dte} days to expiry (exit ≤ {dte_exit_days})"
+    if dte <= dte_watch_days:
+        return (
+            EXIT_STATUS_WATCH,
+            f"DTE: {dte} days to expiry (watch ≤ {dte_watch_days})",
+        )
+    return None
+
+
+def _worst_status(
+    a: tuple[str, str],
+    b: tuple[str, str],
+) -> tuple[str, str]:
+    return a if _STATUS_ORDER.get(a[0], 99) <= _STATUS_ORDER.get(b[0], 99) else b
+
+
 def _evaluate_one(
     position: Position,
     scan_row: dict | None,
     days_held: int,
+    as_of_date: date = date.today(),
+    dte_exit_days: int = DEFAULT_DTE_EXIT_DAYS,
+    dte_watch_days: int = DEFAULT_DTE_WATCH_DAYS,
 ) -> tuple[str, str]:
     """Return (exit_status, exit_reason) for a single position."""
     rule = position.recommended_exit_rule
 
+    dte_result = _dte_status(
+        position.option_expiry, as_of_date, dte_exit_days, dte_watch_days
+    )
+
     if scan_row is None:
-        return EXIT_STATUS_WATCH, "symbol not in scan"
+        base = (EXIT_STATUS_WATCH, "symbol not in scan")
+        return _worst_status(base, dte_result) if dte_result else base
+
+    def _merge(base: tuple[str, str]) -> tuple[str, str]:
+        return _worst_status(base, dte_result) if dte_result else base
 
     # bars_N rules
     if rule in _BARS_N_RULES:
         limit = _BARS_N_RULES[rule]
         if exit_after_n_bars(days_held, limit):
-            return EXIT_STATUS_EXIT, f"{rule}: {days_held} days held (limit {limit})"
+            return _merge(
+                (EXIT_STATUS_EXIT, f"{rule}: {days_held} days held (limit {limit})")
+            )
         if days_held >= limit - _WATCH_BUFFER:
-            return EXIT_STATUS_WATCH, f"{rule}: {days_held}/{limit} days"
-        return EXIT_STATUS_HOLD, ""
+            return _merge((EXIT_STATUS_WATCH, f"{rule}: {days_held}/{limit} days"))
+        return _merge((EXIT_STATUS_HOLD, ""))
 
     if rule == "alignment_break":
         if exit_on_alignment_break(scan_row, position.side):
             alignment = scan_row.get("adjusted_alignment", "?")
-            return EXIT_STATUS_EXIT, f"alignment_break: now {alignment}"
-        return EXIT_STATUS_HOLD, ""
+            return _merge((EXIT_STATUS_EXIT, f"alignment_break: now {alignment}"))
+        return _merge((EXIT_STATUS_HOLD, ""))
 
     if rule == "bucket_downgrade":
         bucket = scan_row.get("action_bucket", "")
         if exit_on_bucket_downgrade(scan_row):
             if bucket == "watchlist":
-                return EXIT_STATUS_WATCH, f"bucket_downgrade: now {bucket}"
-            return EXIT_STATUS_EXIT, f"bucket_downgrade: now {bucket}"
-        return EXIT_STATUS_HOLD, ""
+                return _merge((EXIT_STATUS_WATCH, f"bucket_downgrade: now {bucket}"))
+            return _merge((EXIT_STATUS_EXIT, f"bucket_downgrade: now {bucket}"))
+        return _merge((EXIT_STATUS_HOLD, ""))
 
     if rule == "late_state":
         if exit_on_late_state(scan_row):
             state = scan_row.get("market_state", "?")
-            return EXIT_STATUS_EXIT, f"late_state: now {state}"
-        return EXIT_STATUS_HOLD, ""
+            return _merge((EXIT_STATUS_EXIT, f"late_state: now {state}"))
+        return _merge((EXIT_STATUS_HOLD, ""))
 
     if rule == "opposite_signal":
         if exit_on_opposite_signal(scan_row, position.side):
             alignment = scan_row.get("adjusted_alignment", "?")
-            return EXIT_STATUS_EXIT, f"opposite_signal: now {alignment}"
-        return EXIT_STATUS_HOLD, ""
+            return _merge((EXIT_STATUS_EXIT, f"opposite_signal: now {alignment}"))
+        return _merge((EXIT_STATUS_HOLD, ""))
 
     # Unknown rule — conservatively HOLD
     logger.warning("Unknown exit rule '%s' for %s", rule, position.symbol)
-    return EXIT_STATUS_HOLD, f"unknown rule: {rule}"
+    return _merge((EXIT_STATUS_HOLD, f"unknown rule: {rule}"))
 
 
 def evaluate_positions(
@@ -134,6 +176,8 @@ def evaluate_positions(
     scan_df: pd.DataFrame,
     recommendations_df: pd.DataFrame | None = None,
     as_of_date: date | None = None,
+    dte_exit_days: int = DEFAULT_DTE_EXIT_DAYS,
+    dte_watch_days: int = DEFAULT_DTE_WATCH_DAYS,
 ) -> pd.DataFrame:
     """Evaluate each open position against today's scan_df.
 
@@ -178,7 +222,14 @@ def evaluate_positions(
         )
 
         scan_row = scan_index.get(pos.symbol)
-        exit_status, exit_reason = _evaluate_one(effective_pos, scan_row, days_held)
+        exit_status, exit_reason = _evaluate_one(
+            effective_pos,
+            scan_row,
+            days_held,
+            as_of_date=today,
+            dte_exit_days=dte_exit_days,
+            dte_watch_days=dte_watch_days,
+        )
 
         rows.append(
             {
@@ -190,6 +241,7 @@ def evaluate_positions(
                 "option_expiry": pos.option_expiry.isoformat(),
                 "entry_date": pos.entry_date.isoformat(),
                 "days_held": days_held,
+                "dte": (pos.option_expiry - today).days,
                 "premium_paid": pos.premium_paid,
                 "contracts": pos.contracts,
                 "delta": pos.delta,
@@ -226,6 +278,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="execution_recommended_rules.csv (optional)",
     )
+    parser.add_argument(
+        "--dte-exit-days",
+        type=int,
+        default=DEFAULT_DTE_EXIT_DAYS,
+        help=f"DTE threshold for EXIT signal (default: {DEFAULT_DTE_EXIT_DAYS})",
+    )
+    parser.add_argument(
+        "--dte-watch-days",
+        type=int,
+        default=DEFAULT_DTE_WATCH_DAYS,
+        help=f"DTE threshold for WATCH signal (default: {DEFAULT_DTE_WATCH_DAYS})",
+    )
     return parser
 
 
@@ -247,7 +311,13 @@ def main(argv: list[str] | None = None) -> int:
         if rec_path.exists():
             recommendations_df = pd.read_csv(rec_path)
 
-    result = evaluate_positions(positions, scan_df, recommendations_df)
+    result = evaluate_positions(
+        positions,
+        scan_df,
+        recommendations_df,
+        dte_exit_days=args.dte_exit_days,
+        dte_watch_days=args.dte_watch_days,
+    )
 
     display_cols = [
         "symbol",
@@ -258,6 +328,7 @@ def main(argv: list[str] | None = None) -> int:
         "option_expiry",
         "entry_date",
         "days_held",
+        "dte",
         "recommended_exit_rule",
         "market_state",
         "action_bucket",

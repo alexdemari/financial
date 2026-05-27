@@ -152,11 +152,16 @@ daily-report scan="reports/market_scanner/scan_daily.csv" \
       --output {{output}}
 
 # Show exit signals for open options positions
-positions portfolio="options_tracker.csv" scan="reports/market_scanner/scan_daily.csv":
+# dte_exit_days: EXIT when DTE ≤ this (default 7)
+# dte_watch_days: WATCH when DTE ≤ this (default 14)
+positions portfolio="options_tracker.csv" scan="reports/market_scanner/scan_daily.csv" \
+          dte_exit_days="7" dte_watch_days="14":
     PYTHONPATH=src uv run python -m market_scanner.exit_monitor \
       --scan {{scan}} \
       --recommendations reports/market_scanner/execution_recommended_rules.csv \
-      --portfolio {{portfolio}}
+      --portfolio {{portfolio}} \
+      --dte-exit-days {{dte_exit_days}} \
+      --dte-watch-days {{dte_watch_days}}
 
 # Daily report + LLM explanation (requires ANTHROPIC_API_KEY or OPENAI_API_KEY)
 # provider: anthropic | openai | local  model: optional override  top_n: candidates to explain
