@@ -12,8 +12,9 @@ Output: `reports/market_scanner/daily_report.md` — sections:
 3. **Top N — SMC** — ranked by `smc_days` asc, filtered by smc-qualified backtest recs
 4. **Top N — DUAL** — requires both signals fresh, ranked by `lux_days + smc_days` asc
 5. **SMC High Conviction — Aguardando Trigger** — `needs_review` with SMC ≤ 10 days and `profit_factor > 5`, symbol-scoped recs only, sorted by `profit_factor` desc
-6. **Sumário por Bucket** — count per action bucket for today's scan
-7. **Stats** — fresh counts per strategy
+6. **Opções Viáveis** _(optional, `--options-filter`)_ — top candidates with sufficient options liquidity (live yfinance data). Shows `strategy` origin column, sorted GOOD→OK then OI desc. SMC signals take priority when a symbol appears in multiple strategies.
+7. **Sumário por Bucket** — count per action bucket for today's scan
+8. **Stats** — fresh counts per strategy
 
 Pool for rankings is **all action buckets** (not just `candidate`). `action_bucket`
 is visible as a column in each ranking table.
@@ -41,6 +42,15 @@ PYTHONPATH=src uv run python -m market_scanner.daily_report \
   --recommendations reports/market_scanner/execution_recommended_rules.csv \
   --strategy lux \
   --output reports/market_scanner/daily_report_lux.md
+
+# With options liquidity filter (live yfinance — adds ~10-30s)
+just daily-report options_filter=true
+# or directly:
+PYTHONPATH=src uv run python -m market_scanner.daily_report \
+  --scan reports/market_scanner/scan_daily.csv \
+  --recommendations reports/market_scanner/execution_recommended_rules.csv \
+  --options-filter \
+  --output reports/market_scanner/daily_report.md
 ```
 
 ---
@@ -81,6 +91,7 @@ PYTHONPATH=src uv run python -m market_scanner.daily_report \
 | `--recommendations` | optional | Omit to list fresh signals without backtest filter. |
 | `--smc-watchlist-days` | `10` | Max SMC signal age for high conviction watchlist. |
 | `--smc-min-pf` | `5.0` | Min profit_factor threshold for SMC watchlist. |
+| `--options-filter` | off | Add live options liquidity section (requires internet, ~10-30s). |
 
 ---
 
@@ -145,7 +156,8 @@ Rankings show all fresh symbols sorted by signal recency + consistency, no backt
 
 | File | Description |
 |------|-------------|
-| `src/market_scanner/daily_report.py` | Implementation |
+| `src/market_scanner/daily_report.py` | Report orchestration and rendering |
+| `src/market_scanner/options_filter.py` | Options liquidity fetch + classification (yfinance) |
 | `reports/market_scanner/scan_daily.csv` | Input: today's scan |
 | `reports/market_scanner/execution_recommended_rules.csv` | Input: backtest qualification (weekly) |
 | `reports/market_scanner/daily_report.md` | Output: daily report |

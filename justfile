@@ -136,6 +136,7 @@ daily-report scan="reports/market_scanner/scan_daily.csv" \
              recommendations="reports/market_scanner/execution_recommended_rules.csv" \
              max_days="2" top="20" strategy="all" \
              smc_watchlist_days="10" smc_min_pf="5.0" \
+             options_filter="false" \
              output="reports/market_scanner/daily_report.md":
     uv run python -m market_scanner.daily_report \
       --scan {{scan}} \
@@ -145,6 +146,7 @@ daily-report scan="reports/market_scanner/scan_daily.csv" \
       --strategy {{strategy}} \
       --smc-watchlist-days {{smc_watchlist_days}} \
       --smc-min-pf {{smc_min_pf}} \
+      {{ if options_filter == "true" { "--options-filter" } else { "" } }} \
       --output {{output}}
 
 # Daily report + LLM explanation (requires ANTHROPIC_API_KEY or OPENAI_API_KEY)

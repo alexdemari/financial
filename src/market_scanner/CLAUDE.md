@@ -12,6 +12,15 @@ Multi-symbol orchestration and Scanner V3 decision engine.
 - Exports ranked CSV output
 - Owns signal-quality backtest
 
+## Modules
+
+| Module | Responsibility |
+|--------|----------------|
+| `scan.py` | Universe scan orchestration |
+| `daily_report.py` | Report rendering and orchestration |
+| `options_filter.py` | Live options liquidity via yfinance (GOOD/OK/ILLIQUID). Fetches ATM spread, OI, volume. Called only when `--options-filter` is active. |
+| `backtest.py` / `backtest_execution.py` | Signal quality backtest |
+
 ## Hard rules — never violate
 
 - MUST NOT implement Lux or SMC indicator logic

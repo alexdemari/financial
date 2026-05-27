@@ -18,6 +18,19 @@ DEFAULT_SMC_MIN_PF = 5.0
 DEFAULT_LLM_PROVIDER = "anthropic"
 DEFAULT_LLM_OUTPUT_FORMAT = "markdown"
 
+_OPTIONS_DISPLAY_COLUMNS = [
+    "symbol",
+    "strategy",
+    "side",
+    "price",
+    "n_exps",
+    "total_oi",
+    "daily_vol",
+    "atm_spread_pct",
+    "nearest_expiry",
+    "verdict",
+]
+
 _PERCENT_COLUMNS = {"expectancy", "avg_mae"}
 
 _FRESH_DISPLAY_COLUMNS = [
@@ -460,25 +473,35 @@ def build_smc_high_conviction_watchlist(
     return pool.sort_values("profit_factor", ascending=False).reset_index(drop=True)
 
 
-def _render_strategy_section(
-    fresh_df: pd.DataFrame,
-    strategy: RankingStrategy,
-    section_num: int,
-    top: int,
-    max_days: int,
-    recommendations_df: pd.DataFrame | None = None,
-) -> list[str]:
-    candidate_selection = build_candidate_selection(
-        fresh_df, recommendations_df, top, max_days, strategy
-    )
-    top_df = candidate_selection.top_df
-    header = f"## {section_num}. Top {top} — {strategy.value.upper()}"
-    return [
-        header,
-        "",
-        _top_table(top_df),
-        "",
-    ]
+def build_options_section(
+    top_dfs_by_strategy: list[tuple[str, pd.DataFrame]],
+) -> pd.DataFrame:
+    """Collect unique (symbol, side, strategy) and fetch options liquidity.
+
+    top_dfs_by_strategy: list of (strategy_name, top_df) in priority order.
+    SMC should come first so SMC symbols are not displaced by duplicates from LUX.
+    """
+    from market_scanner.options_filter import fetch_options_liquidity, filter_tradeable
+
+    pairs: list[tuple[str, str | None, str]] = []
+    seen: set[str] = set()
+    for strategy_name, df in top_dfs_by_strategy:
+        if df.empty:
+            continue
+        for _, row in df.iterrows():
+            sym = row.get("symbol")
+            side = row.get("side")
+            if sym and sym not in seen:
+                seen.add(sym)
+                pairs.append(
+                    (sym, side if isinstance(side, str) else None, strategy_name)
+                )
+
+    if not pairs:
+        return pd.DataFrame()
+
+    options_df = fetch_options_liquidity(pairs)
+    return filter_tradeable(options_df)
 
 
 def render_daily_report(
@@ -491,6 +514,7 @@ def render_daily_report(
     strategy: RankingStrategy | None = None,
     smc_watchlist_days: int = DEFAULT_SMC_WATCHLIST_DAYS,
     smc_min_pf: float = DEFAULT_SMC_MIN_PF,
+    options_filter: bool = False,
 ) -> str:
     if generated_at is None:
         generated_at = datetime.now(UTC)
@@ -546,13 +570,31 @@ def render_daily_report(
         strategies_to_render = [strategy]
 
     next_section = 2
+    top_dfs_by_strategy: list[tuple[str, pd.DataFrame]] = []
     for strat in strategies_to_render:
-        lines.extend(
-            _render_strategy_section(
-                fresh_df, strat, next_section, top, max_days, recommendations_df
-            )
+        selection = build_candidate_selection(
+            fresh_df, recommendations_df, top, max_days, strat
         )
+        top_dfs_by_strategy.append((strat.value, selection.top_df))
+        header = f"## {next_section}. Top {top} — {strat.value.upper()}"
+        lines += [
+            header,
+            "",
+            _top_table(selection.top_df),
+            "",
+        ]
         next_section += 1
+
+    # SMC-first ordering: dedup prefers SMC symbols over LUX when symbol appears in both
+    _SMC_FIRST_ORDER = {
+        RankingStrategy.smc.value: 0,
+        RankingStrategy.dual.value: 1,
+        RankingStrategy.lux.value: 2,
+    }
+    top_dfs_by_strategy_smc_first = sorted(
+        top_dfs_by_strategy,
+        key=lambda t: _SMC_FIRST_ORDER.get(t[0], 99),
+    )
 
     smc_watchlist_df = build_smc_high_conviction_watchlist(
         scan_df,
@@ -569,6 +611,18 @@ def render_daily_report(
         "",
     ]
     next_section += 1
+
+    if options_filter:
+        tradeable_options_df = build_options_section(top_dfs_by_strategy_smc_first)
+        lines += [
+            f"## {next_section}. Opções Viáveis",
+            "",
+            "_Candidatos top com liquidez suficiente para opções (GOOD: OI≥5k, spread≤10%, vol≥200 | OK: OI≥1k, spread≤20%, vol≥50)_",
+            "",
+            _options_table(tradeable_options_df),
+            "",
+        ]
+        next_section += 1
 
     bucket_section = next_section
     stats_section = next_section + 1
@@ -589,6 +643,23 @@ def render_daily_report(
         "",
     ]
     return "\n".join(lines)
+
+
+def _options_table(options_df: pd.DataFrame) -> str:
+    if options_df.empty:
+        return "_Nenhum candidato com liquidez suficiente para opções._"
+
+    display = options_df.loc[
+        :, [c for c in _OPTIONS_DISPLAY_COLUMNS if c in options_df.columns]
+    ].copy()
+    display["price"] = display["price"].map(
+        lambda v: f"${v:.2f}" if pd.notna(v) else "—"
+    )
+    display["atm_spread_pct"] = display["atm_spread_pct"].map(
+        lambda v: f"{v:.1f}%" if pd.notna(v) else "—"
+    )
+    display = display.fillna("—")
+    return tabulate(display, headers="keys", tablefmt="github", showindex=False)
 
 
 def _fresh_table(fresh_df: pd.DataFrame) -> str:
@@ -694,6 +765,7 @@ def write_daily_report(
     strategy: RankingStrategy | None = None,
     smc_watchlist_days: int = DEFAULT_SMC_WATCHLIST_DAYS,
     smc_min_pf: float = DEFAULT_SMC_MIN_PF,
+    options_filter: bool = False,
     llm_explain: bool = False,
     llm_provider: str = DEFAULT_LLM_PROVIDER,
     llm_model: str | None = None,
@@ -716,6 +788,7 @@ def write_daily_report(
         strategy=strategy,
         smc_watchlist_days=smc_watchlist_days,
         smc_min_pf=smc_min_pf,
+        options_filter=options_filter,
     )
 
     output = Path(output_path)
@@ -839,6 +912,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Min profit_factor for SMC high conviction watchlist (default: 5.0)",
     )
     parser.add_argument(
+        "--options-filter",
+        action="store_true",
+        default=False,
+        help="Add 'Opções Viáveis' section with live options liquidity from yfinance (default: off)",
+    )
+    parser.add_argument(
         "--llm-explain",
         action="store_true",
         default=False,
@@ -891,6 +970,7 @@ def main(argv: list[str] | None = None) -> int:
         strategy=strategy,
         smc_watchlist_days=args.smc_watchlist_days,
         smc_min_pf=args.smc_min_pf,
+        options_filter=args.options_filter,
         llm_explain=args.llm_explain,
         llm_provider=args.llm_provider,
         llm_model=args.llm_model,
