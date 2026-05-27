@@ -473,6 +473,40 @@ def build_smc_high_conviction_watchlist(
     return pool.sort_values("profit_factor", ascending=False).reset_index(drop=True)
 
 
+_POSITIONS_DISPLAY_COLUMNS = [
+    "symbol",
+    "side",
+    "option_type",
+    "option_direction",
+    "option_strike",
+    "option_expiry",
+    "entry_date",
+    "days_held",
+    "recommended_exit_rule",
+    "market_state",
+    "action_bucket",
+    "exit_status",
+    "exit_reason",
+]
+
+
+def build_positions_section(
+    portfolio_path: "Path | str | None",
+    scan_df: pd.DataFrame,
+    recommendations_df: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Load open positions from CSV and evaluate against scan_df."""
+    if portfolio_path is None:
+        return pd.DataFrame()
+    from market_scanner.exit_monitor import evaluate_positions
+    from market_scanner.portfolio import load_open_positions
+
+    positions = load_open_positions(Path(portfolio_path))
+    if not positions:
+        return pd.DataFrame()
+    return evaluate_positions(positions, scan_df, recommendations_df)
+
+
 def build_options_section(
     top_dfs_by_strategy: list[tuple[str, pd.DataFrame]],
 ) -> pd.DataFrame:
@@ -515,6 +549,7 @@ def render_daily_report(
     smc_watchlist_days: int = DEFAULT_SMC_WATCHLIST_DAYS,
     smc_min_pf: float = DEFAULT_SMC_MIN_PF,
     options_filter: bool = False,
+    portfolio_path: "Path | str | None" = None,
 ) -> str:
     if generated_at is None:
         generated_at = datetime.now(UTC)
@@ -549,14 +584,33 @@ def render_daily_report(
         smc_fresh_count = int(smc_mask.sum())
         dual_fresh_count = int((lux_mask & smc_mask).sum())
 
-    lines: list[str] = [
-        f"# Daily Report — {date_str}",
-        "",
-        f"## 1. Sinais Frescos — Candidates (últimos {max_days} dias)",
+    positions_eval_df = build_positions_section(
+        portfolio_path, scan_df, recommendations_df
+    )
+    has_positions = not positions_eval_df.empty
+
+    lines: list[str] = [f"# Daily Report — {date_str}", ""]
+
+    next_section = 1
+    if has_positions:
+        n_positions = len(positions_eval_df)
+        lines += [
+            f"## {next_section}. Posições Abertas",
+            "",
+            f"_{n_positions} posição(ões) aberta(s) — avaliadas contra scan de hoje_",
+            "",
+            _positions_table(positions_eval_df),
+            "",
+        ]
+        next_section += 1
+
+    lines += [
+        f"## {next_section}. Sinais Frescos — Candidates (últimos {max_days} dias)",
         "",
         _fresh_table(fresh_candidates_df),
         "",
     ]
+    next_section += 1
 
     # Strategy sections
     strategies_to_render: list[RankingStrategy]
@@ -569,7 +623,6 @@ def render_daily_report(
     else:
         strategies_to_render = [strategy]
 
-    next_section = 2
     top_dfs_by_strategy: list[tuple[str, pd.DataFrame]] = []
     for strat in strategies_to_render:
         selection = build_candidate_selection(
@@ -643,6 +696,17 @@ def render_daily_report(
         "",
     ]
     return "\n".join(lines)
+
+
+def _positions_table(eval_df: pd.DataFrame) -> str:
+    if eval_df.empty:
+        return "_Nenhuma posição aberta._"
+
+    display = eval_df.loc[
+        :, [c for c in _POSITIONS_DISPLAY_COLUMNS if c in eval_df.columns]
+    ].copy()
+    display = display.fillna("—")
+    return tabulate(display, headers="keys", tablefmt="github", showindex=False)
 
 
 def _options_table(options_df: pd.DataFrame) -> str:
@@ -766,6 +830,7 @@ def write_daily_report(
     smc_watchlist_days: int = DEFAULT_SMC_WATCHLIST_DAYS,
     smc_min_pf: float = DEFAULT_SMC_MIN_PF,
     options_filter: bool = False,
+    portfolio_path: str | Path | None = None,
     llm_explain: bool = False,
     llm_provider: str = DEFAULT_LLM_PROVIDER,
     llm_model: str | None = None,
@@ -789,6 +854,7 @@ def write_daily_report(
         smc_watchlist_days=smc_watchlist_days,
         smc_min_pf=smc_min_pf,
         options_filter=options_filter,
+        portfolio_path=portfolio_path,
     )
 
     output = Path(output_path)
@@ -918,6 +984,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Add 'Opções Viáveis' section with live options liquidity from yfinance (default: off)",
     )
     parser.add_argument(
+        "--portfolio-path",
+        default=None,
+        help="Path to options_tracker.csv for open positions section (optional)",
+    )
+    parser.add_argument(
         "--llm-explain",
         action="store_true",
         default=False,
@@ -971,6 +1042,7 @@ def main(argv: list[str] | None = None) -> int:
         smc_watchlist_days=args.smc_watchlist_days,
         smc_min_pf=args.smc_min_pf,
         options_filter=args.options_filter,
+        portfolio_path=args.portfolio_path,
         llm_explain=args.llm_explain,
         llm_provider=args.llm_provider,
         llm_model=args.llm_model,

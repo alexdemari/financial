@@ -7,14 +7,17 @@ backtest-qualified setups, ranked separately per strategy.
 
 Output: `reports/market_scanner/daily_report.md` — sections:
 
-1. **Sinais Frescos** — all symbols with a Lux or SMC event within N days
-2. **Top N — LUX** — ranked by `lux_days` asc, filtered by lux-qualified backtest recs
-3. **Top N — SMC** — ranked by `smc_days` asc, filtered by smc-qualified backtest recs
-4. **Top N — DUAL** — requires both signals fresh, ranked by `lux_days + smc_days` asc
-5. **SMC High Conviction — Aguardando Trigger** — `needs_review` with SMC ≤ 10 days and `profit_factor > 5`, symbol-scoped recs only, sorted by `profit_factor` desc
-6. **Opções Viáveis** _(optional, `--options-filter`)_ — top candidates with sufficient options liquidity (live yfinance data). Shows `strategy` origin column, sorted GOOD→OK then OI desc. SMC signals take priority when a symbol appears in multiple strategies.
-7. **Sumário por Bucket** — count per action bucket for today's scan
-8. **Stats** — fresh counts per strategy
+1. **Posições Abertas** _(optional, `--portfolio-path`)_ — open options positions evaluated against today's scan. EXIT ⚠️ → WATCH ~ → HOLD.
+2. **Sinais Frescos** — all symbols with a Lux or SMC event within N days
+3. **Top N — LUX** — ranked by `lux_days` asc, filtered by lux-qualified backtest recs
+4. **Top N — SMC** — ranked by `smc_days` asc, filtered by smc-qualified backtest recs
+5. **Top N — DUAL** — requires both signals fresh, ranked by `lux_days + smc_days` asc
+6. **SMC High Conviction — Aguardando Trigger** — `needs_review` with SMC ≤ 10 days and `profit_factor > 5`, symbol-scoped recs only, sorted by `profit_factor` desc
+7. **Opções Viáveis** _(optional, `--options-filter`)_ — top candidates with sufficient options liquidity (live yfinance data). Shows `strategy` origin column, sorted GOOD→OK then OI desc. SMC signals take priority when a symbol appears in multiple strategies.
+8. **Sumário por Bucket** — count per action bucket for today's scan
+9. **Stats** — fresh counts per strategy
+
+Section 1 is omitted when `--portfolio-path` is not provided; all other numbers remain sequential.
 
 Pool for rankings is **all action buckets** (not just `candidate`). `action_bucket`
 is visible as a column in each ranking table.
@@ -51,6 +54,18 @@ PYTHONPATH=src uv run python -m market_scanner.daily_report \
   --recommendations reports/market_scanner/execution_recommended_rules.csv \
   --options-filter \
   --output reports/market_scanner/daily_report.md
+
+# With open positions exit signals
+just daily-report portfolio_path=options_tracker.csv
+# or directly:
+PYTHONPATH=src uv run python -m market_scanner.daily_report \
+  --scan reports/market_scanner/scan_daily.csv \
+  --recommendations reports/market_scanner/execution_recommended_rules.csv \
+  --portfolio-path options_tracker.csv \
+  --output reports/market_scanner/daily_report.md
+
+# Standalone exit monitor (positions only, no full report)
+just positions
 ```
 
 ---
@@ -92,6 +107,7 @@ PYTHONPATH=src uv run python -m market_scanner.daily_report \
 | `--smc-watchlist-days` | `10` | Max SMC signal age for high conviction watchlist. |
 | `--smc-min-pf` | `5.0` | Min profit_factor threshold for SMC watchlist. |
 | `--options-filter` | off | Add live options liquidity section (requires internet, ~10-30s). |
+| `--portfolio-path` | optional | Path to `options_tracker.csv` for open positions exit signals. |
 
 ---
 
@@ -158,6 +174,10 @@ Rankings show all fresh symbols sorted by signal recency + consistency, no backt
 |------|-------------|
 | `src/market_scanner/daily_report.py` | Report orchestration and rendering |
 | `src/market_scanner/options_filter.py` | Options liquidity fetch + classification (yfinance) |
+| `src/market_scanner/portfolio.py` | Parse `options_tracker.csv`, return open positions |
+| `src/market_scanner/exit_monitor.py` | Evaluate open positions against scan; EXIT/WATCH/HOLD |
+| `src/market_scanner/exits.py` | Exit rule functions (reused by exit_monitor) |
+| `options_tracker.csv` | Personal options trade log (gitignored). Semicolon-delimited, European decimals, DD/MM/YYYY. Col 25 = `signal_source` (lux/smc/dual/—). Open rows have empty Close Date (col 18). |
 | `reports/market_scanner/scan_daily.csv` | Input: today's scan |
 | `reports/market_scanner/execution_recommended_rules.csv` | Input: backtest qualification (weekly) |
 | `reports/market_scanner/daily_report.md` | Output: daily report |

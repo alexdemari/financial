@@ -137,6 +137,7 @@ daily-report scan="reports/market_scanner/scan_daily.csv" \
              max_days="2" top="20" strategy="all" \
              smc_watchlist_days="10" smc_min_pf="5.0" \
              options_filter="false" \
+             portfolio_path="" \
              output="reports/market_scanner/daily_report.md":
     uv run python -m market_scanner.daily_report \
       --scan {{scan}} \
@@ -147,7 +148,15 @@ daily-report scan="reports/market_scanner/scan_daily.csv" \
       --smc-watchlist-days {{smc_watchlist_days}} \
       --smc-min-pf {{smc_min_pf}} \
       {{ if options_filter == "true" { "--options-filter" } else { "" } }} \
+      {{ if portfolio_path != "" { "--portfolio-path " + portfolio_path } else { "" } }} \
       --output {{output}}
+
+# Show exit signals for open options positions
+positions portfolio="options_tracker.csv" scan="reports/market_scanner/scan_daily.csv":
+    PYTHONPATH=src uv run python -m market_scanner.exit_monitor \
+      --scan {{scan}} \
+      --recommendations reports/market_scanner/execution_recommended_rules.csv \
+      --portfolio {{portfolio}}
 
 # Daily report + LLM explanation (requires ANTHROPIC_API_KEY or OPENAI_API_KEY)
 # provider: anthropic | openai | local  model: optional override  top_n: candidates to explain
