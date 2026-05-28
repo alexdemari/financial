@@ -670,7 +670,7 @@ def render_daily_report(
         lines += [
             f"## {next_section}. Opções Viáveis",
             "",
-            "_Candidatos top com liquidez suficiente para opções (GOOD: OI≥5k, spread≤10%, vol≥200 | OK: OI≥1k, spread≤20%, vol≥50)_",
+            "_Candidatos top com liquidez suficiente para opções (GOOD: OI≥5k, spread≤10%, vol≥200 | OK: OI≥1k, spread≤20%, vol≥50 | NO\\_QUOTES: sem cotação live — rodar após 10:30 BRT)_",
             "",
             _options_table(tradeable_options_df),
             "",

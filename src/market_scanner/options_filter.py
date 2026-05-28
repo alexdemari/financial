@@ -38,6 +38,7 @@ _OK_MIN_IV_RANK = 15.0
 VERDICT_GOOD = "GOOD"
 VERDICT_OK = "OK"
 VERDICT_ILLIQUID = "ILLIQUID"
+VERDICT_NO_QUOTES = "NO_QUOTES"  # liquid but market closed / no live bid-ask
 VERDICT_NO_OPTIONS = "NO_OPTIONS"
 VERDICT_ERROR = "ERROR"
 
@@ -77,10 +78,17 @@ def _classify(
     spread_pct: float | None,
     iv_rank: float | None,
 ) -> str:
-    if spread_pct is None:
-        return VERDICT_ILLIQUID
     iv_ok_good = iv_rank is None or iv_rank >= _GOOD_MIN_IV_RANK
     iv_ok_ok = iv_rank is None or iv_rank >= _OK_MIN_IV_RANK
+
+    if spread_pct is None:
+        # No live quotes (market closed or pre-market) — classify on OI+vol only
+        if total_oi >= _GOOD_MIN_OI and daily_vol >= _GOOD_MIN_VOL and iv_ok_good:
+            return VERDICT_NO_QUOTES
+        if total_oi >= _OK_MIN_OI and daily_vol >= _OK_MIN_VOL and iv_ok_ok:
+            return VERDICT_NO_QUOTES
+        return VERDICT_ILLIQUID
+
     if (
         total_oi >= _GOOD_MIN_OI
         and spread_pct <= _GOOD_MAX_SPREAD_PCT
@@ -169,16 +177,30 @@ def _fetch_one(symbol: str, side: str | None) -> OptionsMetrics:
             calls["volume"].fillna(0).sum() + puts["volume"].fillna(0).sum()
         )
 
-        # ATM call: within 5% of current price
-        atm = calls[(calls["strike"] > price * 0.95) & (calls["strike"] < price * 1.05)]
+        # ATM spread: try up to 3 expiries to find live bid/ask quotes
         spread_pct: float | None = None
-        if not atm.empty:
-            best = atm.sort_values("openInterest", ascending=False).iloc[0]
+        for exp in exps[:3]:
+            if exp != exps[0]:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    exp_chain = t.option_chain(exp)
+                exp_calls = exp_chain.calls
+            else:
+                exp_calls = calls
+            atm = exp_calls[
+                (exp_calls["strike"] > price * 0.95)
+                & (exp_calls["strike"] < price * 1.05)
+            ]
+            atm_quoted = atm[(atm["bid"] > 0) | (atm["ask"] > 0)]
+            if atm_quoted.empty:
+                continue
+            best = atm_quoted.sort_values("openInterest", ascending=False).iloc[0]
             bid = float(best["bid"])
             ask = float(best["ask"])
             mid = (bid + ask) / 2
             if mid > 0:
                 spread_pct = round((ask - bid) / mid * 100, 1)
+                break
 
         iv_rank = _compute_iv_rank(t)
         verdict = _classify(total_oi, daily_vol, spread_pct, iv_rank)
@@ -254,13 +276,13 @@ def fetch_options_liquidity(
 
 
 def filter_tradeable(options_df: pd.DataFrame) -> pd.DataFrame:
-    """Return only GOOD and OK rows, sorted by verdict then total_oi desc."""
+    """Return GOOD, OK, and NO_QUOTES rows, sorted by verdict then total_oi desc."""
     if options_df.empty:
         return options_df
     tradeable = options_df[
-        options_df["verdict"].isin([VERDICT_GOOD, VERDICT_OK])
+        options_df["verdict"].isin([VERDICT_GOOD, VERDICT_OK, VERDICT_NO_QUOTES])
     ].copy()
-    verdict_order = {VERDICT_GOOD: 0, VERDICT_OK: 1}
+    verdict_order = {VERDICT_GOOD: 0, VERDICT_OK: 1, VERDICT_NO_QUOTES: 2}
     tradeable["_ord"] = tradeable["verdict"].map(verdict_order)
     tradeable = tradeable.sort_values(["_ord", "total_oi"], ascending=[True, False])
     return tradeable.drop(columns="_ord").reset_index(drop=True)

@@ -9,6 +9,7 @@ from market_scanner.options_filter import (
     VERDICT_GOOD,
     VERDICT_ILLIQUID,
     VERDICT_NO_OPTIONS,
+    VERDICT_NO_QUOTES,
     VERDICT_OK,
     _classify,
     fetch_options_liquidity,
@@ -56,8 +57,16 @@ def test_classify_illiquid_low_oi():
     assert _classify(500, 300, 9.0, iv_rank=None) == VERDICT_ILLIQUID
 
 
-def test_classify_none_spread_is_illiquid():
-    assert _classify(10000, 500, None, iv_rank=None) == VERDICT_ILLIQUID
+def test_classify_none_spread_low_oi_is_illiquid():
+    assert _classify(100, 10, None, iv_rank=None) == VERDICT_ILLIQUID
+
+
+def test_classify_none_spread_good_oi_vol_is_no_quotes():
+    assert _classify(10000, 500, None, iv_rank=None) == VERDICT_NO_QUOTES
+
+
+def test_classify_none_spread_ok_oi_vol_is_no_quotes():
+    assert _classify(2000, 100, None, iv_rank=None) == VERDICT_NO_QUOTES
 
 
 def test_classify_good_with_high_iv_rank():
@@ -148,28 +157,32 @@ def test_fetch_empty_input_returns_empty_df():
 # --- filter_tradeable ---
 
 
-def test_filter_tradeable_keeps_good_and_ok():
+def test_filter_tradeable_keeps_good_ok_and_no_quotes():
     df = pd.DataFrame(
         [
             {"symbol": "A", "verdict": VERDICT_GOOD, "total_oi": 10000},
             {"symbol": "B", "verdict": VERDICT_OK, "total_oi": 2000},
-            {"symbol": "C", "verdict": VERDICT_ILLIQUID, "total_oi": 500},
-            {"symbol": "D", "verdict": VERDICT_NO_OPTIONS, "total_oi": 0},
+            {"symbol": "C", "verdict": VERDICT_NO_QUOTES, "total_oi": 8000},
+            {"symbol": "D", "verdict": VERDICT_ILLIQUID, "total_oi": 500},
+            {"symbol": "E", "verdict": VERDICT_NO_OPTIONS, "total_oi": 0},
         ]
     )
     result = filter_tradeable(df)
-    assert set(result["symbol"]) == {"A", "B"}
+    assert set(result["symbol"]) == {"A", "B", "C"}
 
 
-def test_filter_tradeable_sorts_good_before_ok():
+def test_filter_tradeable_sorts_good_before_ok_before_no_quotes():
     df = pd.DataFrame(
         [
-            {"symbol": "B", "verdict": VERDICT_OK, "total_oi": 9000},
+            {"symbol": "C", "verdict": VERDICT_NO_QUOTES, "total_oi": 9000},
+            {"symbol": "B", "verdict": VERDICT_OK, "total_oi": 5000},
             {"symbol": "A", "verdict": VERDICT_GOOD, "total_oi": 1000},
         ]
     )
     result = filter_tradeable(df)
     assert result.iloc[0]["symbol"] == "A"
+    assert result.iloc[1]["symbol"] == "B"
+    assert result.iloc[2]["symbol"] == "C"
 
 
 def test_filter_tradeable_empty_input():
