@@ -672,9 +672,9 @@ def render_daily_report(
             "",
             "_Candidatos top com liquidez suficiente para opções (GOOD: OI≥5k, spread≤10%, vol≥200 | OK: OI≥1k, spread≤20%, vol≥50 | NO\\_QUOTES: sem cotação live — rodar após 10:30 BRT)_",
             "",
-            _options_table(tradeable_options_df),
-            "",
         ]
+        lines += _options_by_strategy_blocks(tradeable_options_df)
+        lines += [""]
         next_section += 1
 
     bucket_section = next_section
@@ -707,6 +707,39 @@ def _positions_table(eval_df: pd.DataFrame) -> str:
     ].copy()
     display = display.fillna("—")
     return tabulate(display, headers="keys", tablefmt="github", showindex=False)
+
+
+def _options_by_strategy_blocks(options_df: pd.DataFrame) -> list[str]:
+    """Render Opções Viáveis split into SMC/DUAL and LUX-only sub-sections."""
+    if options_df.empty:
+        return ["_Nenhum candidato com liquidez suficiente para opções._"]
+
+    lines: list[str] = []
+    strategy_col = (
+        options_df.get("strategy") if "strategy" in options_df.columns else None
+    )
+
+    if strategy_col is not None:
+        smc_dual = options_df[options_df["strategy"].isin(["smc", "dual"])].copy()
+        lux_only = options_df[options_df["strategy"] == "lux"].copy()
+    else:
+        smc_dual = pd.DataFrame()
+        lux_only = options_df.copy()
+
+    lines += ["### SMC / DUAL — alta confiança", ""]
+    lines += [
+        _options_table(smc_dual)
+        if not smc_dual.empty
+        else "_Nenhum candidato SMC/DUAL com liquidez suficiente._",
+        "",
+    ]
+    lines += ["### LUX only — confirmar alinhamento", ""]
+    lines += [
+        _options_table(lux_only)
+        if not lux_only.empty
+        else "_Nenhum candidato LUX com liquidez suficiente._",
+    ]
+    return lines
 
 
 def _options_table(options_df: pd.DataFrame) -> str:
