@@ -550,6 +550,7 @@ def render_daily_report(
     smc_min_pf: float = DEFAULT_SMC_MIN_PF,
     options_filter: bool = False,
     portfolio_path: "Path | str | None" = None,
+    smc_recommendations_df: pd.DataFrame | None = None,
 ) -> str:
     if generated_at is None:
         generated_at = datetime.now(UTC)
@@ -625,11 +626,19 @@ def render_daily_report(
 
     top_dfs_by_strategy: list[tuple[str, pd.DataFrame]] = []
     for strat in strategies_to_render:
+        # Use SMC-specific recommendations for SMC and DUAL sections when available
+        strat_recs = (
+            smc_recommendations_df
+            if smc_recommendations_df is not None
+            and strat in (RankingStrategy.smc, RankingStrategy.dual)
+            else recommendations_df
+        )
         selection = build_candidate_selection(
-            fresh_df, recommendations_df, top, max_days, strat
+            fresh_df, strat_recs, top, max_days, strat
         )
         top_dfs_by_strategy.append((strat.value, selection.top_df))
-        header = f"## {next_section}. Top {top} — {strat.value.upper()}"
+        recs_note = " _(recs SMC)_" if strat_recs is smc_recommendations_df else ""
+        header = f"## {next_section}. Top {top} — {strat.value.upper()}{recs_note}"
         lines += [
             header,
             "",
@@ -858,6 +867,7 @@ def write_daily_report(
     *,
     scan_path: str | Path,
     recommendations_path: str | Path | None = None,
+    smc_recommendations_path: str | Path | None = None,
     output_path: str | Path,
     output_candidates: str | Path | None = None,
     archive_dir: str | Path | None = None,
@@ -882,6 +892,12 @@ def write_daily_report(
         if rec_path.exists():
             recommendations_df = pd.read_csv(rec_path)
 
+    smc_recommendations_df: pd.DataFrame | None = None
+    if smc_recommendations_path is not None:
+        smc_rec_path = Path(smc_recommendations_path)
+        if smc_rec_path.exists():
+            smc_recommendations_df = pd.read_csv(smc_rec_path)
+
     report = render_daily_report(
         scan_df,
         recommendations_df,
@@ -892,6 +908,7 @@ def write_daily_report(
         smc_min_pf=smc_min_pf,
         options_filter=options_filter,
         portfolio_path=portfolio_path,
+        smc_recommendations_df=smc_recommendations_df,
     )
 
     output = Path(output_path)
@@ -979,6 +996,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--recommendations",
         default=None,
         help="execution_recommended_rules.csv (optional)",
+    )
+    parser.add_argument(
+        "--recommendations-smc",
+        default=None,
+        help="execution_recommended_rules_smc.csv — SMC-specific exit rules (optional)",
     )
     parser.add_argument("--max-days", type=int, default=DEFAULT_MAX_DAYS)
     parser.add_argument("--top", type=int, default=DEFAULT_TOP)
@@ -1070,6 +1092,7 @@ def main(argv: list[str] | None = None) -> int:
     write_daily_report(
         scan_path=args.scan,
         recommendations_path=args.recommendations,
+        smc_recommendations_path=args.recommendations_smc,
         output_path=args.output,
         output_candidates=args.output_candidates,
         archive_dir=args.archive_dir,

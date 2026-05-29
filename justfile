@@ -134,6 +134,7 @@ scan-daily universe="data/scanner_universe_filtered.csv" data_dir="data/stocks/1
 # strategy: all | lux | smc | dual (default: all)
 daily-report scan="reports/market_scanner/scan_daily.csv" \
              recommendations="reports/market_scanner/execution_recommended_rules.csv" \
+             recommendations_smc="" \
              max_days="2" top="20" strategy="all" \
              smc_watchlist_days="10" smc_min_pf="5.0" \
              options_filter="false" \
@@ -142,6 +143,7 @@ daily-report scan="reports/market_scanner/scan_daily.csv" \
     uv run python -m market_scanner.daily_report \
       --scan {{scan}} \
       --recommendations {{recommendations}} \
+      {{ if recommendations_smc != "" { "--recommendations-smc " + recommendations_smc } else { "" } }} \
       --max-days {{max_days}} \
       --top {{top}} \
       --strategy {{strategy}} \
@@ -204,6 +206,7 @@ daily universe="data/scanner_universe_filtered.csv" \
     uv run python -m market_scanner.daily_report \
       --scan reports/market_scanner/scan_daily.csv \
       --recommendations reports/market_scanner/execution_recommended_rules.csv \
+      $([ -f reports/market_scanner/execution_recommended_rules_smc.csv ] && echo "--recommendations-smc reports/market_scanner/execution_recommended_rules_smc.csv" || true) \
       --max-days {{max_days}} \
       --top {{top}} \
       --smc-watchlist-days {{smc_watchlist_days}} \
@@ -225,6 +228,7 @@ weekly universe="data/scanner_universe_filtered.csv" \
       --data-dir {{data_dir}} \
       --ranking-mode recent-event \
       --exit-rule {{exit_rule}} \
+      --strategy all \
       --min-trades {{min_trades}} \
       --min-price 5 \
       --workers {{workers}} \
@@ -236,6 +240,29 @@ weekly universe="data/scanner_universe_filtered.csv" \
       --output-worst-trades reports/market_scanner/execution_worst_trades.csv \
       --output-time-windows reports/market_scanner/execution_time_windows.csv
     @echo "✓ execution_recommended_rules.csv atualizado"
+
+# Regenera execution_recommended_rules_smc.csv — exit rules otimizados apenas para entradas SMC/DUAL
+weekly-smc universe="data/scanner_universe_filtered.csv" \
+            data_dir="data/stocks/1D" \
+            min_trades="10" \
+            workers="8":
+    uv run python -m market_scanner.backtest_execution \
+      --universe-file {{universe}} \
+      --data-dir {{data_dir}} \
+      --ranking-mode recent-event \
+      --exit-rule all \
+      --strategy smc \
+      --min-trades {{min_trades}} \
+      --min-price 5 \
+      --workers {{workers}} \
+      --output-trades reports/market_scanner/execution_trades_smc.csv \
+      --output-summary reports/market_scanner/execution_summary_smc.csv \
+      --output-comparison reports/market_scanner/execution_rule_comparison_smc.csv \
+      --output-symbol-comparison reports/market_scanner/execution_symbol_comparison_smc.csv \
+      --output-recommendations reports/market_scanner/execution_recommended_rules_smc.csv \
+      --output-worst-trades reports/market_scanner/execution_worst_trades_smc.csv \
+      --output-time-windows reports/market_scanner/execution_time_windows_smc.csv
+    @echo "✓ execution_recommended_rules_smc.csv atualizado"
 
 
 # ── Backtest ──────────────────────────────────────────────────────────────────

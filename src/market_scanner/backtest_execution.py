@@ -385,14 +385,23 @@ def backtest_execution_universe(
                 )
 
     trades_df = pd.DataFrame(trade_records)
+
+    # When a strategy filter is active, summarise only those entries so that
+    # recommendations reflect the best exit rules for that specific signal source.
+    analysis_records = (
+        _filter_records_by_strategy(trade_records, strategy_filter)
+        if strategy_filter != "all"
+        else trade_records
+    )
+
     summary_df = pd.DataFrame(
         summarize_trade_records(
-            trade_records, max_return_cap=max_return_cap, max_loss=max_loss
+            analysis_records, max_return_cap=max_return_cap, max_loss=max_loss
         )
     )
     comparison_df = pd.DataFrame(
         summarize_execution_rules(
-            trade_records,
+            analysis_records,
             min_trades=min_trades,
             max_return_cap=max_return_cap,
             max_loss=max_loss,
@@ -401,7 +410,7 @@ def backtest_execution_universe(
     )
     symbol_comparison_df = pd.DataFrame(
         summarize_symbol_trade_records(
-            trade_records, max_return_cap=max_return_cap, max_loss=max_loss
+            analysis_records, max_return_cap=max_return_cap, max_loss=max_loss
         ),
         columns=SYMBOL_COMPARISON_COLUMNS,
     )
@@ -410,10 +419,6 @@ def backtest_execution_universe(
         symbol_comparison_df=symbol_comparison_df,
         min_trades=min_trades,
     )
-
-    if strategy_filter != "all":
-        comparison_df = _filter_df_by_strategy(comparison_df, strategy_filter)
-        recommendations_df = _filter_df_by_strategy(recommendations_df, strategy_filter)
 
     worst_trades_df = build_worst_trades_report(trades_df)
     write_csv_report(trades_df, output_trades)
@@ -1258,6 +1263,18 @@ def _require_column(df: pd.DataFrame, name: str) -> str:
     if name not in lowered:
         raise ValueError(f"DataFrame must contain a '{name}' column")
     return lowered[name]
+
+
+def _filter_records_by_strategy(
+    records: list[dict], strategy_filter: str
+) -> list[dict]:
+    """Filter trade records to those matching strategy_filter.
+
+    'dual' entries qualify for both 'lux' and 'smc' filters.
+    """
+    if strategy_filter == "dual":
+        return [r for r in records if r.get("strategy") == "dual"]
+    return [r for r in records if r.get("strategy") in (strategy_filter, "dual")]
 
 
 def _filter_df_by_strategy(df: pd.DataFrame, strategy_filter: str) -> pd.DataFrame:
