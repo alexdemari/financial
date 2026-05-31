@@ -401,6 +401,9 @@ def _filter_qualified_recommendations(
             qualified["strategy"].eq(strategy_val)
             | qualified["strategy"].eq("dual")
             | qualified["strategy"].isna()
+            | qualified["strategy"].eq(
+                "none"
+            )  # symbol-level summaries lose strategy tag
         ]
     return qualified
 
