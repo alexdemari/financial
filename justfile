@@ -194,7 +194,8 @@ daily universe="data/scanner_universe_filtered.csv" \
       top="20" \
       workers="8" \
       smc_watchlist_days="10" \
-      smc_min_pf="5.0":
+      smc_min_pf="5.0" \
+      portfolio="options_tracker.csv":
     uv run python -m stock_data_manager.main \
       -f {{universe}} -d {{data_dir}}
     uv run python -m market_scanner.scan \
@@ -207,6 +208,7 @@ daily universe="data/scanner_universe_filtered.csv" \
       --scan reports/market_scanner/scan_daily.csv \
       --recommendations reports/market_scanner/execution_recommended_rules.csv \
       $([ -f reports/market_scanner/execution_recommended_rules_smc.csv ] && echo "--recommendations-smc reports/market_scanner/execution_recommended_rules_smc.csv" || true) \
+      $([ -f {{portfolio}} ] && echo "--portfolio-path {{portfolio}}" || true) \
       --max-days {{max_days}} \
       --top {{top}} \
       --smc-watchlist-days {{smc_watchlist_days}} \

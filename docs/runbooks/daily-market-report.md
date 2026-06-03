@@ -27,8 +27,9 @@ is visible as a column in each ranking table.
 ## Quick Commands
 
 ```bash
-# Full morning routine (data + scan + report)
-just daily
+# Full morning routine (data + scan + report + posições abertas)
+just daily                          # inclui options_tracker.csv por padrão
+just daily portfolio=""             # sem seção de posições
 
 # Scanner + report only (skip data download)
 PYTHONPATH=src uv run python -m market_scanner.scan \
@@ -55,7 +56,7 @@ PYTHONPATH=src uv run python -m market_scanner.daily_report \
   --options-filter \
   --output reports/market_scanner/daily_report.md
 
-# With open positions exit signals
+# With open positions exit signals (já incluído por padrão em `just daily`)
 just daily-report portfolio_path=options_tracker.csv
 # or directly:
 PYTHONPATH=src uv run python -m market_scanner.daily_report \
