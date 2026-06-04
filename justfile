@@ -153,6 +153,21 @@ daily-report scan="reports/market_scanner/scan_daily.csv" \
       {{ if portfolio_path != "" { "--portfolio-path " + portfolio_path } else { "" } }} \
       --output {{output}}
 
+# Regenera só o report a partir do scan existente (sem baixar dados nem rodar scan)
+# Inclui portfolio por padrão. Usar quando só precisa atualizar o relatório.
+report:
+    PYTHONPATH=src uv run python -m market_scanner.daily_report \
+      --scan reports/market_scanner/scan_daily.csv \
+      --recommendations reports/market_scanner/execution_recommended_rules.csv \
+      $([ -f reports/market_scanner/execution_recommended_rules_smc.csv ] && echo "--recommendations-smc reports/market_scanner/execution_recommended_rules_smc.csv" || true) \
+      $([ -f options_tracker.csv ] && echo "--portfolio-path options_tracker.csv" || true) \
+      --max-days 2 --top 20 --strategy all \
+      --smc-watchlist-days 10 --smc-min-pf 5.0 \
+      --output reports/market_scanner/daily_report.md \
+      --output-candidates reports/market_scanner/daily_candidates.csv \
+      --archive-dir reports/market_scanner/daily
+    @echo "✓ Report: reports/market_scanner/daily_report.md"
+
 # Show exit signals for open options positions
 # dte_exit_days: EXIT when DTE ≤ this (default 7)
 # dte_watch_days: WATCH when DTE ≤ this (default 14)
