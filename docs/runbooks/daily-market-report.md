@@ -27,10 +27,14 @@ is visible as a column in each ranking table.
 ## Quick Commands
 
 ```bash
-# Full morning routine (data + scan + report + posições abertas)
+# Rotina completa recomendada (dados + scan + report + LLM + posições abertas)
+just daily && just daily-report-llm
+
+# Sem LLM (mais rápido)
 just daily                          # inclui options_tracker.csv por padrão
 just daily portfolio=""             # sem seção de posições
 
+# ⚠️  NÃO rodar `just daily-report` depois de `just daily` — sobrescreve sem portfolio
 # Scanner + report only (skip data download)
 PYTHONPATH=src uv run python -m market_scanner.scan \
   --universe-file data/scanner_universe_filtered.csv \

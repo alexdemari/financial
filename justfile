@@ -167,10 +167,13 @@ positions portfolio="options_tracker.csv" scan="reports/market_scanner/scan_dail
 
 # Daily report + LLM explanation (requires ANTHROPIC_API_KEY or OPENAI_API_KEY)
 # provider: anthropic | openai | local  model: optional override  top_n: candidates to explain
-daily-report-llm provider="anthropic" model="" top_n="" format="markdown":
+daily-report-llm provider="anthropic" model="" top_n="" format="markdown" \
+                 portfolio="options_tracker.csv":
     uv run python -m market_scanner.daily_report \
       --scan reports/market_scanner/scan_daily.csv \
       --recommendations reports/market_scanner/execution_recommended_rules.csv \
+      $([ -f reports/market_scanner/execution_recommended_rules_smc.csv ] && echo "--recommendations-smc reports/market_scanner/execution_recommended_rules_smc.csv" || true) \
+      $([ -f {{portfolio}} ] && echo "--portfolio-path {{portfolio}}" || true) \
       --max-days 2 --top 20 --strategy all \
       --smc-watchlist-days 10 --smc-min-pf 5.0 \
       --output reports/market_scanner/daily_report.md \
