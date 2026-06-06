@@ -1,0 +1,179 @@
+# Calendário macro US — atualizar mensalmente
+# impact: high | medium | low
+# Fonte: Fed (fomc.htm), BLS (cpi/nfp), BEA (pce/gdp)
+
+events:
+  # ── Junho 2026 ────────────────────────────────────────────────────
+  - date: 2026-06-05
+    event: "Non-Farm Payroll (Mai/26)"
+    impact: high
+
+  - date: 2026-06-11
+    event: "CPI (Mai/26)"
+    impact: high
+
+  - date: 2026-06-12
+    event: "PPI (Mai/26)"
+    impact: medium
+
+  - date: 2026-06-17
+    event: "FOMC Meeting (início)"
+    impact: high
+
+  - date: 2026-06-18
+    event: "FOMC Decision + Conferência Powell"
+    impact: high
+
+  - date: 2026-06-25
+    event: "PCE (Mai/26)"
+    impact: high
+
+  - date: 2026-06-26
+    event: "Retail Sales (Mai/26)"
+    impact: medium
+
+  # ── Julho 2026 ────────────────────────────────────────────────────
+  - date: 2026-07-02
+    event: "Non-Farm Payroll (Jun/26)"
+    impact: high
+
+  - date: 2026-07-10
+    event: "CPI (Jun/26)"
+    impact: high
+
+  - date: 2026-07-11
+    event: "PPI (Jun/26)"
+    impact: medium
+
+  - date: 2026-07-17
+    event: "Retail Sales (Jun/26)"
+    impact: medium
+
+  - date: 2026-07-25
+    event: "PCE (Jun/26)"
+    impact: high
+
+  - date: 2026-07-29
+    event: "FOMC Meeting (início)"
+    impact: high
+
+  - date: 2026-07-30
+    event: "FOMC Decision + Conferência Powell"
+    impact: high
+
+  # ── Agosto 2026 ───────────────────────────────────────────────────
+  - date: 2026-08-07
+    event: "Non-Farm Payroll (Jul/26)"
+    impact: high
+
+  - date: 2026-08-13
+    event: "CPI (Jul/26)"
+    impact: high
+
+  - date: 2026-08-14
+    event: "PPI (Jul/26)"
+    impact: medium
+
+  - date: 2026-08-27
+    event: "Jackson Hole Symposium (início)"
+    impact: high
+
+  - date: 2026-08-28
+    event: "Discurso Powell — Jackson Hole"
+    impact: high
+
+  - date: 2026-08-28
+    event: "PCE (Jul/26)"
+    impact: high
+
+  # ── Setembro 2026 ─────────────────────────────────────────────────
+  - date: 2026-09-04
+    event: "Non-Farm Payroll (Ago/26)"
+    impact: high
+
+  - date: 2026-09-11
+    event: "CPI (Ago/26)"
+    impact: high
+
+  - date: 2026-09-12
+    event: "PPI (Ago/26)"
+    impact: medium
+
+  - date: 2026-09-16
+    event: "FOMC Meeting (início)"
+    impact: high
+
+  - date: 2026-09-17
+    event: "FOMC Decision + Conferência Powell"
+    impact: high
+
+  - date: 2026-09-25
+    event: "PCE (Ago/26)"
+    impact: high
+
+  # ── Outubro 2026 ──────────────────────────────────────────────────
+  - date: 2026-10-02
+    event: "Non-Farm Payroll (Set/26)"
+    impact: high
+
+  - date: 2026-10-09
+    event: "CPI (Set/26)"
+    impact: high
+
+  - date: 2026-10-10
+    event: "PPI (Set/26)"
+    impact: medium
+
+  - date: 2026-10-28
+    event: "FOMC Meeting (início)"
+    impact: high
+
+  - date: 2026-10-29
+    event: "FOMC Decision + Conferência Powell"
+    impact: high
+
+  - date: 2026-10-30
+    event: "PCE (Set/26)"
+    impact: high
+
+  # ── Novembro 2026 ─────────────────────────────────────────────────
+  - date: 2026-11-06
+    event: "Non-Farm Payroll (Out/26)"
+    impact: high
+
+  - date: 2026-11-12
+    event: "CPI (Out/26)"
+    impact: high
+
+  - date: 2026-11-13
+    event: "PPI (Out/26)"
+    impact: medium
+
+  - date: 2026-11-25
+    event: "PCE (Out/26)"
+    impact: high
+
+  # ── Dezembro 2026 ─────────────────────────────────────────────────
+  - date: 2026-12-04
+    event: "Non-Farm Payroll (Nov/26)"
+    impact: high
+
+  - date: 2026-12-10
+    event: "CPI (Nov/26)"
+    impact: high
+
+  - date: 2026-12-11
+    event: "PPI (Nov/26)"
+    impact: medium
+
+  - date: 2026-12-15
+    event: "FOMC Meeting (início)"
+    impact: high
+
+  - date: 2026-12-16
+    event: "FOMC Decision + Conferência Powell"
+    impact: high
+
+  - date: 2026-12-23
+    event: "PCE (Nov/26)"
+    impact: high

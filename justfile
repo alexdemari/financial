@@ -161,6 +161,7 @@ report:
       --recommendations reports/market_scanner/execution_recommended_rules.csv \
       $([ -f reports/market_scanner/execution_recommended_rules_smc.csv ] && echo "--recommendations-smc reports/market_scanner/execution_recommended_rules_smc.csv" || true) \
       $([ -f options_tracker.csv ] && echo "--portfolio-path options_tracker.csv" || true) \
+      $([ -f config/macro_calendar.yaml ] && echo "--macro-calendar config/macro_calendar.yaml" || true) \
       --max-days 2 --top 20 --strategy all \
       --smc-watchlist-days 10 --smc-min-pf 5.0 \
       --output reports/market_scanner/daily_report.md \
@@ -189,6 +190,7 @@ daily-report-llm provider="anthropic" model="" top_n="" format="markdown" \
       --recommendations reports/market_scanner/execution_recommended_rules.csv \
       $([ -f reports/market_scanner/execution_recommended_rules_smc.csv ] && echo "--recommendations-smc reports/market_scanner/execution_recommended_rules_smc.csv" || true) \
       $([ -f {{portfolio}} ] && echo "--portfolio-path {{portfolio}}" || true) \
+      $([ -f config/macro_calendar.yaml ] && echo "--macro-calendar config/macro_calendar.yaml" || true) \
       --max-days 2 --top 20 --strategy all \
       --smc-watchlist-days 10 --smc-min-pf 5.0 \
       --output reports/market_scanner/daily_report.md \
@@ -227,6 +229,7 @@ daily universe="data/scanner_universe_filtered.csv" \
       --recommendations reports/market_scanner/execution_recommended_rules.csv \
       $([ -f reports/market_scanner/execution_recommended_rules_smc.csv ] && echo "--recommendations-smc reports/market_scanner/execution_recommended_rules_smc.csv" || true) \
       $([ -f {{portfolio}} ] && echo "--portfolio-path {{portfolio}}" || true) \
+      $([ -f config/macro_calendar.yaml ] && echo "--macro-calendar config/macro_calendar.yaml" || true) \
       --max-days {{max_days}} \
       --top {{top}} \
       --smc-watchlist-days {{smc_watchlist_days}} \

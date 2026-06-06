@@ -554,6 +554,8 @@ def render_daily_report(
     options_filter: bool = False,
     portfolio_path: "Path | str | None" = None,
     smc_recommendations_df: pd.DataFrame | None = None,
+    macro_calendar_path: "Path | str | None" = None,
+    macro_days_ahead: int = 14,
 ) -> str:
     if generated_at is None:
         generated_at = datetime.now(UTC)
@@ -604,6 +606,20 @@ def render_daily_report(
             f"_{n_positions} posição(ões) aberta(s) — avaliadas contra scan de hoje_",
             "",
             _positions_table(positions_eval_df),
+            "",
+        ]
+        next_section += 1
+
+    if macro_calendar_path is not None:
+        macro_content = _macro_table(
+            macro_calendar_path,
+            days_ahead=macro_days_ahead,
+            reference_date=generated_at.date(),
+        )
+        lines += [
+            f"## {next_section}. Eventos Macro (próximos {macro_days_ahead} dias)",
+            "",
+            macro_content,
             "",
         ]
         next_section += 1
@@ -852,6 +868,26 @@ def _bucket_table(bucket_df: pd.DataFrame) -> str:
     return tabulate(bucket_df, headers="keys", tablefmt="github", showindex=False)
 
 
+def _macro_table(path: "Path | str", days_ahead: int, reference_date=None) -> str:
+    from market_scanner.macro_calendar import upcoming_events
+
+    events = upcoming_events(path, days_ahead=days_ahead, reference_date=reference_date)
+    if not events:
+        return "_Nenhum evento macro nos próximos dias._"
+    rows = [
+        {
+            "Data": e.date.strftime("%Y-%m-%d"),
+            "Dia": e.weekday_pt,
+            "Evento": e.event,
+            "Impacto": e.impact_label,
+        }
+        for e in events
+    ]
+    return tabulate(
+        pd.DataFrame(rows), headers="keys", tablefmt="github", showindex=False
+    )
+
+
 def _format_percent(value) -> str:
     converted = pd.to_numeric(value, errors="coerce")
     if pd.isna(converted):
@@ -881,6 +917,8 @@ def write_daily_report(
     smc_min_pf: float = DEFAULT_SMC_MIN_PF,
     options_filter: bool = False,
     portfolio_path: str | Path | None = None,
+    macro_calendar_path: str | Path | None = None,
+    macro_days_ahead: int = 14,
     llm_explain: bool = False,
     llm_provider: str = DEFAULT_LLM_PROVIDER,
     llm_model: str | None = None,
@@ -912,6 +950,8 @@ def write_daily_report(
         options_filter=options_filter,
         portfolio_path=portfolio_path,
         smc_recommendations_df=smc_recommendations_df,
+        macro_calendar_path=macro_calendar_path,
+        macro_days_ahead=macro_days_ahead,
     )
 
     output = Path(output_path)
@@ -1051,6 +1091,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to options_tracker.csv for open positions section (optional)",
     )
     parser.add_argument(
+        "--macro-calendar",
+        default=None,
+        dest="macro_calendar",
+        help="Path to macro_calendar.yaml for upcoming events section (default: off)",
+    )
+    parser.add_argument(
+        "--macro-days",
+        type=int,
+        default=14,
+        dest="macro_days",
+        help="Days ahead window for macro events (default: 14)",
+    )
+    parser.add_argument(
         "--llm-explain",
         action="store_true",
         default=False,
@@ -1106,6 +1159,8 @@ def main(argv: list[str] | None = None) -> int:
         smc_min_pf=args.smc_min_pf,
         options_filter=args.options_filter,
         portfolio_path=args.portfolio_path,
+        macro_calendar_path=args.macro_calendar,
+        macro_days_ahead=args.macro_days,
         llm_explain=args.llm_explain,
         llm_provider=args.llm_provider,
         llm_model=args.llm_model,
