@@ -108,6 +108,39 @@ download-all-us interval="1d" base_dir=justfile_directory():
 analyzer symbol="AAPL" model="lux":
     uv run python -m stock_analyzer.main -s {{symbol}} --model {{model}}
 
+# Roda analise completa de dividendos (atualiza dados + gera relatorio)
+dividends budget="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    tickers=$(PYTHONPATH=src uv run python -c "import yaml; c = yaml.safe_load(open('config/dividend_portfolio.yaml')); tickers = [a['ticker'] + '.SA' for a in c.get('br_assets', [])] + [a['ticker'] for a in c.get('us_assets', [])]; print(' '.join(tickers))")
+    echo "Atualizando dados: ${tickers}"
+    PYTHONPATH=src uv run python -m stock_data_manager.main -s ${tickers}
+    echo "Gerando relatorio de dividendos..."
+    if [ -n "{{budget}}" ]; then
+        PYTHONPATH=src uv run python -m dividend_tracker.main \
+            --budget {{budget}} \
+            --output reports/dividend_tracker/dividend_daily_report.md
+    else
+        PYTHONPATH=src uv run python -m dividend_tracker.main \
+            --output reports/dividend_tracker/dividend_daily_report.md
+    fi
+    echo "Relatorio gerado: reports/dividend_tracker/dividend_daily_report.md"
+
+# Versao rapida sem atualizar dados
+dividends-local budget="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -n "{{budget}}" ]; then
+        PYTHONPATH=src uv run python -m dividend_tracker.main \
+            --local-only \
+            --budget {{budget}} \
+            --output reports/dividend_tracker/dividend_daily_report.md
+    else
+        PYTHONPATH=src uv run python -m dividend_tracker.main \
+            --local-only \
+            --output reports/dividend_tracker/dividend_daily_report.md
+    fi
+
 
 # ── Scanner ───────────────────────────────────────────────────────────────────
 

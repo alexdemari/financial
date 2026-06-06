@@ -43,6 +43,16 @@ Owns multi-symbol orchestration and current scanner decision logic.
 - builds scanner rows
 - applies `market_state`, `adjusted_alignment`, and `action_bucket`
 
+### `dividend_tracker`
+
+Owns local dividend portfolio analysis.
+
+- reads `config/dividend_portfolio.yaml`
+- caches dividend data in `data/dividends/`
+- calculates dividend price ceilings from trailing dividends
+- combines the price ceiling with `stock_analyzer` technical signals
+- writes `reports/dividend_tracker/dividend_daily_report.md`
+
 ### Current Backtest
 
 Owns historical validation of market scanner signals.
@@ -93,6 +103,7 @@ See:
 - [Stock Analyzer](docs/architecture/stock-analyzer.md)
 - [Module Boundaries](docs/architecture/module-boundaries.md)
 - [Market Scanner](docs/architecture/market-scanner.md)
+- [Dividend Tracker](docs/architecture/dividend-tracker.md)
 - [Legacy Options Scanner](docs/architecture/legacy-options-scanner.md)
 
 ---
@@ -148,6 +159,23 @@ PYTHONPATH=src uv run python -m stock_data_manager.main -s AAPL MSFT
 ```bash
 PYTHONPATH=src uv run python -m stock_analyzer.main -s AAPL --model lux --local-only
 PYTHONPATH=src uv run python -m stock_analyzer.main -s AAPL --model smc --local-only
+```
+
+### Dividend Tracker
+
+```bash
+just dividends budget=8000
+just dividends-local budget=8000
+```
+
+Direct CLI:
+
+```bash
+PYTHONPATH=src uv run python -m dividend_tracker.main \
+  --config config/dividend_portfolio.yaml \
+  --data-dir data/stocks \
+  --budget 8000 \
+  --output reports/dividend_tracker/dividend_daily_report.md
 ```
 
 ### Market Scanner

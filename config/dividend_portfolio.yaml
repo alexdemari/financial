@@ -1,0 +1,58 @@
+# Carteira de dividendos - configuracao
+settings:
+  min_dy: 0.06          # Dividend yield minimo para preco teto (6%)
+  dy_source: trailing   # trailing | forward
+  currency_br: BRL
+  currency_us: USD
+
+# Ativos BR - sufixo .SA adicionado automaticamente para yfinance
+br_assets:
+  - ticker: EGIE3
+    sector: Energia
+    name: Engie Brasil Energia
+    target_weight: 0.25
+    technical_model: smc
+
+  - ticker: ITSA4
+    sector: Bancos
+    name: Itausa
+    target_weight: 0.25
+    technical_model: lux
+
+  - ticker: BBSE3
+    sector: Seguros
+    name: BB Seguridade
+    target_weight: 0.20
+    technical_model: smc
+
+  - ticker: VIVT3
+    sector: Telecom
+    name: Telefonica Brasil
+    target_weight: 0.17
+    technical_model: lux
+
+  - ticker: SAPR4
+    sector: Saneamento
+    name: Sanepar
+    target_weight: 0.13
+    technical_model: smc
+
+# Ativos US - via IBKR, analise em USD
+us_assets:
+  - ticker: SCHD
+    sector: ETF Dividendos
+    name: Schwab US Dividend Equity ETF
+    target_weight: 0.50
+    technical_model: lux
+
+  - ticker: DGRO
+    sector: ETF Dividendos
+    name: iShares Core Dividend Growth ETF
+    target_weight: 0.30
+    technical_model: lux
+
+  - ticker: VYM
+    sector: ETF Dividendos
+    name: Vanguard High Dividend Yield ETF
+    target_weight: 0.20
+    technical_model: lux
