@@ -1,3 +1,10 @@
+"""Obsolete exploratory options script.
+
+This module is not part of the active `market_scanner` architecture and is not
+referenced by the current repository flow. It is kept only as historical code
+until the legacy cleanup is finalized.
+"""
+
 import pandas as pd
 import numpy as np
 import glob

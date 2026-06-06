@@ -5,6 +5,7 @@ description = "Python financial tooling for market data, stock analysis, and opt
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "anthropic>=0.102.0",
     "ib-insync>=0.9.86",
     "ibapi>=9.81.1.post1",
     "joblib>=1.5.3",
@@ -23,6 +24,7 @@ dev = [
     "mypy>=1.18.2",
     "pre-commit>=4.5.1",
     "pytest>=8.4.2",
+    "pytest-xdist>=3.8.0",
     "ruff>=0.13.3",
 ]
 

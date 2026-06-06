@@ -6,7 +6,8 @@ It uses:
 
 - `yfinance` for historical market data
 - pandas DataFrames for in-memory processing
-- CSV files for local persistence
+- CSV files for default local persistence
+- optional SQLite persistence for local experiments and repeated reads
 - interface-based components for reader, writer, downloader, and merge behavior
 - `StockDataManager` as the workflow orchestrator
 
@@ -19,7 +20,8 @@ The module is designed for local historical data workflows. It is not a real-tim
 - Perform incremental updates by downloading only missing data.
 - Force full refreshes when requested.
 - Merge existing and newly downloaded data.
-- Persist the final dataset as CSV.
+- Persist the final dataset as CSV by default.
+- Optionally persist the final dataset in a local SQLite database.
 - Support CLI and programmatic usage.
 
 ## Architecture
@@ -27,20 +29,24 @@ The module is designed for local historical data workflows. It is not a real-tim
 ```text
 CLI / Python caller
   -> StockDataManager
-      -> CSVReader
+      -> CSVReader | SQLiteReader
       -> YFinanceDownloader
       -> AppendMergeStrategy | UpdateMergeStrategy
-      -> CSVWriter
+      -> CSVWriter | SQLiteWriter
 ```
 
 Key design choices:
 
 - `StockDataManager` coordinates the workflow.
 - `IDataReader`, `IDataWriter`, `IDataDownloader`, and `IMergeStrategy` isolate responsibilities.
-- `CSVReader` and `CSVWriter` implement local file persistence.
+- `CSVReader` and `CSVWriter` implement the default local file persistence.
+- `SQLiteReader` and `SQLiteWriter` implement opt-in local SQLite persistence.
 - `YFinanceDownloader` fetches data from Yahoo Finance through `yfinance`.
 - `AppendMergeStrategy` and `UpdateMergeStrategy` define merge behavior.
 - `StockDataManagerFactory` wires the default concrete dependencies.
+
+SQLite is currently an opt-in data-manager backend. CSV remains the default and
+canonical workflow for scanner and backtest compatibility.
 
 ## Requirements
 
@@ -159,6 +165,52 @@ Use `--data-dir` to override the output directory:
 PYTHONPATH=src uv run python -m stock_data_manager.main -s AAPL -d ./custom-data
 ```
 
+### Use SQLite Storage
+
+SQLite support is local-first and experimental. It is useful when testing a
+single database file as the data-manager persistence layer, but scanner and
+backtest workflows still read local CSV files unless they are adapted
+separately.
+
+CSV remains the default:
+
+```bash
+PYTHONPATH=src uv run python -m stock_data_manager.main -s AAPL --storage csv
+```
+
+Write and read through SQLite:
+
+```bash
+PYTHONPATH=src uv run python -m stock_data_manager.main \
+  -s AAPL MSFT \
+  --storage sqlite \
+  --db-path data/financial.db
+```
+
+The SQLite backend stores rows in `ohlcv_daily` using `(symbol, date)` as the
+primary key. Re-running the same symbol replaces rows for matching dates rather
+than duplicating them.
+
+### Import Existing CSV Data Into SQLite
+
+Use the importer when you already have CSV files under `data/stocks/1D`:
+
+```bash
+PYTHONPATH=src uv run python -m stock_data_manager.importers.csv_to_sqlite \
+  --data-dir data/stocks/1D \
+  --db-path data/financial.db
+```
+
+Programmatic read:
+
+```python
+from stock_data_manager.repositories.sqlite_repository import SqlitePriceDataRepository
+
+repo = SqlitePriceDataRepository("data/financial.db")
+df = repo.load_symbol("AAPL")
+symbols = repo.list_symbols()
+```
+
 ## Just Commands
 
 The project `justfile` includes helper commands such as:
@@ -216,7 +268,7 @@ The module is designed to be extended through interfaces.
 Possible extensions:
 
 - Add another `IDataDownloader` for a different provider.
-- Add another `IDataReader` and `IDataWriter` for Parquet, SQLite, DuckDB, or another local format.
+- Add another `IDataReader` and `IDataWriter` for Parquet, DuckDB, or another local format.
 - Add another `IMergeStrategy` for stricter merge behavior.
 - Add retry logic around provider failures.
 - Add manager-level interval validation for programmatic usage before calling the downloader.
@@ -226,6 +278,7 @@ Possible extensions:
 - Execution is synchronous and sequential.
 - CSV persistence is not suitable for concurrent writes.
 - The read, merge, and write sequence is not transactional.
+- SQLite persistence is opt-in and not yet the default scanner/backtest input.
 - Failed downloads are logged but not retried automatically.
 - Data freshness depends on manual execution or external scheduling.
 - `yfinance` is not a guaranteed real-time market data source.

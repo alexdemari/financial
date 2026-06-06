@@ -1,4 +1,11 @@
-LOOKBACK_LONG = 200  # tendência primária
+"""Legacy scanner constants.
+
+This module is not part of the active `market_scanner` architecture and is
+currently not referenced by the current repository flow. Keep it only while
+the legacy options scanner still needs it operationally.
+"""
+
+LOOKBACK_LONG = 200  # primary trend
 LOOKBACK_MID = 50
 LOOKBACK_SHORT = 20
 

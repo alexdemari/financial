@@ -181,6 +181,20 @@ Formato do arquivo de símbolos:
         )
 
         parser.add_argument(
+            "--storage",
+            choices=["csv", "sqlite"],
+            default="csv",
+            help="Backend de persistência local (padrão: csv; sqlite é opt-in)",
+        )
+
+        parser.add_argument(
+            "--db-path",
+            type=str,
+            default="data/financial.db",
+            help="Arquivo SQLite quando --storage sqlite é usado",
+        )
+
+        parser.add_argument(
             "-v",
             "--verbose",
             action="store_true",
@@ -240,15 +254,24 @@ Formato do arquivo de símbolos:
             # Cria o gerenciador
             if args.strategy == "update":
                 manager = StockDataManagerFactory.create_with_update_strategy(
-                    data_output_dir
+                    data_output_dir,
+                    storage=args.storage,
+                    db_path=args.db_path,
                 )
             else:
-                manager = StockDataManagerFactory.create_default(data_output_dir)
+                manager = StockDataManagerFactory.create_default(
+                    data_output_dir,
+                    storage=args.storage,
+                    db_path=args.db_path,
+                )
 
             # Baixa os dados
             print(
                 f"\n{'🔄 Modo: Download completo' if args.full else '⚡ Modo: Incremental'}"
             )
+            print(f"💾 Persistência: {args.storage}")
+            if args.storage == "sqlite":
+                print(f"🗄️  SQLite DB: {args.db_path}")
             print(f"📈 Processando {len(symbols)} ativo(s)...\n")
 
             results = manager.download_multiple(

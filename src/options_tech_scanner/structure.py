@@ -1,3 +1,10 @@
+"""Legacy structure helpers.
+
+This module is not part of the active `market_scanner` architecture and is
+currently unreferenced by the current repository flow. Retain it only if the
+legacy options scanner still requires it.
+"""
+
 import numpy as np
 import pandas as pd
 

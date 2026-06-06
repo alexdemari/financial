@@ -1,0 +1,99 @@
+{
+  "model": "sonnet",
+  "permissions": {
+    "allow": [
+      "Bash(uv run pytest*)",
+      "Bash(uv run ruff*)",
+      "Bash(uv run python*)",
+      "Bash(uv run mypy*)",
+      "Bash(uv sync*)",
+      "Bash(uv lock*)",
+      "Bash(just*)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git push*)",
+      "Bash(git fetch*)",
+      "Bash(git pull --rebase*)",
+      "Bash(git branch*)",
+      "Bash(git checkout*)",
+      "Bash(git restore*)",
+      "Bash(git stash*)",
+      "Bash(git worktree*)",
+      "Bash(ls*)",
+      "Bash(cat*)",
+      "Bash(rg*)",
+      "Bash(grep*)",
+      "Bash(find*)",
+      "Bash(head*)",
+      "Bash(tail*)",
+      "Bash(wc*)",
+      "Bash(diff*)",
+      "Bash(jq*)",
+      "Bash(mkdir*)",
+      "Bash(cp*)",
+      "Bash(mv*)",
+      "Read",
+      "Edit",
+      "Write",
+      "Grep",
+      "Glob"
+    ],
+    "deny": [
+      "Bash(rm -rf /*)",
+      "Bash(sudo*)",
+      "Bash(curl*| sh*)",
+      "Bash(wget*| sh*)",
+      "Bash(git push * main*)",
+      "Bash(git push * master*)",
+      "Bash(git push --force*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'for f in $CLAUDE_FILE_PATHS; do case \"$f\" in *.py) uv run ruff check --fix \"$f\" 2>&1 | tail -20 ;; esac; done'"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/block_dangerous.py"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/session_summary.py"
+          },
+          {
+            "type": "command",
+            "command": "bash -c 'echo \"--- session stop: /compact if context > 100k, /clear if switching tasks ---\"'"
+          }
+
+        ]
+      }
+    ]
+  },
+  "env": {
+    "CLAUDE_PROJECT_BACKTEST": "1",
+    "PYTHONDONTWRITEBYTECODE": "1"
+  }
+}

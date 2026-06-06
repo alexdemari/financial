@@ -33,8 +33,10 @@ def test_cli_uses_custom_data_dir_for_default_strategy(monkeypatch, tmp_path):
     manager = FakeManager()
     factory_calls = []
 
-    def create_default(data_dir):
-        factory_calls.append(data_dir)
+    def create_default(data_dir, storage="csv", db_path="data/financial.db"):
+        factory_calls.append(
+            {"data_dir": data_dir, "storage": storage, "db_path": db_path}
+        )
         return manager
 
     monkeypatch.setattr(
@@ -45,7 +47,9 @@ def test_cli_uses_custom_data_dir_for_default_strategy(monkeypatch, tmp_path):
     exit_code = CLI().run(["-s", "AAPL", "-d", str(tmp_path), "-i", "1d"])
 
     assert exit_code == 0
-    assert factory_calls == [str(tmp_path)]
+    assert factory_calls == [
+        {"data_dir": str(tmp_path), "storage": "csv", "db_path": "data/financial.db"}
+    ]
     assert manager.calls == [
         {"symbols": ["AAPL"], "force_full": False, "interval": "1d"}
     ]
@@ -55,8 +59,10 @@ def test_cli_uses_interval_based_default_data_dir(monkeypatch):
     manager = FakeManager()
     factory_calls = []
 
-    def create_default(data_dir):
-        factory_calls.append(data_dir)
+    def create_default(data_dir, storage="csv", db_path="data/financial.db"):
+        factory_calls.append(
+            {"data_dir": data_dir, "storage": storage, "db_path": db_path}
+        )
         return manager
 
     monkeypatch.setattr(
@@ -67,7 +73,13 @@ def test_cli_uses_interval_based_default_data_dir(monkeypatch):
     exit_code = CLI().run(["-s", "AAPL", "-i", "1w"])
 
     assert exit_code == 0
-    assert factory_calls == [f"{PROJECT_ROOT}/data/stocks/1W"]
+    assert factory_calls == [
+        {
+            "data_dir": f"{PROJECT_ROOT}/data/stocks/1W",
+            "storage": "csv",
+            "db_path": "data/financial.db",
+        }
+    ]
     assert manager.calls == [
         {"symbols": ["AAPL"], "force_full": False, "interval": "1w"}
     ]
@@ -77,8 +89,12 @@ def test_cli_uses_custom_data_dir_for_update_strategy(monkeypatch, tmp_path):
     manager = FakeManager()
     factory_calls = []
 
-    def create_with_update_strategy(data_dir):
-        factory_calls.append(data_dir)
+    def create_with_update_strategy(
+        data_dir, storage="csv", db_path="data/financial.db"
+    ):
+        factory_calls.append(
+            {"data_dir": data_dir, "storage": storage, "db_path": db_path}
+        )
         return manager
 
     monkeypatch.setattr(
@@ -91,7 +107,9 @@ def test_cli_uses_custom_data_dir_for_update_strategy(monkeypatch, tmp_path):
     )
 
     assert exit_code == 0
-    assert factory_calls == [str(tmp_path)]
+    assert factory_calls == [
+        {"data_dir": str(tmp_path), "storage": "csv", "db_path": "data/financial.db"}
+    ]
     assert manager.calls == [
         {"symbols": ["AAPL"], "force_full": False, "interval": "1w"}
     ]
@@ -104,6 +122,45 @@ def test_cli_rejects_unsupported_interval():
         assert exc.code == 2
     else:
         raise AssertionError("Expected unsupported interval to exit with code 2")
+
+
+def test_cli_passes_sqlite_storage_options(monkeypatch, tmp_path):
+    manager = FakeManager()
+    factory_calls = []
+    db_path = tmp_path / "financial.db"
+
+    def create_default(data_dir, storage="csv", db_path="data/financial.db"):
+        factory_calls.append(
+            {"data_dir": data_dir, "storage": storage, "db_path": db_path}
+        )
+        return manager
+
+    monkeypatch.setattr(
+        "stock_data_manager.cli.StockDataManagerFactory.create_default",
+        create_default,
+    )
+
+    exit_code = CLI().run(
+        [
+            "-s",
+            "AAPL",
+            "-d",
+            str(tmp_path),
+            "--storage",
+            "sqlite",
+            "--db-path",
+            str(db_path),
+        ]
+    )
+
+    assert exit_code == 0
+    assert factory_calls == [
+        {
+            "data_dir": str(tmp_path),
+            "storage": "sqlite",
+            "db_path": str(db_path),
+        }
+    ]
 
 
 def test_symbols_loader_reads_text_file(tmp_path):
