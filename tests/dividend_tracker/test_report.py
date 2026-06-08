@@ -58,3 +58,72 @@ def test_render_dividend_report_includes_recent_distributions_and_budget():
     assert "## Erros de processamento" in report
     assert "- BAD: cache missing" in report
     assert "| EGIE3 | 100.0% | R$8,000.00 | 200 | <= R$40.00 |" in report
+
+
+def test_render_dividend_report_marks_custom_min_dy_and_excludes_zero_weight_budget():
+    pep_asset = DividendAssetConfig(
+        ticker="PEP",
+        sector="Consumer Staples",
+        name="PepsiCo",
+        target_weight=0.0,
+        technical_model="smc",
+        market="US",
+        min_dy=0.038,
+    )
+    schd_asset = DividendAssetConfig(
+        ticker="SCHD",
+        sector="ETF Dividendos",
+        name="Schwab US Dividend Equity ETF",
+        target_weight=1.0,
+        technical_model="lux",
+        market="US",
+    )
+    technical_signal = TechnicalSignalResult(
+        signal="BUY",
+        model="smc",
+        event_type="BUY",
+        days_since_event=0,
+        interpretation="mock",
+    )
+    decisions = [
+        AssetDecision(
+            asset=pep_asset,
+            price_ceiling=PriceCeilingResult(
+                ticker="PEP",
+                price_ceiling=155.79,
+                current_dy=0.0421,
+                trailing_annual_dividends=5.92,
+                current_price=140.68,
+                margin_pct=0.1074,
+                min_dy=0.038,
+            ),
+            technical_signal=technical_signal,
+            decision="BUY",
+            description="Comprar agora",
+        ),
+        AssetDecision(
+            asset=schd_asset,
+            price_ceiling=PriceCeilingResult(
+                ticker="SCHD",
+                price_ceiling=26.13,
+                current_dy=0.0344,
+                trailing_annual_dividends=1.57,
+                current_price=28.50,
+                margin_pct=-0.083,
+                min_dy=0.06,
+            ),
+            technical_signal=technical_signal,
+            decision="BUY",
+            description="Comprar agora",
+        ),
+    ]
+
+    report = render_dividend_report(decisions, budget=1000.0)
+    budget_section = report.split("## Guia de Aporte", maxsplit=1)[1]
+
+    assert (
+        "| PEP | Consumer Staples | US$140.68 | US$155.79 | 4.2% | 3.8% * |" in report
+    )
+    assert "*: min_dy customizado por ativo (PEP)." in report
+    assert "PEP" not in budget_section
+    assert "| SCHD | 100.0% | US$1,000.00 | 35 | <= US$28.50 |" in budget_section

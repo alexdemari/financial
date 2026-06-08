@@ -34,6 +34,14 @@ def render_dividend_report(
     lines.extend(_render_asset_table(decisions, market="BR", currency="BRL"))
     lines.extend(["", "## Ativos US", ""])
     lines.extend(_render_asset_table(decisions, market="US", currency="USD"))
+    custom_min_dy_tickers = [
+        decision.asset.ticker
+        for decision in decisions
+        if decision.asset.min_dy is not None
+    ]
+    if custom_min_dy_tickers:
+        joined_tickers = ", ".join(custom_min_dy_tickers)
+        lines.extend(["", f"*: min_dy customizado por ativo ({joined_tickers})."])
     lines.extend(["", "## Detalhes por ativo", ""])
     lines.extend(_render_details(decisions))
 
@@ -73,18 +81,19 @@ def _render_asset_table(
     currency: str,
 ) -> list[str]:
     rows = [
-        "| Ticker | Setor | Preco Atual | Preco Teto | DY Atual | Margem | Sinal Tecnico | Decisao |",
-        "|---|---|---:|---:|---:|---:|---|---|",
+        "| Ticker | Setor | Preco Atual | Preco Teto | DY Atual | min_dy | Margem | Sinal Tecnico | Decisao |",
+        "|---|---|---:|---:|---:|---:|---:|---|---|",
     ]
     market_decisions = [
         decision for decision in decisions if decision.asset.market == market
     ]
     if not market_decisions:
-        rows.append("| - | - | - | - | - | - | - | - |")
+        rows.append("| - | - | - | - | - | - | - | - | - |")
         return rows
 
     for decision in market_decisions:
         ceiling = decision.price_ceiling
+        min_dy_marker = " *" if decision.asset.min_dy is not None else ""
         rows.append(
             "| "
             f"{decision.asset.ticker} | "
@@ -92,6 +101,7 @@ def _render_asset_table(
             f"{format_money(ceiling.current_price, currency)} | "
             f"{format_money(ceiling.price_ceiling, currency)} | "
             f"{format_percent(ceiling.current_dy)} | "
+            f"{format_percent(ceiling.min_dy)}{min_dy_marker} | "
             f"{format_percent(ceiling.margin_pct, signed=True)} | "
             f"{decision.technical_signal.signal} | "
             f"**{decision.decision}** |"
@@ -130,7 +140,9 @@ def _render_details(decisions: list[AssetDecision]) -> list[str]:
 
 def _render_budget_table(decisions: list[AssetDecision], budget: float) -> list[str]:
     eligible = [
-        decision for decision in decisions if decision.decision in {"BUY", "WATCH"}
+        decision
+        for decision in decisions
+        if decision.decision in {"BUY", "WATCH"} and decision.asset.target_weight > 0
     ]
     if not eligible:
         return ["Nenhum ativo elegivel para aporte."]

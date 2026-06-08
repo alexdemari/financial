@@ -24,6 +24,7 @@ def test_calculate_price_ceiling_from_ttm_dividends():
 
     assert result.price_ceiling == 50.0
     assert result.current_dy == 0.075
+    assert result.min_dy == 0.06
     assert result.margin_pct == 0.25
     assert result.is_below_or_equal_ceiling is True
 

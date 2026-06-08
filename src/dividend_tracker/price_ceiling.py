@@ -15,6 +15,7 @@ class PriceCeilingResult:
     trailing_annual_dividends: float
     current_price: float
     margin_pct: float
+    min_dy: float = 0.06
     recent_distributions: tuple[DividendDistribution, ...] = ()
 
     @property
@@ -50,5 +51,6 @@ def calculate_price_ceiling(
         trailing_annual_dividends=data.trailing_annual_dividends,
         current_price=data.current_price,
         margin_pct=margin_pct,
+        min_dy=min_dy,
         recent_distributions=tuple(data.distributions[-4:]),
     )

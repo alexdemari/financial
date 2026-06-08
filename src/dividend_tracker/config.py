@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 
 import yaml
 
@@ -25,6 +25,8 @@ class DividendAssetConfig:
     target_weight: float
     technical_model: TechnicalModel
     market: Literal["BR", "US"]
+    min_dy: Optional[float] = None
+    notes: Optional[str] = None
 
     @property
     def yahoo_ticker(self) -> str:
@@ -42,6 +44,10 @@ class DividendPortfolioConfig:
     @property
     def assets(self) -> list[DividendAssetConfig]:
         return [*self.br_assets, *self.us_assets]
+
+    def resolve_min_dy(self, asset: DividendAssetConfig) -> float:
+        """Return asset min_dy override, falling back to portfolio global."""
+        return asset.min_dy if asset.min_dy is not None else self.settings.min_dy
 
 
 def load_portfolio_config(
@@ -128,6 +134,11 @@ def _parse_asset(
     if target_weight < 0:
         raise ValueError(f"{market} asset at index {index} has negative target_weight")
 
+    min_dy = raw_asset.get("min_dy")
+    resolved_asset_min_dy = float(min_dy) if min_dy is not None else None
+    if resolved_asset_min_dy is not None and resolved_asset_min_dy <= 0:
+        raise ValueError(f"{market} asset at index {index} has non-positive min_dy")
+
     return DividendAssetConfig(
         ticker=str(raw_asset["ticker"]).upper(),
         sector=str(raw_asset["sector"]),
@@ -135,4 +146,6 @@ def _parse_asset(
         target_weight=target_weight,
         technical_model=technical_model,
         market=market,
+        min_dy=resolved_asset_min_dy,
+        notes=str(raw_asset["notes"]) if raw_asset.get("notes") is not None else None,
     )
