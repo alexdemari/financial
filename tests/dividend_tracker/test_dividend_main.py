@@ -19,6 +19,7 @@ us_assets:
     target_weight: 1.0
     technical_model: lux
     min_dy: 0.038
+    ceiling_method: average_6y
   - ticker: BAD
     sector: ETF
     name: Bad ETF
@@ -29,6 +30,7 @@ us_assets:
     )
     used_data_dirs = []
     used_min_dy_values = []
+    used_ceiling_methods = []
 
     def fake_fetch_dividend_data(ticker, br=False, local_only=False):
         if ticker == "BAD":
@@ -37,6 +39,7 @@ us_assets:
 
     def fake_calculate_price_ceiling(ticker, min_dy, **kwargs):
         used_min_dy_values.append(min_dy)
+        used_ceiling_methods.append(kwargs["ceiling_method"])
         return PriceCeilingResult(
             ticker="GOOD",
             price_ceiling=50.0,
@@ -93,6 +96,7 @@ us_assets:
     assert exit_code == 0
     assert used_data_dirs == ["/custom/stocks"]
     assert used_min_dy_values == [0.038]
+    assert used_ceiling_methods == ["average_6y"]
     assert "GOOD" in report
     assert "## Erros de processamento" in report
     assert "- BAD: missing dividend cache" in report

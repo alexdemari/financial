@@ -6,7 +6,8 @@ import yaml
 
 
 TechnicalModel = Literal["lux", "smc", "rsi-sma"]
-DySource = Literal["trailing", "forward"]
+CeilingMethod = Literal["trailing", "average_6y"]
+DySource = Literal["trailing", "forward", "average_6y"]
 
 
 @dataclass(frozen=True)
@@ -26,6 +27,7 @@ class DividendAssetConfig:
     technical_model: TechnicalModel
     market: Literal["BR", "US"]
     min_dy: Optional[float] = None
+    ceiling_method: Optional[CeilingMethod] = None
     notes: Optional[str] = None
 
     @property
@@ -48,6 +50,14 @@ class DividendPortfolioConfig:
     def resolve_min_dy(self, asset: DividendAssetConfig) -> float:
         """Return asset min_dy override, falling back to portfolio global."""
         return asset.min_dy if asset.min_dy is not None else self.settings.min_dy
+
+    def resolve_ceiling_method(self, asset: DividendAssetConfig) -> CeilingMethod:
+        """Return asset ceiling method override, falling back to portfolio global."""
+        if asset.ceiling_method is not None:
+            return asset.ceiling_method
+        if self.settings.dy_source == "average_6y":
+            return "average_6y"
+        return "trailing"
 
 
 def load_portfolio_config(
@@ -85,8 +95,8 @@ def _parse_settings(raw_settings: Any) -> DividendSettings:
         raise ValueError("settings.min_dy must be greater than zero")
 
     dy_source = raw_settings.get("dy_source", "trailing")
-    if dy_source not in {"trailing", "forward"}:
-        raise ValueError("settings.dy_source must be trailing or forward")
+    if dy_source not in {"trailing", "forward", "average_6y"}:
+        raise ValueError("settings.dy_source must be trailing, forward, or average_6y")
 
     return DividendSettings(
         min_dy=min_dy,
@@ -139,6 +149,12 @@ def _parse_asset(
     if resolved_asset_min_dy is not None and resolved_asset_min_dy <= 0:
         raise ValueError(f"{market} asset at index {index} has non-positive min_dy")
 
+    ceiling_method = raw_asset.get("ceiling_method")
+    if ceiling_method is not None and ceiling_method not in {"trailing", "average_6y"}:
+        raise ValueError(
+            f"{market} asset at index {index} has unsupported ceiling_method"
+        )
+
     return DividendAssetConfig(
         ticker=str(raw_asset["ticker"]).upper(),
         sector=str(raw_asset["sector"]),
@@ -147,5 +163,6 @@ def _parse_asset(
         technical_model=technical_model,
         market=market,
         min_dy=resolved_asset_min_dy,
+        ceiling_method=ceiling_method,
         notes=str(raw_asset["notes"]) if raw_asset.get("notes") is not None else None,
     )

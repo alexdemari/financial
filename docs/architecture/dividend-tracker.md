@@ -53,7 +53,8 @@ report
 - loading and validating the dividend portfolio YAML
 - adding `.SA` for Brazilian tickers when fetching Yahoo Finance dividend data
 - caching dividend data in `data/dividends/` with a 24-hour TTL
-- calculating dividend price ceiling from trailing twelve-month dividends
+- calculating dividend price ceiling from trailing twelve-month dividends or
+  six-year average annual dividends
 - combining price ceiling state with a technical signal
 - generating the dividend daily markdown report
 - optional budget allocation across `BUY` and `WATCH` assets
@@ -103,6 +104,9 @@ Includes:
 - `target_weight`
 - `technical_model`
 - `market`
+- optional `min_dy` override
+- optional `ceiling_method` override (`trailing` or `average_6y`)
+- optional `notes` for monitored assets
 
 ### `DividendData`
 
@@ -124,6 +128,8 @@ Includes:
 - price ceiling
 - current dividend yield
 - trailing annual dividends
+- dividend base used in the numerator
+- ceiling method used for the numerator
 - current price
 - margin to ceiling
 

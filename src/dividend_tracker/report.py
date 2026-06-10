@@ -34,14 +34,6 @@ def render_dividend_report(
     lines.extend(_render_asset_table(decisions, market="BR", currency="BRL"))
     lines.extend(["", "## Ativos US", ""])
     lines.extend(_render_asset_table(decisions, market="US", currency="USD"))
-    custom_min_dy_tickers = [
-        decision.asset.ticker
-        for decision in decisions
-        if decision.asset.min_dy is not None
-    ]
-    if custom_min_dy_tickers:
-        joined_tickers = ", ".join(custom_min_dy_tickers)
-        lines.extend(["", f"*: min_dy customizado por ativo ({joined_tickers})."])
     lines.extend(["", "## Detalhes por ativo", ""])
     lines.extend(_render_details(decisions))
 
@@ -52,6 +44,21 @@ def render_dividend_report(
     if budget is not None:
         lines.extend(["", f"## Guia de Aporte - {format_money(budget, 'BRL')}", ""])
         lines.extend(_render_budget_table(decisions, budget))
+
+    monitored_decisions = [
+        decision for decision in decisions if decision.asset.target_weight == 0.0
+    ]
+    if monitored_decisions:
+        lines.extend(["", "## Ativos monitorados (sem alocacao de budget)", ""])
+        lines.extend(_render_monitored_table(monitored_decisions))
+
+    lines.extend(
+        [
+            "",
+            "* Dividendo medio anual calculado sobre os ultimos 6 anos (metodologia AGF)",
+            f"† min_dy customizado por ativo (override do global de {format_percent(_global_min_dy(decisions))})",
+        ]
+    )
 
     return "\n".join(lines).rstrip() + "\n"
 
@@ -81,24 +88,27 @@ def _render_asset_table(
     currency: str,
 ) -> list[str]:
     rows = [
-        "| Ticker | Setor | Preco Atual | Preco Teto | DY Atual | min_dy | Margem | Sinal Tecnico | Decisao |",
-        "|---|---|---:|---:|---:|---:|---:|---|---|",
+        "| Ticker | Setor | Preco Atual | Div. Base | Metodo | Preco Teto | DY Atual | min_dy | Margem | Sinal Tecnico | Decisao |",
+        "|---|---|---:|---:|---|---:|---:|---:|---:|---|---|",
     ]
     market_decisions = [
         decision for decision in decisions if decision.asset.market == market
     ]
     if not market_decisions:
-        rows.append("| - | - | - | - | - | - | - | - | - |")
+        rows.append("| - | - | - | - | - | - | - | - | - | - | - |")
         return rows
 
     for decision in market_decisions:
         ceiling = decision.price_ceiling
-        min_dy_marker = " *" if decision.asset.min_dy is not None else ""
+        dividend_base_marker = "*" if ceiling.ceiling_method == "average_6y" else ""
+        min_dy_marker = " †" if decision.asset.min_dy is not None else ""
         rows.append(
             "| "
             f"{decision.asset.ticker} | "
             f"{decision.asset.sector} | "
             f"{format_money(ceiling.current_price, currency)} | "
+            f"{format_money(ceiling.dividend_base, currency)}{dividend_base_marker} | "
+            f"{_format_method(ceiling.ceiling_method)} | "
             f"{format_money(ceiling.price_ceiling, currency)} | "
             f"{format_percent(ceiling.current_dy)} | "
             f"{format_percent(ceiling.min_dy)}{min_dy_marker} | "
@@ -124,6 +134,7 @@ def _render_details(decisions: list[AssetDecision]) -> list[str]:
             [
                 f"### {decision.asset.ticker} - {decision.asset.name}",
                 "",
+                f"- Dividendo base ({ceiling.dividend_base_label}): {ceiling.dividend_base:.2f}",
                 f"- Dividendos TTM: {ceiling.trailing_annual_dividends:.2f}",
                 f"- Historico recente: {_format_distributions(ceiling)}",
                 (
@@ -172,6 +183,22 @@ def _render_budget_table(decisions: list[AssetDecision], budget: float) -> list[
     return rows
 
 
+def _render_monitored_table(decisions: list[AssetDecision]) -> list[str]:
+    rows = [
+        "| Ticker | Motivo | Decisao hoje | Proxima acao sugerida |",
+        "|---|---|---|---|",
+    ]
+    for decision in decisions:
+        rows.append(
+            "| "
+            f"{decision.asset.ticker} | "
+            f"{decision.asset.notes or 'Monitorado sem alocacao de budget'} | "
+            f"**{decision.decision}** | "
+            f"{_suggest_next_action(decision)} |"
+        )
+    return rows
+
+
 def format_money(value: float, currency: str) -> str:
     prefix = "R$" if currency == "BRL" else "US$"
     return f"{prefix}{value:,.2f}"
@@ -197,3 +224,30 @@ def _format_distributions(ceiling) -> str:
         f"{distribution.date:%Y-%m-%d}: {distribution.amount:.2f}"
         for distribution in ceiling.recent_distributions
     )
+
+
+def _format_method(ceiling_method: str) -> str:
+    if ceiling_method == "average_6y":
+        return "Media 6a"
+    return "TTM"
+
+
+def _suggest_next_action(decision: AssetDecision) -> str:
+    if decision.decision == "BUY":
+        return "Avaliar entrada conforme plano"
+    if decision.decision == "WATCH":
+        return "Monitorar gatilho tecnico"
+    if decision.decision == "OVERPRICED":
+        return "Aguardar preco teto"
+    return "Aguardar novo sinal"
+
+
+def _global_min_dy(decisions: list[AssetDecision]) -> float:
+    non_custom = [
+        decision.price_ceiling.min_dy
+        for decision in decisions
+        if decision.asset.min_dy is None
+    ]
+    if non_custom:
+        return non_custom[0]
+    return 0.06

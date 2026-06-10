@@ -10,7 +10,7 @@ from dividend_tracker.decision import (
     evaluate_asset,
     get_technical_signal,
 )
-from dividend_tracker.dividend_data import DividendData
+from dividend_tracker.dividend_data import DividendData, DividendDistribution
 from dividend_tracker.price_ceiling import PriceCeilingResult, calculate_price_ceiling
 from stock_analyzer.enums import Signal
 
@@ -117,6 +117,41 @@ def test_decision_uses_price_ceiling_calculated_with_custom_min_dy():
     assert custom_ceiling.is_below_or_equal_ceiling is True
     assert global_ceiling.is_below_or_equal_ceiling is False
     assert evaluate_asset(asset, custom_ceiling, _technical("BUY")).decision == "BUY"
+
+
+def test_decision_uses_price_ceiling_calculated_with_average_6y():
+    asset = DividendAssetConfig(
+        ticker="EGIE3",
+        sector="Energia",
+        name="Engie",
+        target_weight=1.0,
+        technical_model="smc",
+        market="BR",
+        ceiling_method="average_6y",
+    )
+    dividend_data = DividendData(
+        ticker="EGIE3",
+        yahoo_ticker="EGIE3.SA",
+        current_price=42.0,
+        trailing_annual_dividends=5.0,
+        trailing_dy=0.119,
+        distributions=[
+            DividendDistribution(date=pd.Timestamp(f"{year}-03-10"), amount=2.7)
+            for year in range(2021, 2027)
+        ],
+        fetched_at=datetime.now(UTC),
+    )
+
+    ceiling = calculate_price_ceiling(
+        asset.ticker,
+        min_dy=0.06,
+        dividend_data=dividend_data,
+        ceiling_method=asset.ceiling_method or "trailing",
+    )
+
+    assert ceiling.ceiling_method == "average_6y"
+    assert ceiling.price_ceiling == pytest.approx(45.0)
+    assert evaluate_asset(asset, ceiling, _technical("BUY")).decision == "BUY"
 
 
 def test_get_technical_signal_maps_current_buy(monkeypatch):

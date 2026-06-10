@@ -75,7 +75,72 @@ def test_resolve_min_dy_falls_back_to_global():
     assert config.resolve_min_dy(config.us_assets[0]) == 0.06
 
 
-def test_asset_without_min_dy_field_loads_correctly():
+def test_resolve_ceiling_method_uses_asset_override():
+    config = parse_portfolio_config(
+        {
+            "settings": {"min_dy": 0.06, "dy_source": "trailing"},
+            "br_assets": [
+                {
+                    "ticker": "EGIE3",
+                    "sector": "Energia",
+                    "name": "Engie",
+                    "target_weight": 1.0,
+                    "technical_model": "smc",
+                    "ceiling_method": "average_6y",
+                }
+            ],
+        }
+    )
+
+    assert config.resolve_ceiling_method(config.br_assets[0]) == "average_6y"
+
+
+def test_resolve_ceiling_method_falls_back_to_global():
+    config = parse_portfolio_config(
+        {
+            "settings": {"min_dy": 0.06, "dy_source": "average_6y"},
+            "us_assets": [
+                {
+                    "ticker": "SCHD",
+                    "sector": "ETF",
+                    "name": "SCHD",
+                    "target_weight": 1.0,
+                    "technical_model": "lux",
+                }
+            ],
+        }
+    )
+
+    assert config.resolve_ceiling_method(config.us_assets[0]) == "average_6y"
+
+
+def test_asset_with_all_new_fields_loads_correctly():
+    config = parse_portfolio_config(
+        {
+            "settings": {"min_dy": 0.06},
+            "us_assets": [
+                {
+                    "ticker": "PEP",
+                    "sector": "Consumer Staples",
+                    "name": "PepsiCo",
+                    "target_weight": 0.0,
+                    "technical_model": "smc",
+                    "min_dy": 0.038,
+                    "ceiling_method": "trailing",
+                    "notes": "Dividend King",
+                }
+            ],
+        }
+    )
+
+    asset = config.us_assets[0]
+    assert asset.min_dy == 0.038
+    assert asset.ceiling_method == "trailing"
+    assert asset.notes == "Dividend King"
+    assert asset.target_weight == 0.0
+
+
+def test_asset_without_new_fields_loads_correctly():
     config = parse_portfolio_config(
         {
             "settings": {"min_dy": 0.06},
@@ -92,6 +157,8 @@ def test_asset_without_min_dy_field_loads_correctly():
     )
 
     assert config.us_assets[0].min_dy is None
+    assert config.us_assets[0].ceiling_method is None
+    assert config.us_assets[0].notes is None
 
 
 def test_asset_with_notes_field_loads_correctly():

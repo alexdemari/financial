@@ -53,6 +53,60 @@ def fetch_dividend_data(
     return fetched_data
 
 
+def calculate_average_annual_dividend(
+    ticker: str,
+    years: int = 6,
+    dividend_data: DividendData | None = None,
+    cache_dir: str | Path = DEFAULT_CACHE_DIR,
+    br: bool = False,
+    local_only: bool = False,
+) -> float:
+    """
+    Calculate mean annual dividends over the last N calendar years.
+
+    Missing years inside the window count as zero. At least three calendar years
+    with dividend payments are required to avoid pricing from too little history.
+    """
+    if years <= 0:
+        raise ValueError("years must be greater than zero")
+
+    data = dividend_data
+    if data is None:
+        try:
+            data = fetch_dividend_data(
+                ticker=ticker,
+                br=br,
+                cache_dir=cache_dir,
+                local_only=True,
+            )
+        except FileNotFoundError:
+            if local_only:
+                raise
+            data = fetch_dividend_data(ticker=ticker, br=br, cache_dir=cache_dir)
+
+    distributions = [
+        distribution
+        for distribution in data.distributions
+        if distribution.amount > 0 and pd.notna(distribution.date)
+    ]
+    years_with_payments = {distribution.date.year for distribution in distributions}
+    if len(years_with_payments) < 3:
+        raise ValueError(
+            f"{ticker.upper()} has insufficient dividend history: "
+            f"{len(years_with_payments)} years with payments, minimum is 3"
+        )
+
+    last_year = max(distribution.date.year for distribution in distributions)
+    first_year = last_year - years + 1
+    annual_totals = {year: 0.0 for year in range(first_year, last_year + 1)}
+    for distribution in distributions:
+        distribution_year = distribution.date.year
+        if first_year <= distribution_year <= last_year:
+            annual_totals[distribution_year] += float(distribution.amount)
+
+    return sum(annual_totals.values()) / years
+
+
 def normalize_yahoo_ticker(ticker: str, br: bool = False) -> str:
     normalized_ticker = ticker.upper()
     if br and not normalized_ticker.endswith(".SA"):

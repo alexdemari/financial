@@ -49,10 +49,11 @@ def main(argv: list[str] | None = None) -> int:
             )
             price_ceiling = calculate_price_ceiling(
                 asset.ticker,
-                portfolio_config.resolve_min_dy(asset),
+                min_dy=portfolio_config.resolve_min_dy(asset),
                 dividend_data=dividend_data,
                 br=asset.market == "BR",
                 local_only=args.local_only,
+                ceiling_method=portfolio_config.resolve_ceiling_method(asset),
             )
             technical_signal = get_technical_signal(
                 asset,
