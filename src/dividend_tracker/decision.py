@@ -69,6 +69,8 @@ def get_technical_signal(
     if local_only:
         ohlc_df = analyzer.load_local_data(symbol, data_dir=data_dir, interval="1d")
     else:
+        # retrieve_data downloads via yfinance when local cache is missing/stale.
+        # Use --local-only to skip all network calls.
         ohlc_df = analyzer.retrieve_data(symbol, data_dir=data_dir, interval="1d")
 
     current_signal = analyzer.generate_signal(symbol, ohlc_df)

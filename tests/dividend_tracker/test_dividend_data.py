@@ -134,14 +134,16 @@ def test_fetch_dividend_data_refetches_fresh_corrupted_cache(mock_yf, tmp_path: 
 
 
 def test_calculate_average_annual_dividend_correct_mean():
+    # Window is [current_year-6, current_year-1] = [2020, 2025].
+    # 2026 is the current year and must be excluded.
     distributions = []
     annual_totals = {
-        2021: 2.40,
-        2022: 2.80,
-        2023: 3.20,
-        2024: 3.60,
-        2025: 4.00,
-        2026: 4.40,
+        2020: 2.40,
+        2021: 2.80,
+        2022: 3.20,
+        2023: 3.60,
+        2024: 4.00,
+        2025: 4.40,
     }
     for year, annual_total in annual_totals.items():
         for quarter in range(1, 5):
@@ -167,6 +169,8 @@ def test_calculate_average_annual_dividend_correct_mean():
 
 
 def test_calculate_average_annual_dividend_includes_zero_years():
+    # Window [2020, 2025]: years 2022 and 2024 have no payments → count as zero.
+    # 2026 payment is outside the window and must be excluded.
     dividend_data = DividendData(
         ticker="EGIE3",
         yahoo_ticker="EGIE3.SA",
@@ -174,16 +178,18 @@ def test_calculate_average_annual_dividend_includes_zero_years():
         trailing_annual_dividends=3.0,
         trailing_dy=0.075,
         distributions=[
-            DividendDistribution(date=pd.Timestamp("2021-03-10"), amount=1.0),
-            DividendDistribution(date=pd.Timestamp("2022-03-10"), amount=2.0),
-            DividendDistribution(date=pd.Timestamp("2024-03-10"), amount=4.0),
-            DividendDistribution(date=pd.Timestamp("2026-03-10"), amount=5.0),
+            DividendDistribution(date=pd.Timestamp("2020-03-10"), amount=1.0),
+            DividendDistribution(date=pd.Timestamp("2021-03-10"), amount=2.0),
+            DividendDistribution(date=pd.Timestamp("2023-03-10"), amount=4.0),
+            DividendDistribution(date=pd.Timestamp("2025-03-10"), amount=5.0),
+            DividendDistribution(date=pd.Timestamp("2026-03-10"), amount=99.0),
         ],
         fetched_at=datetime.now(UTC),
     )
 
     result = calculate_average_annual_dividend("EGIE3", dividend_data=dividend_data)
 
+    # {2020:1, 2021:2, 2022:0, 2023:4, 2024:0, 2025:5} → 12/6 = 2.0
     assert result == pytest.approx(2.0)
 
 
@@ -206,6 +212,8 @@ def test_calculate_average_annual_dividend_raises_on_insufficient_data():
 
 
 def test_calculate_average_annual_dividend_groups_by_calendar_year():
+    # Window [2023, 2025] for years=3. 2026 is excluded (current year).
+    # Dec-31 belongs to 2023; Jan-01 belongs to 2024 and 2025 respectively.
     dividend_data = DividendData(
         ticker="CAL",
         yahoo_ticker="CAL",
@@ -213,9 +221,9 @@ def test_calculate_average_annual_dividend_groups_by_calendar_year():
         trailing_annual_dividends=1.0,
         trailing_dy=0.10,
         distributions=[
-            DividendDistribution(date=pd.Timestamp("2024-12-31"), amount=1.0),
-            DividendDistribution(date=pd.Timestamp("2025-01-01"), amount=2.0),
-            DividendDistribution(date=pd.Timestamp("2026-01-01"), amount=3.0),
+            DividendDistribution(date=pd.Timestamp("2023-12-31"), amount=1.0),
+            DividendDistribution(date=pd.Timestamp("2024-01-01"), amount=2.0),
+            DividendDistribution(date=pd.Timestamp("2025-01-01"), amount=3.0),
         ],
         fetched_at=datetime.now(UTC),
     )
@@ -224,4 +232,5 @@ def test_calculate_average_annual_dividend_groups_by_calendar_year():
         "CAL", years=3, dividend_data=dividend_data
     )
 
+    # {2023:1, 2024:2, 2025:3} → 6/3 = 2.0
     assert result == pytest.approx(2.0)

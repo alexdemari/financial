@@ -52,11 +52,9 @@ class DividendPortfolioConfig:
         return asset.min_dy if asset.min_dy is not None else self.settings.min_dy
 
     def resolve_ceiling_method(self, asset: DividendAssetConfig) -> CeilingMethod:
-        """Return asset ceiling method override, falling back to portfolio global."""
+        """Return asset ceiling method override, falling back to trailing."""
         if asset.ceiling_method is not None:
             return asset.ceiling_method
-        if self.settings.dy_source == "average_6y":
-            return "average_6y"
         return "trailing"
 
 

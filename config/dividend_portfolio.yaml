@@ -1,73 +1,63 @@
-# Carteira de dividendos - configuracao
 settings:
   min_dy: 0.06
   dy_source: trailing
   currency_br: BRL
   currency_us: USD
-
 br_assets:
-  - ticker: EGIE3
-    sector: Energia
-    name: Engie Brasil Energia
-    target_weight: 0.25
-    technical_model: smc
-    ceiling_method: average_6y
-
-  - ticker: ITSA4
-    sector: Bancos
-    name: Itausa
-    target_weight: 0.25
-    technical_model: lux
-    ceiling_method: average_6y
-
-  - ticker: BBSE3
-    sector: Seguros
-    name: BB Seguridade
-    target_weight: 0.20
-    technical_model: smc
-    ceiling_method: average_6y
-
-  - ticker: VIVT3
-    sector: Telecom
-    name: Telefonica Brasil
-    target_weight: 0.17
-    technical_model: lux
-    ceiling_method: average_6y
-
-  - ticker: SAPR4
-    sector: Saneamento
-    name: Sanepar
-    target_weight: 0.13
-    technical_model: smc
-    ceiling_method: average_6y
-
+- ticker: EGIE3
+  sector: Energia
+  name: Engie Brasil Energia
+  target_weight: 0.25
+  technical_model: smc
+  ceiling_method: average_6y
+- ticker: ITSA4
+  sector: Bancos
+  name: Itausa
+  target_weight: 0.25
+  technical_model: lux
+  ceiling_method: average_6y
+- ticker: BBSE3
+  sector: Seguros
+  name: BB Seguridade
+  target_weight: 0.2
+  technical_model: lux
+  ceiling_method: average_6y
+- ticker: VIVT3
+  sector: Telecom
+  name: Telefonica Brasil
+  target_weight: 0.17
+  technical_model: smc
+  ceiling_method: average_6y
+- ticker: SAPR4
+  sector: Saneamento
+  name: Sanepar
+  target_weight: 0.13
+  technical_model: smc
+  ceiling_method: average_6y
 us_assets:
-  - ticker: SCHD
-    sector: ETF Dividendos
-    name: Schwab US Dividend Equity ETF
-    target_weight: 0.50
-    technical_model: lux
-    ceiling_method: trailing
-
-  - ticker: DGRO
-    sector: ETF Dividendos
-    name: iShares Core Dividend Growth ETF
-    target_weight: 0.30
-    technical_model: lux
-    ceiling_method: trailing
-
-  - ticker: VYM
-    sector: ETF Dividendos
-    name: Vanguard High Dividend Yield ETF
-    target_weight: 0.20
-    technical_model: lux
-    ceiling_method: trailing
-
-  - ticker: PEP
-    sector: Consumer Staples
-    name: PepsiCo Inc
-    target_weight: 0.00
-    technical_model: smc
-    min_dy: 0.038
-    ceiling_method: trailing
-    notes: "Dividend King 54 anos. Fair value $205. Suporte $138-141."
+- ticker: SCHD
+  sector: ETF Dividendos
+  name: Schwab US Dividend Equity ETF
+  target_weight: 0.5
+  technical_model: lux
+  ceiling_method: trailing
+- ticker: DGRO
+  sector: ETF Dividendos
+  name: iShares Core Dividend Growth ETF
+  target_weight: 0.3
+  technical_model: lux
+  ceiling_method: trailing
+- ticker: VYM
+  sector: ETF Dividendos
+  name: Vanguard High Dividend Yield ETF
+  target_weight: 0.2
+  technical_model: lux
+  ceiling_method: trailing
+- ticker: PEP
+  sector: Consumer Staples
+  name: PepsiCo Inc
+  target_weight: 0.0
+  technical_model: smc
+  min_dy: 0.038
+  ceiling_method: trailing
+  notes: Dividend King 54 anos. Fair value $205. Suporte $138-141.

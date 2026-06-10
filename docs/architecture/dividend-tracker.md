@@ -171,6 +171,62 @@ just dividends-local budget=8000
 
 ---
 
+## Price Ceiling Logic
+
+```
+price_ceiling = dividend_base / min_dy
+```
+
+`dividend_base` is determined by `ceiling_method`:
+
+- `trailing` — trailing twelve-month (TTM) dividends
+- `average_6y` — mean annual dividends over the last 6 **complete** calendar
+  years (current year excluded to avoid partial-year undercount)
+
+`min_dy` is the per-asset override if present, otherwise the global `settings.min_dy`.
+
+### Asset reference table
+
+| Ticker | Market | `ceiling_method` | `min_dy` | `technical_model` |
+|--------|--------|-----------------|----------|-------------------|
+| EGIE3  | BR     | `average_6y`    | 6%       | `smc`             |
+| ITSA4  | BR     | `average_6y`    | 6%       | `lux`             |
+| BBSE3  | BR     | `average_6y`    | 6%       | `lux`             |
+| VIVT3  | BR     | `average_6y`    | 6%       | `smc`             |
+| SAPR4  | BR     | `average_6y`    | 6%       | `smc`             |
+| SCHD   | US     | `trailing`      | 6%       | `lux`             |
+| DGRO   | US     | `trailing`      | 6%       | `lux`             |
+| VYM    | US     | `trailing`      | 6%       | `lux`             |
+| PEP    | US     | `trailing`      | 3.8%     | `smc`             |
+
+This table is a snapshot — `config/dividend_portfolio.yaml` is authoritative.
+
+---
+
+## Technical Model Selection
+
+Each asset uses one of three models: `lux`, `smc`, `rsi-sma`.
+
+Models are evaluated via `just backtest-dividends` using historical BUY signals
+over a 45-day forward window. A model replaces the current one only when:
+- delta in precision > 5 percentage points
+- at least 5 evaluable signals
+
+The most recent backtest is at `reports/backtest/dividend_model_comparison.md`.
+To apply updates: `just backtest-dividends-apply`.
+
+---
+
+## Monitored Assets (`target_weight: 0.0`)
+
+Assets with `target_weight: 0.0` are monitored but excluded from budget allocation.
+They appear in the analysis tables but not in the investment guide section.
+
+Use case: tracking potential future portfolio additions (e.g., PEP as a Dividend
+King at a target entry price before deciding on allocation).
+
+---
+
 ## Integration Points
 
 - Reads portfolio config from `config/dividend_portfolio.yaml`

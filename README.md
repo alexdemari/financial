@@ -49,9 +49,18 @@ Owns local dividend portfolio analysis.
 
 - reads `config/dividend_portfolio.yaml`
 - caches dividend data in `data/dividends/`
-- calculates dividend price ceilings from trailing dividends
+- calculates dividend price ceilings via `price_ceiling = dividend_base / min_dy`
 - combines the price ceiling with `stock_analyzer` technical signals
 - writes `reports/dividend_tracker/dividend_daily_report.md`
+
+Optional per-asset YAML fields:
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `min_dy` | `settings.min_dy` (6%) | Override yield threshold for price ceiling. Use for assets like Dividend Kings that trade at structurally lower yields. |
+| `ceiling_method` | `trailing` | `trailing` = TTM dividends; `average_6y` = 6-year average of **complete** calendar years. BR assets use `average_6y` to smooth volatile quarterly distributions. |
+| `notes` | — | Free-text annotation. Informational only, not used in any calculation. |
+| `target_weight` | — | Set to `0.0` to monitor an asset without including it in budget allocation. |
 
 ### Current Backtest
 
@@ -166,6 +175,8 @@ PYTHONPATH=src uv run python -m stock_analyzer.main -s AAPL --model smc --local-
 ```bash
 just dividends budget=8000
 just dividends-local budget=8000
+just backtest-dividends          # compare models, report only
+just backtest-dividends-apply    # compare models + update YAML when delta > 5pp
 ```
 
 Direct CLI:

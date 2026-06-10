@@ -137,7 +137,7 @@ def test_decision_uses_price_ceiling_calculated_with_average_6y():
         trailing_dy=0.119,
         distributions=[
             DividendDistribution(date=pd.Timestamp(f"{year}-03-10"), amount=2.7)
-            for year in range(2021, 2027)
+            for year in range(2020, 2026)
         ],
         fetched_at=datetime.now(UTC),
     )

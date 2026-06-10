@@ -62,10 +62,15 @@ def calculate_average_annual_dividend(
     local_only: bool = False,
 ) -> float:
     """
-    Calculate mean annual dividends over the last N calendar years.
+    Calculate mean annual dividends over the last N complete calendar years.
 
-    Missing years inside the window count as zero. At least three calendar years
-    with dividend payments are required to avoid pricing from too little history.
+    The current calendar year is excluded — it is incomplete and would
+    systematically undercount dividends, producing a price ceiling that is
+    too low. The window is always [current_year - N, current_year - 1].
+
+    Missing years inside the window count as zero. At least three calendar
+    years with dividend payments are required to avoid pricing from too
+    little history.
     """
     if years <= 0:
         raise ValueError("years must be greater than zero")
@@ -96,7 +101,7 @@ def calculate_average_annual_dividend(
             f"{len(years_with_payments)} years with payments, minimum is 3"
         )
 
-    last_year = max(distribution.date.year for distribution in distributions)
+    last_year = datetime.now(UTC).year - 1
     first_year = last_year - years + 1
     annual_totals = {year: 0.0 for year in range(first_year, last_year + 1)}
     for distribution in distributions:

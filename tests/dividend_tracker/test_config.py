@@ -95,7 +95,9 @@ def test_resolve_ceiling_method_uses_asset_override():
     assert config.resolve_ceiling_method(config.br_assets[0]) == "average_6y"
 
 
-def test_resolve_ceiling_method_falls_back_to_global():
+def test_resolve_ceiling_method_falls_back_to_trailing():
+    # When asset has no ceiling_method, the fallback is always "trailing"
+    # regardless of the global dy_source field.
     config = parse_portfolio_config(
         {
             "settings": {"min_dy": 0.06, "dy_source": "average_6y"},
@@ -111,7 +113,7 @@ def test_resolve_ceiling_method_falls_back_to_global():
         }
     )
 
-    assert config.resolve_ceiling_method(config.us_assets[0]) == "average_6y"
+    assert config.resolve_ceiling_method(config.us_assets[0]) == "trailing"
 
 
 def test_asset_with_all_new_fields_loads_correctly():
