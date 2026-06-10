@@ -55,12 +55,38 @@ Owns local dividend portfolio analysis.
 
 Optional per-asset YAML fields:
 
-| Field | Default | Description |
-|-------|---------|-------------|
-| `min_dy` | `settings.min_dy` (6%) | Override yield threshold for price ceiling. Use for assets like Dividend Kings that trade at structurally lower yields. |
-| `ceiling_method` | `trailing` | `trailing` = TTM dividends; `average_6y` = 6-year average of **complete** calendar years. BR assets use `average_6y` to smooth volatile quarterly distributions. |
-| `notes` | — | Free-text annotation. Informational only, not used in any calculation. |
-| `target_weight` | — | Set to `0.0` to monitor an asset without including it in budget allocation. |
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `min_dy` | float | `settings.min_dy` | DY mínimo para preço teto (override do global). |
+| `ceiling_method` | string | `settings.dy_source` | `trailing` (TTM) ou `average_6y` (média AGF 6 anos). |
+| `technical_model` | string | obrigatório | `smc`, `lux` ou `rsi-sma`. |
+| `target_weight` | float | obrigatório | Peso alvo na carteira; `0.0` = monitorado via opções. |
+| `notes` | string | `None` | Informativo; não usado na lógica. |
+
+#### Why `average_6y` for BR assets?
+
+Brazilian companies often pay dividends irregularly: years with high JCP,
+extraordinary distributions, and weaker years. TTM can overstate or understate
+sustainable dividends. The six-year average (AGF methodology) smooths those
+changes and gives a more conservative long-term price ceiling.
+
+#### Why custom `min_dy` for USD Dividend Kings?
+
+US Dividend Kings with 50+ years of dividend growth are usually priced at lower
+historical yields, often around 2.5% to 4.5%. Requiring 6% would mark those assets
+as permanently `OVERPRICED`. Per-asset `min_dy` lets the portfolio keep the 6%
+global default for BR assets while calibrating USD dividend kings such as PEP.
+
+#### Technical model backtest
+
+To validate which technical model to use per asset:
+
+```bash
+just backtest-dividends
+```
+
+The report is written to `reports/backtest/dividend_model_comparison.md` with
+buy-signal precision by asset and model.
 
 ### Current Backtest
 

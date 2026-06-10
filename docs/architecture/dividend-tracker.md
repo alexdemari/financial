@@ -171,59 +171,89 @@ just dividends-local budget=8000
 
 ---
 
-## Price Ceiling Logic
+## Lógica de preço teto
 
 ```
-price_ceiling = dividend_base / min_dy
+preço_teto = dividendo_base(ceiling_method) / min_dy_efetivo
 ```
 
-`dividend_base` is determined by `ceiling_method`:
+Onde:
 
-- `trailing` — trailing twelve-month (TTM) dividends
-- `average_6y` — mean annual dividends over the last 6 **complete** calendar
-  years (current year excluded to avoid partial-year undercount)
+- `dividendo_base`
+  - `trailing` -> dividendo TTM (últimos 12 meses)
+  - `average_6y` -> média aritmética dos dividendos anuais dos últimos 6 anos
+    calendário com pagamentos; anos sem pagamento dentro da janela entram como zero
+- `min_dy_efetivo`
+  - `asset.min_dy` se definido no YAML para o ativo
+  - `settings.min_dy` caso contrário
 
-`min_dy` is the per-asset override if present, otherwise the global `settings.min_dy`.
+`average_6y` segue a metodologia AGF para suavizar distribuições irregulares.
+Ativos brasileiros podem ter anos com JCP alto, dividendos extraordinários ou
+pagamentos fracos; usar só TTM pode superestimar ou subestimar o dividendo
+sustentável.
 
-### Asset reference table
+### Tabela de referência atual
 
-| Ticker | Market | `ceiling_method` | `min_dy` | `technical_model` |
-|--------|--------|-----------------|----------|-------------------|
-| EGIE3  | BR     | `average_6y`    | 6%       | `smc`             |
-| ITSA4  | BR     | `average_6y`    | 6%       | `lux`             |
-| BBSE3  | BR     | `average_6y`    | 6%       | `lux`             |
-| VIVT3  | BR     | `average_6y`    | 6%       | `smc`             |
-| SAPR4  | BR     | `average_6y`    | 6%       | `smc`             |
-| SCHD   | US     | `trailing`      | 6%       | `lux`             |
-| DGRO   | US     | `trailing`      | 6%       | `lux`             |
-| VYM    | US     | `trailing`      | 6%       | `lux`             |
-| PEP    | US     | `trailing`      | 3.8%     | `smc`             |
+| Ativo | ceiling_method | min_dy | Racional |
+|-------|----------------|--------|----------|
+| EGIE3 | average_6y | 6.0% | Distribuições BR irregulares; média suaviza |
+| ITSA4 | average_6y | 6.0% | Distribuições BR irregulares; média suaviza |
+| BBSE3 | average_6y | 6.0% | Distribuições BR irregulares; média suaviza |
+| VIVT3 | average_6y | 6.0% | Distribuições BR irregulares; média suaviza |
+| SAPR4 | average_6y | 6.0% | Distribuições BR irregulares; média suaviza |
+| SCHD | trailing | 6.0% | ETF com dividendo mais linear; TTM adequado |
+| DGRO | trailing | 6.0% | ETF com dividendo mais linear; TTM adequado |
+| VYM | trailing | 6.0% | ETF com dividendo mais linear; TTM adequado |
+| PEP | trailing | 3.8% | Dividend King 54a; mercado precifica 2.5-4.5% |
 
 This table is a snapshot — `config/dividend_portfolio.yaml` is authoritative.
 
+## Seleção de modelo técnico por ativo
+
+O campo `technical_model` em `dividend_portfolio.yaml` define qual modelo do
+`stock_analyzer` gera o sinal técnico que complementa o critério fundamentalista
+de preço teto.
+
+### Filosofia
+
+O modelo técnico não escolhe quais ativos pertencem à carteira. Essa decisão vem
+dos critérios fundamentalistas: setores escolhidos, histórico de dividendos,
+preço teto e DY mínimo.
+
+O modelo técnico responde a uma pergunta mais estreita:
+
+> "O preço teto foi atingido. Devo comprar hoje ou aguardar 2-3 dias?"
+
+Por isso, a métrica relevante é a precisão de sinais de compra: percentual de
+sinais BUY seguidos de alta de pelo menos 5% em 45 dias. O `stock_analyzer`
+histórico expõe BUY/HOLD/SELL; WATCH é uma classificação do `dividend_tracker`
+sobre sinal recente, então o backtest mede BUY como evento técnico base.
+
+### Critério de atualização
+
+O modelo por ativo é validado via backtest com janela mínima de 3 anos. O modelo
+é atualizado quando um modelo alternativo supera o atual em mais de 5 pontos
+percentuais de precisão e tem pelo menos 5 sinais avaliáveis. Diferenças menores
+não justificam mudança.
+
+### Resultado do último backtest
+
+Ver: `reports/backtest/dividend_model_comparison.md`
+
+Última execução: 2026-06-10
+
 ---
 
-## Technical Model Selection
+## Ativos monitorados (`target_weight = 0.0`)
 
-Each asset uses one of three models: `lux`, `smc`, `rsi-sma`.
+Ativos com `target_weight: 0.0` são analisados e aparecem no relatório diário,
+mas são excluídos do Guia de Aporte. Esse padrão é usado para ativos operados via
+estratégias de opções, onde a entrada no ativo ocorre pelo exercício da opção e
+não por aporte direto.
 
-Models are evaluated via `just backtest-dividends` using historical BUY signals
-over a 45-day forward window. A model replaces the current one only when:
-- delta in precision > 5 percentage points
-- at least 5 evaluable signals
+Ativos monitorados atualmente:
 
-The most recent backtest is at `reports/backtest/dividend_model_comparison.md`.
-To apply updates: `just backtest-dividends-apply`.
-
----
-
-## Monitored Assets (`target_weight: 0.0`)
-
-Assets with `target_weight: 0.0` are monitored but excluded from budget allocation.
-They appear in the analysis tables but not in the investment guide section.
-
-Use case: tracking potential future portfolio additions (e.g., PEP as a Dividend
-King at a target entry price before deciding on allocation).
+- PEP — operado via venda de puts recorrente na IBKR
 
 ---
 
