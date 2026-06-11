@@ -142,28 +142,22 @@ dividends-local budget="":
     fi
 
 
-# Backtest comparativo de modelos tecnicos (usa dados OHLC locais)
+# Backtest 10 anos — pontos de entrada por ativo e modelo
 backtest-dividends:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    echo "Rodando backtest comparativo para carteira de dividendos..."
     PYTHONPATH=src uv run python -m dividend_tracker.backtest \
         --config config/dividend_portfolio.yaml \
         --data-dir data/stocks \
-        --output reports/backtest/dividend_model_comparison.md
-    echo "Relatorio gerado: reports/backtest/dividend_model_comparison.md"
+        --output reports/backtest/dividend_entry_points_10y.md
+    @echo "Relatorio: reports/backtest/dividend_entry_points_10y.md"
 
-# Igual ao anterior mas aplica mudancas no YAML quando delta > 5pp
+# Backtest 10 anos e aplica mudancas no YAML (model + backtest_ref)
 backtest-dividends-apply:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    echo "Rodando backtest comparativo e aplicando recomendacoes..."
     PYTHONPATH=src uv run python -m dividend_tracker.backtest \
         --config config/dividend_portfolio.yaml \
         --data-dir data/stocks \
-        --output reports/backtest/dividend_model_comparison.md \
+        --output reports/backtest/dividend_entry_points_10y.md \
         --update-yaml
-    echo "Relatorio gerado: reports/backtest/dividend_model_comparison.md"
+    @echo "Relatorio: reports/backtest/dividend_entry_points_10y.md"
 
 
 # ── Scanner ───────────────────────────────────────────────────────────────────

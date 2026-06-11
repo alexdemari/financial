@@ -231,16 +231,39 @@ sobre sinal recente, então o backtest mede BUY como evento técnico base.
 
 ### Critério de atualização
 
-O modelo por ativo é validado via backtest com janela mínima de 3 anos. O modelo
-é atualizado quando um modelo alternativo supera o atual em mais de 5 pontos
-percentuais de precisão e tem pelo menos 5 sinais avaliáveis. Diferenças menores
-não justificam mudança.
+O modelo por ativo é validado via backtest com janela de 10 anos (2016–2026). O
+modelo é atualizado quando um modelo alternativo supera o atual em mais de 5
+pontos percentuais de precisão e tem pelo menos 5 sinais avaliáveis. Diferenças
+menores não justificam mudança.
+
+### Janelas de avaliação
+
+- **45 dias** — janela primária: percentual de sinais BUY com alta >= 5% em 45
+  dias corridos a partir da data do sinal
+- **90 dias** — janela secundária: mesmo critério aplicado a 90 dias
+- **Sinais combinados** — sinais onde o modelo diz BUY E o preço de entrada é
+  menor ou igual ao preço teto calculado do cache de dividendos
 
 ### Resultado do último backtest
 
-Ver: `reports/backtest/dividend_model_comparison.md`
+Ver: `reports/backtest/dividend_entry_points_10y.md`
 
 Última execução: 2026-06-10
+
+### Tabela de resultados consolidados (backtest 10 anos)
+
+Gerado por `just backtest-dividends`. Ver arquivo acima para métricas completas
+por modelo (precisão 45d, 90d, sinais/ano, retorno médio, drawdown pós-sinal).
+
+Campos gravados no YAML após `just backtest-dividends-apply`:
+
+| Campo | Descrição |
+|-------|-----------|
+| `backtest_ref` | Data da execução do backtest |
+| `backtest_precision` | Precisão 45d do modelo recomendado |
+| `backtest_signals_per_year` | Frequência anualizada de sinais do modelo recomendado |
+
+Nota: `apply_yaml_updates` usa PyYAML dump e não preserva comentários YAML.
 
 ---
 
