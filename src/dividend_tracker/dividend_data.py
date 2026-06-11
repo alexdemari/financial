@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -64,13 +64,16 @@ def calculate_average_annual_dividend(
     """
     Calculate mean annual dividends over the last N complete calendar years.
 
-    The current calendar year is excluded — it is incomplete and would
+    The current calendar year is excluded because it is incomplete and would
     systematically undercount dividends, producing a price ceiling that is
-    too low. The window is always [current_year - N, current_year - 1].
+    too low. For example, if today is June 2026, the calculation uses
+    2020-2025 for a 6-year average, not 2026.
 
-    Missing years inside the window count as zero. At least three calendar
-    years with dividend payments are required to avoid pricing from too
-    little history.
+    Payments are grouped by calendar year, summed within each year, and then
+    averaged across the most recent complete years available. Missing years
+    inside the asset's available history count as zero. At least three
+    complete calendar years with dividend payments are required to avoid
+    pricing from too little history.
     """
     if years <= 0:
         raise ValueError("years must be greater than zero")
@@ -94,22 +97,31 @@ def calculate_average_annual_dividend(
         for distribution in data.distributions
         if distribution.amount > 0 and pd.notna(distribution.date)
     ]
-    years_with_payments = {distribution.date.year for distribution in distributions}
+    current_year = date.today().year
+    complete_distributions = [
+        distribution
+        for distribution in distributions
+        if distribution.date.year < current_year
+    ]
+    years_with_payments = {
+        distribution.date.year for distribution in complete_distributions
+    }
     if len(years_with_payments) < 3:
         raise ValueError(
             f"{ticker.upper()} has insufficient dividend history: "
             f"{len(years_with_payments)} years with payments, minimum is 3"
         )
 
-    last_year = datetime.now(UTC).year - 1
-    first_year = last_year - years + 1
-    annual_totals = {year: 0.0 for year in range(first_year, last_year + 1)}
-    for distribution in distributions:
+    last_complete_year = current_year - 1
+    first_available_year = min(years_with_payments)
+    first_year = max(first_available_year, last_complete_year - years + 1)
+    annual_totals = {year: 0.0 for year in range(first_year, last_complete_year + 1)}
+    for distribution in complete_distributions:
         distribution_year = distribution.date.year
-        if first_year <= distribution_year <= last_year:
+        if first_year <= distribution_year <= last_complete_year:
             annual_totals[distribution_year] += float(distribution.amount)
 
-    return sum(annual_totals.values()) / years
+    return sum(annual_totals.values()) / len(annual_totals)
 
 
 def normalize_yahoo_ticker(ticker: str, br: bool = False) -> str:

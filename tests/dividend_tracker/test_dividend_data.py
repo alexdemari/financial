@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -13,6 +13,22 @@ from dividend_tracker.dividend_data import (
     fetch_dividend_data,
     normalize_yahoo_ticker,
 )
+
+
+def _dividend_data(
+    ticker: str,
+    distributions: list[DividendDistribution],
+    trailing_annual_dividends: float = 0.0,
+) -> DividendData:
+    return DividendData(
+        ticker=ticker,
+        yahoo_ticker=ticker,
+        current_price=10.0,
+        trailing_annual_dividends=trailing_annual_dividends,
+        trailing_dy=0.0,
+        distributions=distributions,
+        fetched_at=datetime.now(UTC),
+    )
 
 
 def test_normalize_yahoo_ticker_adds_sa_for_br():
@@ -234,3 +250,136 @@ def test_calculate_average_annual_dividend_groups_by_calendar_year():
 
     # {2023:1, 2024:2, 2025:3} → 6/3 = 2.0
     assert result == pytest.approx(2.0)
+
+
+def test_average_6y_excludes_current_year():
+    """
+    O ano corrente incompleto não deve entrar na média.
+    """
+    current_year = date.today().year
+    complete_years = range(current_year - 6, current_year)
+    distributions = [
+        DividendDistribution(date=pd.Timestamp(f"{year}-06-30"), amount=1.0)
+        for year in complete_years
+    ]
+    distributions.append(
+        DividendDistribution(date=pd.Timestamp(f"{current_year}-03-31"), amount=99.0)
+    )
+
+    result = calculate_average_annual_dividend(
+        "EGIE3",
+        dividend_data=_dividend_data("EGIE3", distributions),
+    )
+
+    assert result == pytest.approx(1.0)
+
+
+def test_average_6y_uses_only_complete_years():
+    """
+    A janela deve conter exatamente `years` anos completos, sem incluir o corrente.
+    """
+    current_year = date.today().year
+    distributions = [
+        DividendDistribution(
+            date=pd.Timestamp(f"{current_year - offset}-06-30"),
+            amount=float(offset),
+        )
+        for offset in range(1, 8)
+    ]
+    distributions.append(
+        DividendDistribution(date=pd.Timestamp(f"{current_year}-03-31"), amount=99.0)
+    )
+
+    result = calculate_average_annual_dividend(
+        "BBSE3",
+        years=3,
+        dividend_data=_dividend_data("BBSE3", distributions),
+    )
+
+    assert result == pytest.approx((1.0 + 2.0 + 3.0) / 3)
+
+
+def test_average_6y_example_sapr4():
+    """
+    Reproduz o caso SAPR4: o pagamento parcial do ano corrente é excluído.
+    """
+    current_year = date.today().year
+    annual_totals = {
+        current_year - 6: 0.103,
+        current_year - 5: 0.203,
+        current_year - 4: 0.237,
+        current_year - 3: 0.373,
+        current_year - 2: 0.278,
+        current_year - 1: 0.450,
+        current_year: 0.113,
+    }
+    distributions = [
+        DividendDistribution(date=pd.Timestamp(f"{year}-06-30"), amount=amount)
+        for year, amount in annual_totals.items()
+    ]
+
+    result = calculate_average_annual_dividend(
+        "SAPR4",
+        dividend_data=_dividend_data("SAPR4", distributions),
+    )
+
+    assert result == pytest.approx(0.274, abs=0.0001)
+
+
+def test_average_6y_example_itsa4_growth():
+    """
+    Documenta que crescimento acelerado pode tornar avg_6y muito menor que TTM.
+    """
+    current_year = date.today().year
+    annual_totals = {
+        current_year - 6: 0.12,
+        current_year - 5: 0.30,
+        current_year - 4: 0.51,
+        current_year - 3: 0.52,
+        current_year - 2: 0.62,
+        current_year - 1: 1.72,
+    }
+    distributions = [
+        DividendDistribution(date=pd.Timestamp(f"{year}-06-30"), amount=amount)
+        for year, amount in annual_totals.items()
+    ]
+    dividend_data = _dividend_data(
+        "ITSA4",
+        distributions,
+        trailing_annual_dividends=1.23,
+    )
+
+    average_6y = calculate_average_annual_dividend(
+        "ITSA4",
+        dividend_data=dividend_data,
+    )
+
+    assert average_6y == pytest.approx(sum(annual_totals.values()) / 6)
+    assert dividend_data.trailing_annual_dividends / average_6y > 1.9
+
+
+def test_average_6y_raises_with_less_than_3_complete_years():
+    """
+    Deve lançar ValueError com menos de 3 anos completos após excluir o corrente.
+    """
+    current_year = date.today().year
+    dividend_data = _dividend_data(
+        "NEW",
+        [
+            DividendDistribution(
+                date=pd.Timestamp(f"{current_year - 2}-06-30"),
+                amount=1.0,
+            ),
+            DividendDistribution(
+                date=pd.Timestamp(f"{current_year - 1}-06-30"),
+                amount=1.2,
+            ),
+            DividendDistribution(
+                date=pd.Timestamp(f"{current_year}-03-31"),
+                amount=9.9,
+            ),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="insufficient dividend history"):
+        calculate_average_annual_dividend("NEW", dividend_data=dividend_data)
