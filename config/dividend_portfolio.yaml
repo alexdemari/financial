@@ -10,30 +10,45 @@ br_assets:
   target_weight: 0.25
   technical_model: smc
   ceiling_method: average_6y
+  backtest_ref: '2026-06-10'
+  backtest_precision: 0.375
+  backtest_signals_per_year: 0.8
 - ticker: ITSA4
   sector: Bancos
   name: Itausa
   target_weight: 0.25
   technical_model: lux
   ceiling_method: average_6y
+  backtest_ref: '2026-06-10'
+  backtest_precision: 0.4037
+  backtest_signals_per_year: 10.9
 - ticker: BBSE3
   sector: Seguros
   name: BB Seguridade
   target_weight: 0.2
   technical_model: lux
   ceiling_method: average_6y
+  backtest_ref: '2026-06-10'
+  backtest_precision: 0.3252
+  backtest_signals_per_year: 12.3
 - ticker: VIVT3
   sector: Telecom
   name: Telefonica Brasil
   target_weight: 0.17
   technical_model: smc
   ceiling_method: average_6y
+  backtest_ref: '2026-06-10'
+  backtest_precision: 0.5714
+  backtest_signals_per_year: 0.7
 - ticker: SAPR4
   sector: Saneamento
   name: Sanepar
   target_weight: 0.13
   technical_model: smc
   ceiling_method: average_6y
+  backtest_ref: '2026-06-10'
+  backtest_precision: 0.4
+  backtest_signals_per_year: 0.5
 us_assets:
 - ticker: SCHD
   sector: ETF Dividendos
@@ -41,18 +56,27 @@ us_assets:
   target_weight: 0.5
   technical_model: lux
   ceiling_method: trailing
+  backtest_ref: '2026-06-10'
+  backtest_precision: 0.2482
+  backtest_signals_per_year: 13.7
 - ticker: DGRO
   sector: ETF Dividendos
   name: iShares Core Dividend Growth ETF
   target_weight: 0.3
   technical_model: lux
   ceiling_method: trailing
+  backtest_ref: '2026-06-10'
+  backtest_precision: 0.2667
+  backtest_signals_per_year: 13.5
 - ticker: VYM
   sector: ETF Dividendos
   name: Vanguard High Dividend Yield ETF
   target_weight: 0.2
   technical_model: lux
   ceiling_method: trailing
+  backtest_ref: '2026-06-10'
+  backtest_precision: 0.277
+  backtest_signals_per_year: 14.8
 - ticker: PEP
   sector: Consumer Staples
   name: PepsiCo Inc
@@ -61,3 +85,6 @@ us_assets:
   min_dy: 0.038
   ceiling_method: trailing
   notes: Dividend King 54 anos. Fair value $205. Suporte $138-141.
+  backtest_ref: '2026-06-10'
+  backtest_precision: 0.4
+  backtest_signals_per_year: 0.5
