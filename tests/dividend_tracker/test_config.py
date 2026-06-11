@@ -238,3 +238,88 @@ def test_parse_portfolio_config_rejects_invalid_model():
 def test_parse_portfolio_config_rejects_empty_portfolio():
     with pytest.raises(ValueError, match="at least one asset"):
         parse_portfolio_config({"settings": {"min_dy": 0.06}})
+
+
+def test_technical_models_primary_only():
+    """Ativo com apenas primary carrega corretamente."""
+    config = parse_portfolio_config(
+        {
+            "us_assets": [
+                {
+                    "ticker": "SCHD",
+                    "sector": "ETF",
+                    "name": "SCHD",
+                    "target_weight": 1.0,
+                    "technical_models": {"primary": "lux"},
+                }
+            ],
+        }
+    )
+
+    asset = config.us_assets[0]
+    assert asset.technical_models.primary == "lux"
+    assert asset.technical_models.confirmation is None
+    assert asset.technical_model == "lux"
+
+
+def test_technical_models_with_confirmation():
+    """Ativo com primary + confirmation carrega corretamente."""
+    config = parse_portfolio_config(
+        {
+            "br_assets": [
+                {
+                    "ticker": "EGIE3",
+                    "sector": "Energia",
+                    "name": "Engie",
+                    "target_weight": 1.0,
+                    "technical_models": {"primary": "lux", "confirmation": "smc"},
+                    "timeframe": "1W",
+                }
+            ],
+        }
+    )
+
+    asset = config.br_assets[0]
+    assert asset.technical_models.primary == "lux"
+    assert asset.technical_models.confirmation == "smc"
+    assert asset.timeframe == "1W"
+
+
+def test_legacy_technical_model_converts_to_primary():
+    """Campo legado technical_model converte para TechnicalModels(primary=...)."""
+    config = parse_portfolio_config(
+        {
+            "us_assets": [
+                {
+                    "ticker": "PEP",
+                    "sector": "Consumer Staples",
+                    "name": "PepsiCo",
+                    "target_weight": 0.0,
+                    "technical_model": "smc",
+                }
+            ],
+        }
+    )
+
+    assert config.us_assets[0].technical_models.primary == "smc"
+    assert config.us_assets[0].technical_models.confirmation is None
+
+
+def test_conviction_multiplier_loaded_from_settings():
+    """settings.conviction_multiplier carrega corretamente."""
+    config = parse_portfolio_config(
+        {
+            "settings": {"conviction_multiplier": 1.8},
+            "us_assets": [
+                {
+                    "ticker": "SCHD",
+                    "sector": "ETF",
+                    "name": "SCHD",
+                    "target_weight": 1.0,
+                    "technical_models": {"primary": "lux"},
+                }
+            ],
+        }
+    )
+
+    assert config.settings.conviction_multiplier == 1.8

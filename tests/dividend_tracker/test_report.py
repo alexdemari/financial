@@ -57,7 +57,7 @@ def test_render_dividend_report_includes_recent_distributions_and_budget():
     assert "2026-04-10: 2.00" in report
     assert "## Erros de processamento" in report
     assert "- BAD: cache missing" in report
-    assert "| EGIE3 | 100.0% | R$8,000.00 | 200 | <= R$40.00 |" in report
+    assert "| EGIE3 | - | 100.0% | 1.0x | R$8,000.00 | 200 | <= R$40.00 |" in report
 
 
 def test_render_dividend_report_marks_custom_min_dy_and_excludes_zero_weight_budget():
@@ -134,7 +134,10 @@ def test_render_dividend_report_marks_custom_min_dy_and_excludes_zero_weight_bud
     )
     assert "† min_dy customizado por ativo" in report
     assert "PEP" not in budget_section
-    assert "| SCHD | 100.0% | US$1,000.00 | 35 | <= US$28.50 |" in budget_section
+    assert (
+        "| SCHD | - | 100.0% | 1.0x | US$1,000.00 | 35 | <= US$28.50 |"
+        in budget_section
+    )
     assert "## Ativos monitorados (sem alocacao de budget)" in report
     assert "| PEP | Operado via venda de puts - IBKR | **BUY** |" in report
 

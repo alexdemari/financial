@@ -2,7 +2,7 @@ from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 
-from dividend_tracker.decision import AssetDecision
+from dividend_tracker.decision import AssetDecision, ConvictionLevel
 
 
 def render_dividend_report(
@@ -10,6 +10,7 @@ def render_dividend_report(
     budget: float | None = None,
     generated_at: datetime | None = None,
     processing_errors: list[str] | None = None,
+    conviction_multiplier: float = 1.5,
 ) -> str:
     report_time = generated_at or datetime.now(UTC)
     errors = processing_errors or []
@@ -43,7 +44,7 @@ def render_dividend_report(
 
     if budget is not None:
         lines.extend(["", f"## Guia de Aporte - {format_money(budget, 'BRL')}", ""])
-        lines.extend(_render_budget_table(decisions, budget))
+        lines.extend(_render_budget_table(decisions, budget, conviction_multiplier))
 
     monitored_decisions = [
         decision for decision in decisions if decision.asset.target_weight == 0.0
@@ -51,6 +52,9 @@ def render_dividend_report(
     if monitored_decisions:
         lines.extend(["", "## Ativos monitorados (sem alocacao de budget)", ""])
         lines.extend(_render_monitored_table(monitored_decisions))
+
+    lines.extend(["", "## Estado dos modelos - hoje", ""])
+    lines.extend(_render_model_state_table(decisions))
 
     lines.extend(
         [
@@ -68,6 +72,7 @@ def write_dividend_report(
     output_path: str | Path,
     budget: float | None = None,
     processing_errors: list[str] | None = None,
+    conviction_multiplier: float = 1.5,
 ) -> Path:
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -76,6 +81,7 @@ def write_dividend_report(
             decisions,
             budget=budget,
             processing_errors=processing_errors,
+            conviction_multiplier=conviction_multiplier,
         ),
         encoding="utf-8",
     )
@@ -88,14 +94,14 @@ def _render_asset_table(
     currency: str,
 ) -> list[str]:
     rows = [
-        "| Ticker | Setor | Preco Atual | Div. Base | Metodo | Preco Teto | DY Atual | min_dy | Margem | Sinal Tecnico | Decisao |",
-        "|---|---|---:|---:|---|---:|---:|---:|---:|---|---|",
+        "| Ticker | Setor | Preco Atual | Div. Base | Metodo | Preco Teto | DY Atual | min_dy | Margem | Sinal Tecnico | Conviccao | Decisao |",
+        "|---|---|---:|---:|---|---:|---:|---:|---:|---|---|---|",
     ]
     market_decisions = [
         decision for decision in decisions if decision.asset.market == market
     ]
     if not market_decisions:
-        rows.append("| - | - | - | - | - | - | - | - | - | - | - |")
+        rows.append("| - | - | - | - | - | - | - | - | - | - | - | - |")
         return rows
 
     for decision in market_decisions:
@@ -114,7 +120,8 @@ def _render_asset_table(
             f"{format_percent(ceiling.min_dy)}{min_dy_marker} | "
             f"{format_percent(ceiling.margin_pct, signed=True)} | "
             f"{decision.technical_signal.signal} | "
-            f"**{decision.decision}** |"
+            f"{_format_conviction(decision.conviction)} | "
+            f"{_format_decision(decision)} |"
         )
     return rows
 
@@ -149,37 +156,62 @@ def _render_details(decisions: list[AssetDecision]) -> list[str]:
     return lines
 
 
-def _render_budget_table(decisions: list[AssetDecision], budget: float) -> list[str]:
+def _render_budget_table(
+    decisions: list[AssetDecision],
+    budget: float,
+    conviction_multiplier: float,
+) -> list[str]:
     eligible = [
         decision
         for decision in decisions
-        if decision.decision in {"BUY", "WATCH"} and decision.asset.target_weight > 0
+        if decision.decision == "BUY" and decision.asset.target_weight > 0
     ]
     if not eligible:
         return ["Nenhum ativo elegivel para aporte."]
 
-    total_weight = sum(decision.asset.target_weight for decision in eligible)
+    weighted_targets = {
+        decision.asset.ticker: decision.asset.target_weight
+        * _conviction_multiplier(decision, conviction_multiplier)
+        for decision in eligible
+    }
+    total_weight = sum(weighted_targets.values())
+    allocated_total = 0.0
     rows = [
-        "| Ticker | Peso Alvo | Valor | Qtd Acoes | Preco Entrada |",
-        "|---|---:|---:|---:|---:|",
+        "| Ticker | Conviccao | Peso Alvo | Multiplicador | Valor | Qtd | Preco Entrada |",
+        "|---|---|---:|---:|---:|---:|---:|",
     ]
     for decision in eligible:
         current_price = decision.price_ceiling.current_price
         allocated_value = (
-            budget * (decision.asset.target_weight / total_weight)
+            budget * (weighted_targets[decision.asset.ticker] / total_weight)
             if total_weight > 0
             else 0.0
         )
+        allocated_total += allocated_value
         quantity = int(allocated_value // current_price) if current_price > 0 else 0
         currency = "BRL" if decision.asset.market == "BR" else "USD"
+        multiplier = _conviction_multiplier(decision, conviction_multiplier)
         rows.append(
             "| "
             f"{decision.asset.ticker} | "
+            f"{_format_conviction(decision.conviction)} | "
             f"{format_percent(decision.asset.target_weight)} | "
+            f"{multiplier:.1f}x | "
             f"{format_money(allocated_value, currency)} | "
             f"{quantity} | "
             f"<= {format_money(current_price, currency)} |"
         )
+    remaining_budget = max(0.0, budget - allocated_total)
+    rows.extend(
+        [
+            "",
+            (
+                f"Nota: conviccao alta recebe {conviction_multiplier:.1f}x "
+                "o peso normal."
+            ),
+            f"Budget restante nao alocado: {format_money(remaining_budget, 'BRL')}",
+        ]
+    )
     return rows
 
 
@@ -207,6 +239,53 @@ def format_money(value: float, currency: str) -> str:
 def format_percent(value: float, signed: bool = False) -> str:
     sign = "+" if signed and value > 0 else ""
     return f"{sign}{value * 100:.1f}%"
+
+
+def _format_decision(decision: AssetDecision) -> str:
+    if decision.decision == "BUY":
+        return f"**BUY** {_format_conviction(decision.conviction)}"
+    return f"**{decision.decision}**"
+
+
+def _format_conviction(conviction: ConvictionLevel) -> str:
+    if conviction == ConvictionLevel.HIGH:
+        return "Alta **"
+    if conviction == ConvictionLevel.NORMAL:
+        return "Normal *"
+    return "-"
+
+
+def _conviction_multiplier(
+    decision: AssetDecision,
+    high_conviction_multiplier: float,
+) -> float:
+    if decision.conviction == ConvictionLevel.HIGH:
+        return high_conviction_multiplier
+    return 1.0
+
+
+def _render_model_state_table(decisions: list[AssetDecision]) -> list[str]:
+    rows = [
+        "| Ticker | Primario | Confirmacao | Conviccao |",
+        "|---|---|---|---|",
+    ]
+    for decision in decisions:
+        primary = decision.primary_signal
+        confirmation = decision.confirmation_signal
+        primary_label = f"{primary.signal} ({primary.model})"
+        confirmation_label = (
+            f"{confirmation.signal} ({confirmation.model})"
+            if confirmation is not None
+            else "-"
+        )
+        rows.append(
+            "| "
+            f"{decision.asset.ticker} | "
+            f"{primary_label} | "
+            f"{confirmation_label} | "
+            f"{_format_conviction(decision.conviction)} |"
+        )
+    return rows
 
 
 def _format_days(days_since_event: int | None) -> str:

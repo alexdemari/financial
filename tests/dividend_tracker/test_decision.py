@@ -4,14 +4,16 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from dividend_tracker.config import DividendAssetConfig
+from dividend_tracker.config import DividendAssetConfig, TechnicalModels
 from dividend_tracker.decision import (
+    ConvictionLevel,
     TechnicalSignalResult,
     evaluate_asset,
     get_technical_signal,
 )
 from dividend_tracker.dividend_data import DividendData, DividendDistribution
 from dividend_tracker.price_ceiling import PriceCeilingResult, calculate_price_ceiling
+from dividend_tracker.report import render_dividend_report
 from stock_analyzer.enums import Signal
 
 
@@ -239,3 +241,114 @@ def test_get_technical_signal_propagates_missing_local_csv(monkeypatch):
 
     with pytest.raises(FileNotFoundError, match="Local CSV not found"):
         get_technical_signal(_asset(), local_only=True)
+
+
+def test_decision_high_conviction_when_both_signal_buy():
+    """Quando primary=BUY e confirmation=BUY -> action=BUY, conviction=HIGH."""
+    result = evaluate_asset(
+        _asset(),
+        _ceiling(40.0, 50.0),
+        _technical("BUY"),
+        confirmation_signal=TechnicalSignalResult(
+            signal="BUY",
+            model="lux",
+            event_type="BUY",
+            days_since_event=0,
+            interpretation="mock",
+        ),
+    )
+
+    assert result.decision == "BUY"
+    assert result.conviction == ConvictionLevel.HIGH
+
+
+def test_decision_normal_conviction_when_only_primary_signals():
+    """Quando primary=BUY e confirmation=WAIT -> action=BUY, conviction=NORMAL."""
+    result = evaluate_asset(
+        _asset(),
+        _ceiling(40.0, 50.0),
+        _technical("BUY"),
+        confirmation_signal=TechnicalSignalResult(
+            signal="WAIT",
+            model="lux",
+            event_type="NONE",
+            days_since_event=None,
+            interpretation="mock",
+        ),
+    )
+
+    assert result.decision == "BUY"
+    assert result.conviction == ConvictionLevel.NORMAL
+
+
+def test_decision_no_confirmation_model_is_normal():
+    """Quando não há confirmation definido e primary=BUY -> conviction=NORMAL."""
+    result = evaluate_asset(_asset(), _ceiling(40.0, 50.0), _technical("BUY"))
+
+    assert result.decision == "BUY"
+    assert result.conviction == ConvictionLevel.NORMAL
+
+
+def test_decision_overpriced_ignores_conviction():
+    """Quando preço > teto -> OVERPRICED independente dos sinais."""
+    result = evaluate_asset(
+        _asset(),
+        _ceiling(60.0, 50.0),
+        _technical("BUY"),
+        confirmation_signal=TechnicalSignalResult(
+            signal="BUY",
+            model="lux",
+            event_type="BUY",
+            days_since_event=0,
+            interpretation="mock",
+        ),
+    )
+
+    assert result.decision == "OVERPRICED"
+    assert result.conviction == ConvictionLevel.NONE
+
+
+def test_budget_allocation_high_conviction_gets_multiplier():
+    """Ativo com conviction=HIGH recebe 1.5x o peso no budget."""
+    high_asset = DividendAssetConfig(
+        ticker="HIGH",
+        sector="Energia",
+        name="High Conviction",
+        target_weight=1.0,
+        market="BR",
+        technical_models=TechnicalModels(primary="lux", confirmation="smc"),
+    )
+    normal_asset = DividendAssetConfig(
+        ticker="NORM",
+        sector="Energia",
+        name="Normal Conviction",
+        target_weight=1.0,
+        market="BR",
+        technical_models=TechnicalModels(primary="lux"),
+    )
+    high_decision = evaluate_asset(
+        high_asset,
+        _ceiling(10.0, 20.0),
+        _technical("BUY"),
+        confirmation_signal=TechnicalSignalResult(
+            signal="BUY",
+            model="smc",
+            event_type="BUY",
+            days_since_event=0,
+            interpretation="mock",
+        ),
+    )
+    normal_decision = evaluate_asset(
+        normal_asset,
+        _ceiling(10.0, 20.0),
+        _technical("BUY"),
+    )
+
+    report = render_dividend_report(
+        [high_decision, normal_decision],
+        budget=2500.0,
+        conviction_multiplier=1.5,
+    )
+
+    assert "| HIGH | Alta ** | 100.0% | 1.5x | R$1,500.00 | 150 |" in report
+    assert "| NORM | Normal * | 100.0% | 1.0x | R$1,000.00 | 100 |" in report

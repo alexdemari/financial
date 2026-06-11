@@ -51,6 +51,8 @@ logger = logging.getLogger(__name__)
 
 EVALUATION_DAYS = 45
 EVALUATION_DAYS_90 = 90
+EVALUATION_WEEKS = 9
+EVALUATION_WEEKS_18 = 18
 GAIN_THRESHOLD = 0.05
 LOSS_THRESHOLD = -0.05
 MIN_DELTA_PP = 5.0
@@ -131,6 +133,7 @@ def run_backtest(
     start_date: str | None = DEFAULT_START_DATE,
     end_date: str | None = DEFAULT_END_DATE,
     dividend_cache_dir: str | Path = "data/dividends",
+    timeframe: str = "1D",
 ) -> list[AssetBacktestResult]:
     results = []
     for asset in portfolio_config.assets:
@@ -142,6 +145,7 @@ def run_backtest(
                 end_date=end_date,
                 dividend_cache_dir=dividend_cache_dir,
                 portfolio_config=portfolio_config,
+                timeframe=timeframe,
             )
         )
     return results
@@ -154,11 +158,13 @@ def _backtest_asset(
     end_date: str | None,
     dividend_cache_dir: str | Path,
     portfolio_config: DividendPortfolioConfig,
+    timeframe: str,
 ) -> AssetBacktestResult:
     symbol = asset.yahoo_ticker
+    interval = timeframe.lower()
     try:
         analyzer = StockDataAnalyzer(signal_model="lux")
-        ohlc_df = analyzer.load_local_data(symbol, data_dir=data_dir, interval="1d")
+        ohlc_df = analyzer.load_local_data(symbol, data_dir=data_dir, interval=interval)
     except Exception as exc:
         return AssetBacktestResult(
             config_ticker=asset.ticker,
@@ -197,6 +203,7 @@ def _backtest_asset(
             start_date=start_date,
             end_date=end_date,
             price_ceiling=dividend_ceiling,
+            timeframe=timeframe,
         )
 
     # Compute period-level signal counts for historical analysis
@@ -368,6 +375,7 @@ def _evaluate_model(
     start_date: str | None,
     end_date: str | None,
     price_ceiling: float | None = None,
+    timeframe: str = "1D",
 ) -> ModelResult:
     close = ohlc_df["Close"].copy()
     low = ohlc_df["Low"].copy()
@@ -432,14 +440,19 @@ def _evaluate_model(
             continue
         buy_signal_timestamps.append(signal_ts)
 
-        target_ts_45 = signal_ts + timedelta(days=EVALUATION_DAYS)
-        target_ts_90 = signal_ts + timedelta(days=EVALUATION_DAYS_90)
-
         try:
             entry_price = float(close.asof(signal_ts))
         except Exception:
             continue
         if pd.isna(entry_price) or entry_price <= 0:
+            continue
+
+        target_ts_45, target_ts_90 = _evaluation_targets(
+            close.index,
+            signal_ts,
+            timeframe=timeframe,
+        )
+        if target_ts_45 is None:
             continue
 
         future_close_45 = close[close.index >= target_ts_45]
@@ -468,8 +481,12 @@ def _evaluate_model(
             neutral_count += 1
 
         # 90-day precision
-        future_close_90 = close[close.index >= target_ts_90]
-        if not future_close_90.empty:
+        future_close_90 = (
+            close[close.index >= target_ts_90]
+            if target_ts_90 is not None
+            else pd.Series(dtype=float)
+        )
+        if target_ts_90 is not None and not future_close_90.empty:
             exit_price_90 = float(future_close_90.iloc[0])
             change_90 = (exit_price_90 - entry_price) / entry_price
             evaluable_90d += 1
@@ -518,6 +535,32 @@ def _evaluate_model(
     )
 
 
+def _evaluation_targets(
+    close_index: pd.Index,
+    signal_ts: pd.Timestamp,
+    timeframe: str,
+) -> tuple[pd.Timestamp | None, pd.Timestamp | None]:
+    if timeframe.upper() == "1W":
+        signal_position = close_index.searchsorted(signal_ts, side="left")
+        primary_position = signal_position + EVALUATION_WEEKS
+        secondary_position = signal_position + EVALUATION_WEEKS_18
+        primary_ts = (
+            close_index[primary_position]
+            if primary_position < len(close_index)
+            else None
+        )
+        secondary_ts = (
+            close_index[secondary_position]
+            if secondary_position < len(close_index)
+            else None
+        )
+        return primary_ts, secondary_ts
+    return (
+        signal_ts + timedelta(days=EVALUATION_DAYS),
+        signal_ts + timedelta(days=EVALUATION_DAYS_90),
+    )
+
+
 def apply_yaml_updates(
     config_path: str | Path,
     results: list[AssetBacktestResult],
@@ -549,7 +592,10 @@ def apply_yaml_updates(
                 continue
             result = update_map[ticker]
             if update_model and result.changed:
-                asset["technical_model"] = result.recommended_model
+                if isinstance(asset.get("technical_models"), dict):
+                    asset["technical_models"]["primary"] = result.recommended_model
+                else:
+                    asset["technical_model"] = result.recommended_model
             if update_backtest_ref:
                 recommended_result = result.models.get(result.recommended_model)
                 asset["backtest_ref"] = str(effective_run_date)
@@ -574,6 +620,8 @@ def write_report(
     yaml_updated: list[str],
     start_date: str | None,
     end_date: str | None,
+    timeframe: str = "1D",
+    daily_report_path: str | Path = "reports/backtest/dividend_entry_points_10y.md",
 ) -> Path:
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -586,6 +634,7 @@ def write_report(
 
     # Title block
     lines.append("# Backtest de pontos de entrada — Carteira de dividendos")
+    lines.append(f"timeframe: {timeframe.upper()}")
     lines.append(f"Período: {requested_period}")
     lines.append(f"Gerado em: {run_date}")
     lines.append(f"Período coberto pelos dados: {covered_period_str}")
@@ -598,14 +647,24 @@ def write_report(
         "- Observação: WATCH é uma classificação do `dividend_tracker` sobre sinal recente; "
         "o `stock_analyzer` histórico expõe BUY/HOLD/SELL, então o backtest mede BUY"
     )
-    lines.append(f"- Janela de avaliação 45d: {EVALUATION_DAYS} dias após o sinal")
-    lines.append(f"- Janela de avaliação 90d: {EVALUATION_DAYS_90} dias após o sinal")
+    if timeframe.upper() == "1W":
+        lines.append(
+            f"- Janela de avaliação 45d: {EVALUATION_WEEKS} semanas após o sinal"
+        )
+        lines.append(
+            f"- Janela de avaliação 90d: {EVALUATION_WEEKS_18} semanas após o sinal"
+        )
+    else:
+        lines.append(f"- Janela de avaliação 45d: {EVALUATION_DAYS} dias após o sinal")
+        lines.append(
+            f"- Janela de avaliação 90d: {EVALUATION_DAYS_90} dias após o sinal"
+        )
     lines.append(f"- Critério de sucesso: alta >= {GAIN_THRESHOLD:.0%} no período")
     lines.append(
         f"- Critério de falso positivo: queda >= {abs(LOSS_THRESHOLD):.0%} no período"
     )
     lines.append(
-        "- Drawdown máximo pós-sinal: média das piores mínimas dentro da janela de 45 dias"
+        "- Drawdown máximo pós-sinal: média das piores mínimas dentro da janela primária"
     )
     lines.append(
         "- Sinais combinados: sinal BUY do modelo E preço de entrada <= preço teto (dividend cache)"
@@ -828,12 +887,195 @@ def write_report(
     lines.append("")
     _append_decision_sections(lines, results, yaml_updated)
 
+    if timeframe.upper() == "1W":
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+        _append_timeframe_comparison(lines, results, daily_report_path)
+
     if yaml_updated:
         lines.append("")
         lines.append(f"YAML atualizado para: {', '.join(yaml_updated)}")
 
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return output_path
+
+
+def _append_timeframe_comparison(
+    lines: list[str],
+    weekly_results: list[AssetBacktestResult],
+    daily_report_path: str | Path,
+) -> None:
+    daily_results = _parse_daily_report_metrics(daily_report_path)
+    lines.append("## Comparação 1D vs 1W — qual timeframe usar?")
+    lines.append("")
+
+    for result in weekly_results:
+        lines.append(f"### {result.config_ticker} — comparação 1D vs 1W")
+        lines.append("")
+        lines.append(
+            "| Modelo | TF | Sinais/ano | Precisão 45d | Falsos+ | Retorno médio |"
+        )
+        lines.append(
+            "|--------|----|------------|--------------|---------|---------------|"
+        )
+        for model_name in ("lux", "smc"):
+            daily_model = daily_results.get(result.config_ticker, {}).get(model_name)
+            if daily_model is not None:
+                lines.append(
+                    f"| {model_name} | 1D | {daily_model['signals_per_year']} | "
+                    f"{daily_model['precision']} | {daily_model['false_positive']} | "
+                    f"{daily_model['avg_return']} |"
+                )
+            weekly_model = result.models.get(model_name)
+            if weekly_model is not None:
+                lines.append(
+                    f"| {model_name} | 1W | {weekly_model.signals_per_year:.1f} | "
+                    f"{weekly_model.precision:.1%} | {weekly_model.false_positive:.1%} | "
+                    f"{weekly_model.avg_return_45d:+.1%} |"
+                )
+        lines.append("")
+
+    lines.append("### Frequência de sinais")
+    lines.append("")
+    lines.append("| Ativo | Modelo | 1D sinais/ano | 1W sinais/ano |")
+    lines.append("|-------|--------|----------------|----------------|")
+    for result in weekly_results:
+        for model_name in ("lux", "smc"):
+            daily_rate = (
+                daily_results.get(result.config_ticker, {})
+                .get(model_name, {})
+                .get("signals_per_year", "-")
+            )
+            weekly_model = result.models.get(model_name)
+            weekly_rate = (
+                f"{weekly_model.signals_per_year:.1f}" if weekly_model else "-"
+            )
+            lines.append(
+                f"| {result.config_ticker} | {model_name} | {daily_rate} | {weekly_rate} |"
+            )
+    lines.append("")
+
+    lines.append("### Precisão")
+    lines.append("")
+    lines.append("| Ativo | Modelo | 1D precisão | 1W precisão |")
+    lines.append("|-------|--------|-------------|-------------|")
+    for result in weekly_results:
+        for model_name in ("lux", "smc"):
+            daily_precision = (
+                daily_results.get(result.config_ticker, {})
+                .get(model_name, {})
+                .get("precision", "-")
+            )
+            weekly_model = result.models.get(model_name)
+            weekly_precision = f"{weekly_model.precision:.1%}" if weekly_model else "-"
+            lines.append(
+                f"| {result.config_ticker} | {model_name} | {daily_precision} | {weekly_precision} |"
+            )
+    lines.append("")
+
+    lines.append("### Conclusão de timeframe por ativo")
+    lines.append("")
+    lines.append(
+        "| Ativo | TF recomendado | Modelo recomendado | Sinais/ano | Precisão |"
+    )
+    lines.append(
+        "|--------|---------------|-------------------|------------|----------|"
+    )
+    for result in weekly_results:
+        recommendation = _recommend_timeframe(result, daily_results)
+        lines.append(
+            f"| {result.config_ticker} | {recommendation['timeframe']} | "
+            f"{recommendation['model']} | {recommendation['signals_per_year']} | "
+            f"{recommendation['precision']} |"
+        )
+
+
+def _parse_daily_report_metrics(
+    daily_report_path: str | Path,
+) -> dict[str, dict[str, dict[str, str]]]:
+    path = Path(daily_report_path)
+    if not path.exists():
+        return {}
+
+    parsed: dict[str, dict[str, dict[str, str]]] = {}
+    current_ticker: str | None = None
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        if raw_line.startswith("### ") and " " not in raw_line.removeprefix("### "):
+            current_ticker = raw_line.removeprefix("### ").strip()
+            parsed.setdefault(current_ticker, {})
+            continue
+        if current_ticker is None or not raw_line.startswith("| "):
+            continue
+        cells = [cell.strip() for cell in raw_line.strip("|").split("|")]
+        if len(cells) < 9 or cells[0] in {"Modelo", "--------"}:
+            continue
+        model_name = cells[0]
+        if model_name not in {"lux", "smc", "rsi-sma"}:
+            continue
+        parsed[current_ticker][model_name] = {
+            "signals_per_year": cells[2],
+            "precision": cells[4],
+            "false_positive": cells[6],
+            "avg_return": cells[7],
+        }
+    return parsed
+
+
+def _recommend_timeframe(
+    weekly_result: AssetBacktestResult,
+    daily_results: dict[str, dict[str, dict[str, str]]],
+) -> dict[str, str]:
+    candidates: list[tuple[str, str, float, float]] = []
+    for model_name, model_result in weekly_result.models.items():
+        if model_name == "rsi-sma":
+            continue
+        candidates.append(
+            (
+                "1W",
+                model_name,
+                model_result.signals_per_year,
+                model_result.precision,
+            )
+        )
+    for model_name, daily_model in daily_results.get(
+        weekly_result.config_ticker, {}
+    ).items():
+        if model_name == "rsi-sma":
+            continue
+        try:
+            rate = float(daily_model["signals_per_year"])
+            precision = float(daily_model["precision"].rstrip("%")) / 100
+        except ValueError:
+            continue
+        candidates.append(("1D", model_name, rate, precision))
+
+    if not candidates:
+        return {
+            "timeframe": "-",
+            "model": "-",
+            "signals_per_year": "-",
+            "precision": "-",
+        }
+
+    sweet_spot_candidates = [
+        candidate
+        for candidate in candidates
+        if SWEET_SPOT_MIN_SIGNALS_PER_YEAR
+        <= candidate[2]
+        <= SWEET_SPOT_MAX_SIGNALS_PER_YEAR
+        and candidate[3] > 0.55
+    ]
+    selected = max(
+        sweet_spot_candidates or candidates,
+        key=lambda candidate: (candidate[3], -abs(candidate[2] - 8)),
+    )
+    return {
+        "timeframe": selected[0],
+        "model": selected[1],
+        "signals_per_year": f"{selected[2]:.1f}",
+        "precision": f"{selected[3]:.1%}",
+    }
 
 
 def _frequency_label(signals_per_year: float) -> str:
@@ -982,8 +1224,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--start-date", default=DEFAULT_START_DATE)
     parser.add_argument("--end-date", default=DEFAULT_END_DATE)
     parser.add_argument(
+        "--timeframe",
+        choices=["1D", "1W", "1d", "1w"],
+        default="1D",
+        help="OHLC timeframe to backtest; 1W uses 9/18 weekly bars.",
+    )
+    parser.add_argument(
         "--output",
         default="reports/backtest/dividend_entry_points_10y.md",
+    )
+    parser.add_argument(
+        "--daily-report",
+        default="reports/backtest/dividend_entry_points_10y.md",
+        help="Existing daily report used for 1D vs 1W comparison.",
     )
     parser.add_argument(
         "--update-yaml",
@@ -1005,6 +1258,7 @@ def main(argv: list[str] | None = None) -> int:
         start_date=args.start_date,
         end_date=args.end_date,
         dividend_cache_dir=args.dividend_cache_dir,
+        timeframe=args.timeframe.upper(),
     )
 
     yaml_updated: list[str] = []
@@ -1026,6 +1280,8 @@ def main(argv: list[str] | None = None) -> int:
         yaml_updated=yaml_updated,
         start_date=args.start_date,
         end_date=args.end_date,
+        timeframe=args.timeframe.upper(),
+        daily_report_path=args.daily_report,
     )
     print(f"Relatorio gerado: {output_path}")
     return 0

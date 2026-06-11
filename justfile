@@ -150,6 +150,18 @@ backtest-dividends:
         --output reports/backtest/dividend_entry_points_10y.md
     @echo "Relatorio: reports/backtest/dividend_entry_points_10y.md"
 
+# Backtest semanal 10 anos — pontos de entrada por ativo e modelo
+backtest-dividends-weekly:
+    PYTHONPATH=src uv run python -m dividend_tracker.backtest \
+        --config config/dividend_portfolio.yaml \
+        --data-dir data/stocks \
+        --timeframe 1W \
+        --start-date 2015-06-01 \
+        --end-date 2026-06-10 \
+        --output reports/backtest/dividend_entry_points_10y_weekly.md \
+        --daily-report reports/backtest/dividend_entry_points_10y.md
+    @echo "Relatorio: reports/backtest/dividend_entry_points_10y_weekly.md"
+
 # Backtest 10 anos e aplica mudancas no YAML (model + backtest_ref)
 backtest-dividends-apply:
     PYTHONPATH=src uv run python -m dividend_tracker.backtest \

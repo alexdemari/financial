@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any, Literal
 
@@ -12,6 +13,12 @@ from stock_analyzer.enums import Signal
 
 DividendDecision = Literal["BUY", "WATCH", "WAIT", "OVERPRICED"]
 TechnicalSignal = Literal["BUY", "WATCH", "WAIT", "NEUTRAL"]
+
+
+class ConvictionLevel(Enum):
+    NONE = "none"
+    NORMAL = "normal"
+    HIGH = "high"
 
 
 @dataclass(frozen=True)
@@ -30,25 +37,40 @@ class AssetDecision:
     technical_signal: TechnicalSignalResult
     decision: DividendDecision
     description: str
+    conviction: ConvictionLevel = ConvictionLevel.NONE
+    confirmation_signal: TechnicalSignalResult | None = None
+
+    @property
+    def primary_signal(self) -> TechnicalSignalResult:
+        return self.technical_signal
 
 
 def evaluate_asset(
     asset_config: DividendAssetConfig,
     price_ceiling_result: PriceCeilingResult,
     technical_signal: TechnicalSignalResult,
+    confirmation_signal: TechnicalSignalResult | None = None,
 ) -> AssetDecision:
     if not price_ceiling_result.is_below_or_equal_ceiling:
         decision: DividendDecision = "OVERPRICED"
         description = "Fora do preco teto"
+        conviction = ConvictionLevel.NONE
     elif technical_signal.signal == "BUY":
         decision = "BUY"
-        description = "Comprar agora"
+        if confirmation_signal is not None and confirmation_signal.signal == "BUY":
+            conviction = ConvictionLevel.HIGH
+            description = "Comprar agora - alta conviccao"
+        else:
+            conviction = ConvictionLevel.NORMAL
+            description = "Comprar agora"
     elif technical_signal.signal == "WATCH":
         decision = "WATCH"
         description = "Monitorar - entrada proxima"
+        conviction = ConvictionLevel.NORMAL
     else:
         decision = "WAIT"
         description = "Preco ok, aguardar sinal tecnico"
+        conviction = ConvictionLevel.NONE
 
     return AssetDecision(
         asset=asset_config,
@@ -56,6 +78,8 @@ def evaluate_asset(
         technical_signal=technical_signal,
         decision=decision,
         description=description,
+        conviction=conviction,
+        confirmation_signal=confirmation_signal,
     )
 
 
@@ -63,15 +87,18 @@ def get_technical_signal(
     asset_config: DividendAssetConfig,
     data_dir: str | Path = "data/stocks",
     local_only: bool = True,
+    model: str | None = None,
 ) -> TechnicalSignalResult:
-    analyzer = StockDataAnalyzer(signal_model=asset_config.technical_model)
+    technical_model = model or asset_config.technical_models.primary
+    interval = asset_config.timeframe.lower()
+    analyzer = StockDataAnalyzer(signal_model=technical_model)
     symbol = asset_config.yahoo_ticker
     if local_only:
-        ohlc_df = analyzer.load_local_data(symbol, data_dir=data_dir, interval="1d")
+        ohlc_df = analyzer.load_local_data(symbol, data_dir=data_dir, interval=interval)
     else:
         # retrieve_data downloads via yfinance when local cache is missing/stale.
         # Use --local-only to skip all network calls.
-        ohlc_df = analyzer.retrieve_data(symbol, data_dir=data_dir, interval="1d")
+        ohlc_df = analyzer.retrieve_data(symbol, data_dir=data_dir, interval=interval)
 
     current_signal = analyzer.generate_signal(symbol, ohlc_df)
     historical_signals = analyzer.generate_historical_signals(symbol, ohlc_df)
@@ -87,11 +114,34 @@ def get_technical_signal(
 
     return TechnicalSignalResult(
         signal=signal,
-        model=asset_config.technical_model,
+        model=technical_model,
         event_type=event_type,
         days_since_event=days_since_event,
         interpretation=interpretation,
     )
+
+
+def get_asset_technical_signals(
+    asset_config: DividendAssetConfig,
+    data_dir: str | Path = "data/stocks",
+    local_only: bool = True,
+) -> tuple[TechnicalSignalResult, TechnicalSignalResult | None]:
+    primary_signal = get_technical_signal(
+        asset_config,
+        data_dir=data_dir,
+        local_only=local_only,
+        model=asset_config.technical_models.primary,
+    )
+    confirmation_model = asset_config.technical_models.confirmation
+    if confirmation_model is None:
+        return primary_signal, None
+    confirmation_signal = get_technical_signal(
+        asset_config,
+        data_dir=data_dir,
+        local_only=local_only,
+        model=confirmation_model,
+    )
+    return primary_signal, confirmation_signal
 
 
 def _map_current_signal(current_signal: Any) -> TechnicalSignal:

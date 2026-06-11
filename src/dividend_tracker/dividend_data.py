@@ -142,9 +142,17 @@ def _download_dividend_data(ticker: str, yahoo_ticker: str) -> DividendData:
         dividends.index = dividend_index
         ttm_cutoff = pd.Timestamp(fetched_at - timedelta(days=365))
         if dividend_index.tz is None:
-            ttm_cutoff = ttm_cutoff.tz_localize(None)
+            ttm_cutoff = (
+                ttm_cutoff.tz_convert(None)
+                if ttm_cutoff.tzinfo is not None
+                else ttm_cutoff
+            )
         else:
-            ttm_cutoff = ttm_cutoff.tz_localize(dividend_index.tz)
+            ttm_cutoff = (
+                ttm_cutoff.tz_convert(dividend_index.tz)
+                if ttm_cutoff.tzinfo is not None
+                else ttm_cutoff.tz_localize(dividend_index.tz)
+            )
         ttm_dividends = dividends[dividends.index >= ttm_cutoff]
 
     current_price = _get_current_price(yf_ticker)
