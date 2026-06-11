@@ -1,115 +1,126 @@
+# Carteira de dividendos - configuracao
+# Atualizado: 2026-06-11
+# Metodologia: preco teto = dividendo_base / min_dy
+#   ceiling_method: average_6y = media anual dos ultimos 6 anos completos (AGF)
+#                   trailing   = dividendo TTM (ultimos 12 meses)
+# min_dy por ativo calibrado com base no DY historico estrutural real
+
 settings:
-  min_dy: 0.06
-  dy_source: trailing
+  min_dy: 0.06          # global — fallback para ativos sem min_dy proprio
+  dy_source: trailing   # default — sobrescrito por ceiling_method por ativo
   currency_br: BRL
   currency_us: USD
-  conviction_multiplier: 1.5
+
+# Ativos BR - sufixo .SA adicionado automaticamente para yfinance
 br_assets:
-- ticker: EGIE3
-  sector: Energia
-  name: Engie Brasil Energia
-  target_weight: 0.25
-  technical_models:
-    primary: lux
-    confirmation: smc
-  timeframe: 1D
-  ceiling_method: average_6y
-  backtest_ref: '2026-06-10'
-  backtest_precision: 0.375
-  backtest_signals_per_year: 0.8
-- ticker: ITSA4
-  sector: Bancos
-  name: Itausa
-  target_weight: 0.25
-  technical_models:
-    primary: lux
-    confirmation: smc
-  timeframe: 1D
-  ceiling_method: average_6y
-  backtest_ref: '2026-06-10'
-  backtest_precision: 0.4037
-  backtest_signals_per_year: 10.9
-- ticker: BBSE3
-  sector: Seguros
-  name: BB Seguridade
-  target_weight: 0.2
-  technical_models:
-    primary: lux
-    confirmation: smc
-  timeframe: 1D
-  ceiling_method: average_6y
-  backtest_ref: '2026-06-10'
-  backtest_precision: 0.3252
-  backtest_signals_per_year: 12.3
-- ticker: VIVT3
-  sector: Telecom
-  name: Telefonica Brasil
-  target_weight: 0.17
-  technical_models:
-    primary: lux
-    confirmation: smc
-  timeframe: 1D
-  ceiling_method: average_6y
-  backtest_ref: '2026-06-10'
-  backtest_precision: 0.5714
-  backtest_signals_per_year: 0.7
-- ticker: SAPR4
-  sector: Saneamento
-  name: Sanepar
-  target_weight: 0.13
-  technical_models:
-    primary: lux
-    confirmation: smc
-  timeframe: 1D
-  ceiling_method: average_6y
-  backtest_ref: '2026-06-10'
-  backtest_precision: 0.4
-  backtest_signals_per_year: 0.5
+  - ticker: TAEE11
+    sector: Energia
+    name: Taesa — Transmissora Alianca de Energia Eletrica
+    target_weight: 0.25
+    ceiling_method: average_6y
+    min_dy: 0.06
+    backtest_ref: "2026-06-11"
+    backtest_precision: null
+    backtest_signals_per_year: null
+    backtest_notes: >
+      Substituiu EGIE3 (11/06/2026). DY TTM 8.41% vs EGIE3 3.6%.
+      Transmissora pura — receita garantida por contrato ANEEL independente
+      de consumo. avg_6y R$3.56, teto R$59.35 (6%), preco atual R$38.94
+      — margem +52%. min_dy 6% adequado: DY historico estrutural 6-9%.
+      Historico 6 anos completos sem distorcao (2020-2025).
+
+  - ticker: ITSA4
+    sector: Bancos
+    name: Itausa
+    target_weight: 0.25
+    ceiling_method: trailing
+    min_dy: 0.06
+    backtest_ref: "2026-06-11"
+    backtest_notes: >
+      ceiling_method alterado de average_6y para trailing (11/06/2026).
+      avg_6y distorcido: crescimento 14x de dividendos (R$0.12 em 2020
+      para R$1.72 em 2025). TTM R$1.23 (DY 9.81%) e o dado real.
+      Teto TTM/6% = R$20.48 vs preco R$12.53 — margem +63%.
+
+  - ticker: BBSE3
+    sector: Seguros
+    name: BB Seguridade
+    target_weight: 0.20
+    ceiling_method: average_6y
+    min_dy: 0.06
+    backtest_ref: "2026-06-11"
+    backtest_notes: >
+      Criterio correto. DY historico 6-12%, crescimento consistente
+      (R$0.88 em 2020 para R$4.26 em 2025). avg_6y R$2.41,
+      teto R$40.11 (6%), preco R$37.58 — margem +6.7%.
+
+  - ticker: VIVT3
+    sector: Telecom
+    name: Telefonica Brasil
+    target_weight: 0.17
+    ceiling_method: trailing
+    min_dy: 0.06
+    backtest_ref: "2026-06-11"
+    backtest_notes: >
+      ceiling_method alterado de average_6y para trailing (11/06/2026).
+      avg_6y penaliza crescimento recente de dividendos.
+      TTM R$2.42 (DY 7.27%) supera o criterio de 6%.
+      Teto TTM/6% = R$40.33 vs preco R$33.30 — margem +21%.
+
+  - ticker: SAPR4
+    sector: Saneamento
+    name: Sanepar
+    target_weight: 0.13
+    ceiling_method: average_6y
+    min_dy: 0.045
+    backtest_ref: "2026-06-11"
+    backtest_notes: >
+      min_dy reduzido de 6% para 4.5% (11/06/2026).
+      DY estrutural do setor de saneamento BR e 4-5%, nao 6%.
+      avg_6y correto apos excluir ano corrente incompleto = R$0.274.
+      Teto avg_6y/4.5% = R$6.09 vs preco R$7.18 — OVERPRICED hoje.
+
+# Ativos US - via IBKR, analise em USD
 us_assets:
-- ticker: SCHD
-  sector: ETF Dividendos
-  name: Schwab US Dividend Equity ETF
-  target_weight: 0.5
-  technical_models:
-    primary: lux
-  timeframe: 1D
-  ceiling_method: trailing
-  backtest_ref: '2026-06-10'
-  backtest_precision: 0.2482
-  backtest_signals_per_year: 13.7
-- ticker: DGRO
-  sector: ETF Dividendos
-  name: iShares Core Dividend Growth ETF
-  target_weight: 0.3
-  technical_models:
-    primary: lux
-  timeframe: 1D
-  ceiling_method: trailing
-  backtest_ref: '2026-06-10'
-  backtest_precision: 0.2667
-  backtest_signals_per_year: 13.5
-- ticker: VYM
-  sector: ETF Dividendos
-  name: Vanguard High Dividend Yield ETF
-  target_weight: 0.2
-  technical_models:
-    primary: lux
-  timeframe: 1D
-  ceiling_method: trailing
-  backtest_ref: '2026-06-10'
-  backtest_precision: 0.277
-  backtest_signals_per_year: 14.8
-- ticker: PEP
-  sector: Consumer Staples
-  name: PepsiCo Inc
-  target_weight: 0.0
-  technical_models:
-    primary: smc
-    confirmation: lux
-  timeframe: 1D
-  min_dy: 0.038
-  ceiling_method: trailing
-  notes: Dividend King 54 anos. Fair value $205. Suporte $138-141.
-  backtest_ref: '2026-06-10'
-  backtest_precision: 0.4
-  backtest_signals_per_year: 0.5
+  - ticker: SCHD
+    sector: ETF Dividendos
+    name: Schwab US Dividend Equity ETF
+    target_weight: 0.50
+    ceiling_method: trailing
+    min_dy: 0.034
+    backtest_ref: "2026-06-11"
+    backtest_notes: >
+      min_dy 3.4% = DY historico medio do SCHD.
+      Acima da media = ativo relativamente barato para seu historico.
+
+  - ticker: DGRO
+    sector: ETF Dividendos
+    name: iShares Core Dividend Growth ETF
+    target_weight: 0.30
+    ceiling_method: trailing
+    min_dy: 0.028
+    backtest_ref: "2026-06-11"
+    backtest_notes: >
+      min_dy 2.8% = DY historico medio do DGRO.
+
+  - ticker: VYM
+    sector: ETF Dividendos
+    name: Vanguard High Dividend Yield ETF
+    target_weight: 0.20
+    ceiling_method: trailing
+    min_dy: 0.030
+    backtest_ref: "2026-06-11"
+    backtest_notes: >
+      min_dy 3.0% = DY historico medio do VYM.
+
+  - ticker: PEP
+    sector: Consumer Staples
+    name: PepsiCo Inc
+    target_weight: 0.00
+    ceiling_method: trailing
+    min_dy: 0.038
+    backtest_ref: "2026-06-11"
+    notes: >
+      Dividend King 54 anos. Operado via puts IBKR. Fair value $205.
+      Suporte $138-141. min_dy 3.8% = referencia historica de mercado
+      para Dividend Kings americanos (DY estrutural 2.5-4.5%).
