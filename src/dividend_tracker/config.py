@@ -5,10 +5,8 @@ from typing import Any, Literal, Optional
 import yaml
 
 
-TechnicalModel = Literal["lux", "smc", "rsi-sma"]
 CeilingMethod = Literal["trailing", "average_6y"]
 DySource = Literal["trailing", "forward", "average_6y"]
-Timeframe = Literal["1D", "1W"]
 
 
 @dataclass(frozen=True)
@@ -17,70 +15,22 @@ class DividendSettings:
     dy_source: DySource = "trailing"
     currency_br: str = "BRL"
     currency_us: str = "USD"
-    conviction_multiplier: float = 1.5
 
 
 @dataclass(frozen=True)
-class TechnicalModels:
-    primary: TechnicalModel
-    confirmation: Optional[TechnicalModel] = None
-
-
-@dataclass(frozen=True, init=False)
 class DividendAssetConfig:
     ticker: str
     sector: str
     name: str
     target_weight: float
-    technical_models: TechnicalModels
     market: Literal["BR", "US"]
     min_dy: Optional[float] = None
     ceiling_method: Optional[CeilingMethod] = None
     notes: Optional[str] = None
-    timeframe: Timeframe = "1D"
     backtest_ref: Optional[str] = None
     backtest_precision: Optional[float] = None
     backtest_signals_per_year: Optional[float] = None
-
-    def __init__(
-        self,
-        ticker: str,
-        sector: str,
-        name: str,
-        target_weight: float,
-        market: Literal["BR", "US"],
-        technical_models: TechnicalModels | None = None,
-        technical_model: TechnicalModel | None = None,
-        min_dy: Optional[float] = None,
-        ceiling_method: Optional[CeilingMethod] = None,
-        notes: Optional[str] = None,
-        timeframe: Timeframe = "1D",
-        backtest_ref: Optional[str] = None,
-        backtest_precision: Optional[float] = None,
-        backtest_signals_per_year: Optional[float] = None,
-    ) -> None:
-        if technical_models is None:
-            if technical_model is None:
-                raise ValueError("technical_models or technical_model is required")
-            technical_models = TechnicalModels(primary=technical_model)
-        object.__setattr__(self, "ticker", ticker)
-        object.__setattr__(self, "sector", sector)
-        object.__setattr__(self, "name", name)
-        object.__setattr__(self, "target_weight", target_weight)
-        object.__setattr__(self, "technical_models", technical_models)
-        object.__setattr__(self, "market", market)
-        object.__setattr__(self, "min_dy", min_dy)
-        object.__setattr__(self, "ceiling_method", ceiling_method)
-        object.__setattr__(self, "notes", notes)
-        object.__setattr__(self, "timeframe", timeframe)
-        object.__setattr__(self, "backtest_ref", backtest_ref)
-        object.__setattr__(self, "backtest_precision", backtest_precision)
-        object.__setattr__(self, "backtest_signals_per_year", backtest_signals_per_year)
-
-    @property
-    def technical_model(self) -> TechnicalModel:
-        """Backward-compatible primary technical model."""
-        return self.technical_models.primary
+    backtest_notes: Optional[str] = None
 
     @property
     def yahoo_ticker(self) -> str:
@@ -100,11 +50,9 @@ class DividendPortfolioConfig:
         return [*self.br_assets, *self.us_assets]
 
     def resolve_min_dy(self, asset: DividendAssetConfig) -> float:
-        """Return asset min_dy override, falling back to portfolio global."""
         return asset.min_dy if asset.min_dy is not None else self.settings.min_dy
 
     def resolve_ceiling_method(self, asset: DividendAssetConfig) -> CeilingMethod:
-        """Return asset ceiling method override, falling back to trailing."""
         if asset.ceiling_method is not None:
             return asset.ceiling_method
         return "trailing"
@@ -153,7 +101,6 @@ def _parse_settings(raw_settings: Any) -> DividendSettings:
         dy_source=dy_source,
         currency_br=str(raw_settings.get("currency_br", "BRL")),
         currency_us=str(raw_settings.get("currency_us", "USD")),
-        conviction_multiplier=float(raw_settings.get("conviction_multiplier", 1.5)),
     )
 
 
@@ -179,15 +126,14 @@ def _parse_asset(
     market: Literal["BR", "US"],
     index: int,
 ) -> DividendAssetConfig:
+    # Unknown fields (e.g. technical_model, technical_models, timeframe,
+    # conviction_multiplier) are silently ignored.
     required_fields = ("ticker", "sector", "name", "target_weight")
-    missing_fields = [field for field in required_fields if field not in raw_asset]
-    if "technical_models" not in raw_asset and "technical_model" not in raw_asset:
-        missing_fields.append("technical_models")
+    missing_fields = [f for f in required_fields if f not in raw_asset]
     if missing_fields:
-        joined_fields = ", ".join(missing_fields)
-        raise ValueError(f"{market} asset at index {index} missing: {joined_fields}")
-
-    technical_models = _parse_technical_models(raw_asset, market=market, index=index)
+        raise ValueError(
+            f"{market} asset at index {index} missing: {', '.join(missing_fields)}"
+        )
 
     target_weight = float(raw_asset["target_weight"])
     if target_weight < 0:
@@ -204,21 +150,15 @@ def _parse_asset(
             f"{market} asset at index {index} has unsupported ceiling_method"
         )
 
-    timeframe = str(raw_asset.get("timeframe", "1D")).upper()
-    if timeframe not in {"1D", "1W"}:
-        raise ValueError(f"{market} asset at index {index} has unsupported timeframe")
-
     return DividendAssetConfig(
         ticker=str(raw_asset["ticker"]).upper(),
         sector=str(raw_asset["sector"]),
         name=str(raw_asset["name"]),
         target_weight=target_weight,
-        technical_models=technical_models,
         market=market,
         min_dy=resolved_asset_min_dy,
         ceiling_method=ceiling_method,
         notes=str(raw_asset["notes"]) if raw_asset.get("notes") is not None else None,
-        timeframe=timeframe,
         backtest_ref=(
             str(raw_asset["backtest_ref"])
             if raw_asset.get("backtest_ref") is not None
@@ -234,36 +174,9 @@ def _parse_asset(
             if raw_asset.get("backtest_signals_per_year") is not None
             else None
         ),
+        backtest_notes=(
+            str(raw_asset["backtest_notes"])
+            if raw_asset.get("backtest_notes") is not None
+            else None
+        ),
     )
-
-
-def _parse_technical_models(
-    raw_asset: dict[str, Any],
-    market: Literal["BR", "US"],
-    index: int,
-) -> TechnicalModels:
-    supported_models = {"lux", "smc", "rsi-sma"}
-    if "technical_models" not in raw_asset:
-        legacy_model = raw_asset["technical_model"]
-        if legacy_model not in supported_models:
-            raise ValueError(
-                f"{market} asset at index {index} has unsupported technical_model"
-            )
-        return TechnicalModels(primary=legacy_model)
-
-    raw_models = raw_asset["technical_models"]
-    if not isinstance(raw_models, dict):
-        raise ValueError(
-            f"{market} asset at index {index} technical_models must be a mapping"
-        )
-    primary = raw_models.get("primary")
-    confirmation = raw_models.get("confirmation")
-    if primary not in supported_models:
-        raise ValueError(
-            f"{market} asset at index {index} has unsupported technical_models.primary"
-        )
-    if confirmation is not None and confirmation not in supported_models:
-        raise ValueError(
-            f"{market} asset at index {index} has unsupported technical_models.confirmation"
-        )
-    return TechnicalModels(primary=primary, confirmation=confirmation)

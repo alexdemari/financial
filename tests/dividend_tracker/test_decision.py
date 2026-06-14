@@ -1,34 +1,21 @@
-from datetime import UTC, datetime
-from types import SimpleNamespace
-
-import pandas as pd
-import pytest
-
-from dividend_tracker.config import DividendAssetConfig, TechnicalModels
-from dividend_tracker.decision import (
-    ConvictionLevel,
-    TechnicalSignalResult,
-    evaluate_asset,
-    get_technical_signal,
-)
-from dividend_tracker.dividend_data import DividendData, DividendDistribution
-from dividend_tracker.price_ceiling import PriceCeilingResult, calculate_price_ceiling
-from dividend_tracker.report import render_dividend_report
-from stock_analyzer.enums import Signal
+from dividend_tracker.config import DividendAssetConfig
+from dividend_tracker.decision import AssetDecision, evaluate_asset
+from dividend_tracker.price_ceiling import PriceCeilingResult
 
 
-def _asset() -> DividendAssetConfig:
+def _asset(ticker: str = "EGIE3", target_weight: float = 1.0) -> DividendAssetConfig:
     return DividendAssetConfig(
-        ticker="EGIE3",
+        ticker=ticker,
         sector="Energia",
         name="Engie",
-        target_weight=1.0,
-        technical_model="smc",
+        target_weight=target_weight,
         market="BR",
     )
 
 
-def _ceiling(current_price: float, price_ceiling: float) -> PriceCeilingResult:
+def _ceiling(
+    current_price: float, price_ceiling: float, min_dy: float = 0.06
+) -> PriceCeilingResult:
     return PriceCeilingResult(
         ticker="EGIE3",
         price_ceiling=price_ceiling,
@@ -36,319 +23,125 @@ def _ceiling(current_price: float, price_ceiling: float) -> PriceCeilingResult:
         trailing_annual_dividends=3.0,
         current_price=current_price,
         margin_pct=(price_ceiling - current_price) / current_price,
+        min_dy=min_dy,
     )
 
 
-def _technical(signal: str) -> TechnicalSignalResult:
-    return TechnicalSignalResult(
-        signal=signal,
-        model="smc",
-        event_type=signal,
-        days_since_event=0,
-        interpretation="mock",
+def test_buy_when_price_below_ceiling():
+    result = evaluate_asset(_asset(), _ceiling(40.0, 50.0))
+
+    assert result.action == "BUY"
+
+
+def test_overpriced_when_price_above_ceiling():
+    result = evaluate_asset(_asset(), _ceiling(60.0, 50.0))
+
+    assert result.action == "OVERPRICED"
+
+
+def test_price_exactly_at_ceiling_is_buy():
+    result = evaluate_asset(_asset(), _ceiling(50.0, 50.0))
+
+    assert result.action == "BUY"
+
+
+def test_evaluate_asset_returns_asset_decision():
+    asset = _asset()
+    ceiling = _ceiling(40.0, 50.0)
+
+    result = evaluate_asset(asset, ceiling)
+
+    assert isinstance(result, AssetDecision)
+    assert result.asset is asset
+    assert result.price_ceiling is ceiling
+
+
+def test_budget_proportional_to_target_weight():
+    from dividend_tracker.report import render_dividend_report
+
+    heavy = DividendAssetConfig(
+        ticker="HEAVY",
+        sector="Energia",
+        name="Heavy",
+        target_weight=3.0,
+        market="BR",
     )
+    light = DividendAssetConfig(
+        ticker="LIGHT",
+        sector="Energia",
+        name="Light",
+        target_weight=1.0,
+        market="BR",
+    )
+    decisions = [
+        evaluate_asset(heavy, _ceiling(10.0, 20.0)),
+        evaluate_asset(light, _ceiling(10.0, 20.0)),
+    ]
+
+    report = render_dividend_report(decisions, budget=4000.0)
+
+    # heavy gets 75% = R$3000, light gets 25% = R$1000
+    assert "R$3,000.00" in report
+    assert "R$1,000.00" in report
 
 
-def test_decision_buy_when_price_ok_and_technical_buy():
-    result = evaluate_asset(_asset(), _ceiling(40.0, 50.0), _technical("BUY"))
+def test_budget_skips_overpriced():
+    from dividend_tracker.report import render_dividend_report
 
-    assert result.decision == "BUY"
+    buy_asset = DividendAssetConfig(
+        ticker="BUY",
+        sector="Energia",
+        name="Buy",
+        target_weight=1.0,
+        market="BR",
+    )
+    over_asset = DividendAssetConfig(
+        ticker="OVER",
+        sector="Energia",
+        name="Over",
+        target_weight=1.0,
+        market="BR",
+    )
+    decisions = [
+        evaluate_asset(buy_asset, _ceiling(40.0, 50.0)),
+        evaluate_asset(over_asset, _ceiling(60.0, 50.0)),
+    ]
 
+    report = render_dividend_report(decisions, budget=1000.0)
+    budget_section = report.split("## Guia de Aporte", maxsplit=1)[1]
 
-def test_decision_watch_when_price_ok_and_technical_watch():
-    result = evaluate_asset(_asset(), _ceiling(40.0, 50.0), _technical("WATCH"))
-
-    assert result.decision == "WATCH"
-
-
-def test_decision_wait_when_price_ok_and_technical_wait():
-    result = evaluate_asset(_asset(), _ceiling(40.0, 50.0), _technical("WAIT"))
-
-    assert result.decision == "WAIT"
-
-
-def test_decision_wait_when_price_ok_and_technical_neutral():
-    result = evaluate_asset(_asset(), _ceiling(40.0, 50.0), _technical("NEUTRAL"))
-
-    assert result.decision == "WAIT"
-
-
-def test_decision_overpriced_for_any_technical_signal_when_above_ceiling():
-    for technical_signal in ("BUY", "WATCH", "WAIT", "NEUTRAL"):
-        result = evaluate_asset(
-            _asset(),
-            _ceiling(60.0, 50.0),
-            _technical(technical_signal),
-        )
-
-        assert result.decision == "OVERPRICED"
+    assert "BUY" in budget_section
+    assert "OVER" not in budget_section
 
 
-def test_decision_uses_price_ceiling_calculated_with_custom_min_dy():
-    asset = DividendAssetConfig(
-        ticker="PEP",
+def test_zero_weight_excluded_from_budget():
+    from dividend_tracker.report import render_dividend_report
+
+    monitored = DividendAssetConfig(
+        ticker="WATCH",
         sector="Consumer Staples",
-        name="PepsiCo",
+        name="Watched",
         target_weight=0.0,
-        technical_model="smc",
         market="US",
-        min_dy=0.038,
+        notes="Monitored",
     )
-    dividend_data = DividendData(
-        ticker="PEP",
-        yahoo_ticker="PEP",
-        current_price=140.68,
-        trailing_annual_dividends=5.92,
-        trailing_dy=0.0421,
-        distributions=[],
-        fetched_at=datetime.now(UTC),
-    )
-
-    assert asset.min_dy is not None
-    custom_ceiling = calculate_price_ceiling(
-        "PEP",
-        min_dy=asset.min_dy,
-        dividend_data=dividend_data,
-    )
-    global_ceiling = calculate_price_ceiling(
-        "PEP",
-        min_dy=0.06,
-        dividend_data=dividend_data,
-    )
-
-    assert custom_ceiling.is_below_or_equal_ceiling is True
-    assert global_ceiling.is_below_or_equal_ceiling is False
-    assert evaluate_asset(asset, custom_ceiling, _technical("BUY")).decision == "BUY"
-
-
-def test_decision_uses_price_ceiling_calculated_with_average_6y():
-    asset = DividendAssetConfig(
-        ticker="EGIE3",
+    regular = DividendAssetConfig(
+        ticker="REG",
         sector="Energia",
-        name="Engie",
-        target_weight=1.0,
-        technical_model="smc",
-        market="BR",
-        ceiling_method="average_6y",
-    )
-    dividend_data = DividendData(
-        ticker="EGIE3",
-        yahoo_ticker="EGIE3.SA",
-        current_price=42.0,
-        trailing_annual_dividends=5.0,
-        trailing_dy=0.119,
-        distributions=[
-            DividendDistribution(date=pd.Timestamp(f"{year}-03-10"), amount=2.7)
-            for year in range(2020, 2026)
-        ],
-        fetched_at=datetime.now(UTC),
-    )
-
-    ceiling = calculate_price_ceiling(
-        asset.ticker,
-        min_dy=0.06,
-        dividend_data=dividend_data,
-        ceiling_method=asset.ceiling_method or "trailing",
-    )
-
-    assert ceiling.ceiling_method == "average_6y"
-    assert ceiling.price_ceiling == pytest.approx(45.0)
-    assert evaluate_asset(asset, ceiling, _technical("BUY")).decision == "BUY"
-
-
-def test_get_technical_signal_maps_current_buy(monkeypatch):
-    class FakeAnalyzer:
-        def __init__(self, signal_model):
-            self.signal_model = signal_model
-            self.signal_generator = SimpleNamespace(interpret=lambda signal: "buy")
-
-        def load_local_data(self, symbol, data_dir, interval):
-            assert symbol == "EGIE3.SA"
-            assert str(data_dir) == "/tmp/stocks"
-            assert interval == "1d"
-            return pd.DataFrame({"Close": [1.0]})
-
-        def generate_signal(self, symbol, ohlc_df):
-            return SimpleNamespace(combined_signal=Signal.BUY)
-
-        def generate_historical_signals(self, symbol, ohlc_df):
-            return pd.DataFrame()
-
-    monkeypatch.setattr("dividend_tracker.decision.StockDataAnalyzer", FakeAnalyzer)
-
-    result = get_technical_signal(_asset(), data_dir="/tmp/stocks", local_only=True)
-
-    assert result.signal == "BUY"
-    assert result.model == "smc"
-    assert result.event_type == "NONE"
-    assert result.days_since_event is None
-
-
-def test_get_technical_signal_maps_empty_history_to_neutral(monkeypatch):
-    class FakeAnalyzer:
-        def __init__(self, signal_model):
-            self.signal_generator = SimpleNamespace(interpret=lambda signal: "neutral")
-
-        def load_local_data(self, symbol, data_dir, interval):
-            return pd.DataFrame({"Close": [1.0]})
-
-        def generate_signal(self, symbol, ohlc_df):
-            return None
-
-        def generate_historical_signals(self, symbol, ohlc_df):
-            return pd.DataFrame()
-
-    monkeypatch.setattr("dividend_tracker.decision.StockDataAnalyzer", FakeAnalyzer)
-
-    result = get_technical_signal(_asset())
-
-    assert result.signal == "NEUTRAL"
-    assert result.event_type == "NONE"
-
-
-def test_get_technical_signal_does_not_watch_on_sell_event_today(monkeypatch):
-    class FakeAnalyzer:
-        def __init__(self, signal_model):
-            self.signal_generator = SimpleNamespace(interpret=lambda signal: "neutral")
-
-        def load_local_data(self, symbol, data_dir, interval):
-            return pd.DataFrame({"Close": [1.0]})
-
-        def generate_signal(self, symbol, ohlc_df):
-            return None
-
-        def generate_historical_signals(self, symbol, ohlc_df):
-            return pd.DataFrame({"combined_signal": [Signal.SELL]})
-
-    monkeypatch.setattr("dividend_tracker.decision.StockDataAnalyzer", FakeAnalyzer)
-
-    result = get_technical_signal(_asset())
-
-    assert result.signal == "NEUTRAL"
-    assert result.event_type == "SELL"
-    assert result.days_since_event == 0
-
-
-def test_get_technical_signal_propagates_missing_local_csv(monkeypatch):
-    class FakeAnalyzer:
-        def __init__(self, signal_model):
-            self.signal_generator = SimpleNamespace(interpret=lambda signal: "missing")
-
-        def load_local_data(self, symbol, data_dir, interval):
-            raise FileNotFoundError("Local CSV not found")
-
-    monkeypatch.setattr("dividend_tracker.decision.StockDataAnalyzer", FakeAnalyzer)
-
-    with pytest.raises(FileNotFoundError, match="Local CSV not found"):
-        get_technical_signal(_asset(), local_only=True)
-
-
-def test_decision_high_conviction_when_both_signal_buy():
-    """Quando primary=BUY e confirmation=BUY -> action=BUY, conviction=HIGH."""
-    result = evaluate_asset(
-        _asset(),
-        _ceiling(40.0, 50.0),
-        _technical("BUY"),
-        confirmation_signal=TechnicalSignalResult(
-            signal="BUY",
-            model="lux",
-            event_type="BUY",
-            days_since_event=0,
-            interpretation="mock",
-        ),
-    )
-
-    assert result.decision == "BUY"
-    assert result.conviction == ConvictionLevel.HIGH
-
-
-def test_decision_normal_conviction_when_only_primary_signals():
-    """Quando primary=BUY e confirmation=WAIT -> action=BUY, conviction=NORMAL."""
-    result = evaluate_asset(
-        _asset(),
-        _ceiling(40.0, 50.0),
-        _technical("BUY"),
-        confirmation_signal=TechnicalSignalResult(
-            signal="WAIT",
-            model="lux",
-            event_type="NONE",
-            days_since_event=None,
-            interpretation="mock",
-        ),
-    )
-
-    assert result.decision == "BUY"
-    assert result.conviction == ConvictionLevel.NORMAL
-
-
-def test_decision_no_confirmation_model_is_normal():
-    """Quando não há confirmation definido e primary=BUY -> conviction=NORMAL."""
-    result = evaluate_asset(_asset(), _ceiling(40.0, 50.0), _technical("BUY"))
-
-    assert result.decision == "BUY"
-    assert result.conviction == ConvictionLevel.NORMAL
-
-
-def test_decision_overpriced_ignores_conviction():
-    """Quando preço > teto -> OVERPRICED independente dos sinais."""
-    result = evaluate_asset(
-        _asset(),
-        _ceiling(60.0, 50.0),
-        _technical("BUY"),
-        confirmation_signal=TechnicalSignalResult(
-            signal="BUY",
-            model="lux",
-            event_type="BUY",
-            days_since_event=0,
-            interpretation="mock",
-        ),
-    )
-
-    assert result.decision == "OVERPRICED"
-    assert result.conviction == ConvictionLevel.NONE
-
-
-def test_budget_allocation_high_conviction_gets_multiplier():
-    """Ativo com conviction=HIGH recebe 1.5x o peso no budget."""
-    high_asset = DividendAssetConfig(
-        ticker="HIGH",
-        sector="Energia",
-        name="High Conviction",
+        name="Regular",
         target_weight=1.0,
         market="BR",
-        technical_models=TechnicalModels(primary="lux", confirmation="smc"),
     )
-    normal_asset = DividendAssetConfig(
-        ticker="NORM",
-        sector="Energia",
-        name="Normal Conviction",
-        target_weight=1.0,
-        market="BR",
-        technical_models=TechnicalModels(primary="lux"),
-    )
-    high_decision = evaluate_asset(
-        high_asset,
-        _ceiling(10.0, 20.0),
-        _technical("BUY"),
-        confirmation_signal=TechnicalSignalResult(
-            signal="BUY",
-            model="smc",
-            event_type="BUY",
-            days_since_event=0,
-            interpretation="mock",
-        ),
-    )
-    normal_decision = evaluate_asset(
-        normal_asset,
-        _ceiling(10.0, 20.0),
-        _technical("BUY"),
-    )
+    decisions = [
+        evaluate_asset(monitored, _ceiling(100.0, 120.0)),
+        evaluate_asset(regular, _ceiling(40.0, 50.0)),
+    ]
 
-    report = render_dividend_report(
-        [high_decision, normal_decision],
-        budget=2500.0,
-        conviction_multiplier=1.5,
-    )
+    report = render_dividend_report(decisions, budget=1000.0)
+    budget_section = report.split("## Guia de Aporte", maxsplit=1)[1].split(
+        "## Ativos monitorados", maxsplit=1
+    )[0]
 
-    assert "| HIGH | Alta ** | 100.0% | 1.5x | R$1,500.00 | 150 |" in report
-    assert "| NORM | Normal * | 100.0% | 1.0x | R$1,000.00 | 100 |" in report
+    assert "WATCH" not in budget_section
+    assert "REG" in budget_section
+    assert "## Ativos monitorados (sem alocacao de budget)" in report

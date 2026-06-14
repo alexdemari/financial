@@ -142,7 +142,7 @@ dividends-local budget="":
     fi
 
 
-# Backtest 10 anos — pontos de entrada por ativo e modelo
+# Análise histórica — não usado na operação diária
 backtest-dividends:
     PYTHONPATH=src uv run python -m dividend_tracker.backtest \
         --config config/dividend_portfolio.yaml \

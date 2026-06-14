@@ -169,9 +169,9 @@ def _backtest_asset(
         return AssetBacktestResult(
             config_ticker=asset.ticker,
             ticker=symbol,
-            current_model=asset.technical_model,
+            current_model=ALL_MODELS[0],
             models={},
-            recommended_model=asset.technical_model,
+            recommended_model=ALL_MODELS[0],
             changed=False,
             change_reason=f"OHLC unavailable: {exc}",
         )
@@ -180,9 +180,9 @@ def _backtest_asset(
         return AssetBacktestResult(
             config_ticker=asset.ticker,
             ticker=symbol,
-            current_model=asset.technical_model,
+            current_model=ALL_MODELS[0],
             models={},
-            recommended_model=asset.technical_model,
+            recommended_model=ALL_MODELS[0],
             changed=False,
             change_reason=f"Insufficient bars: {len(ohlc_df)}",
         )
@@ -209,13 +209,14 @@ def _backtest_asset(
     # Compute period-level signal counts for historical analysis
     period_signals = _compute_period_signals(symbol, ohlc_df)
 
-    current = model_results[asset.technical_model]
+    baseline_model = ALL_MODELS[0]
+    current = model_results[baseline_model]
     best_model = max(model_results, key=lambda m: model_results[m].precision)
     best = model_results[best_model]
     delta_pp = (best.precision - current.precision) * 100.0
 
     if (
-        best_model != asset.technical_model
+        best_model != baseline_model
         and delta_pp > MIN_DELTA_PP
         and best.total_signals >= MIN_SIGNALS
     ):
@@ -223,12 +224,12 @@ def _backtest_asset(
         recommended = best_model
         change_reason = (
             f"{best_model} precision {best.precision:.1%} vs "
-            f"{asset.technical_model} {current.precision:.1%} (+{delta_pp:.1f}pp)"
+            f"{baseline_model} {current.precision:.1%} (+{delta_pp:.1f}pp)"
         )
     else:
         changed = False
-        recommended = asset.technical_model
-        if best_model == asset.technical_model:
+        recommended = baseline_model
+        if best_model == baseline_model:
             change_reason = "Current model is best"
         elif delta_pp <= MIN_DELTA_PP:
             change_reason = f"Delta {delta_pp:.1f}pp below {MIN_DELTA_PP}pp threshold"
@@ -238,7 +239,7 @@ def _backtest_asset(
     return AssetBacktestResult(
         config_ticker=asset.ticker,
         ticker=symbol,
-        current_model=asset.technical_model,
+        current_model=baseline_model,
         models=model_results,
         recommended_model=recommended,
         changed=changed,
@@ -568,14 +569,14 @@ def apply_yaml_updates(
     update_backtest_ref: bool = False,
     run_date: date | None = None,
 ) -> list[str]:
-    """Update technical_model and optional backtest_ref fields in YAML.
+    """Update backtest_ref fields in YAML.
 
+    update_model is kept for API compat but has no effect — technical model
+    selection was removed from the operational config.
     Uses PyYAML dump — YAML comments are not preserved.
     """
-    changed_assets = [r for r in results if r.changed]
     ref_assets = results if update_backtest_ref else []
-
-    if not changed_assets and not ref_assets:
+    if not ref_assets:
         return []
 
     config_path = Path(config_path)
@@ -591,11 +592,6 @@ def apply_yaml_updates(
             if ticker not in update_map:
                 continue
             result = update_map[ticker]
-            if update_model and result.changed:
-                if isinstance(asset.get("technical_models"), dict):
-                    asset["technical_models"]["primary"] = result.recommended_model
-                else:
-                    asset["technical_model"] = result.recommended_model
             if update_backtest_ref:
                 recommended_result = result.models.get(result.recommended_model)
                 asset["backtest_ref"] = str(effective_run_date)
@@ -610,7 +606,7 @@ def apply_yaml_updates(
             raw, fh, allow_unicode=True, sort_keys=False, default_flow_style=False
         )
 
-    return [r.ticker for r in changed_assets]
+    return [r.ticker for r in results if r.changed]
 
 
 def write_report(
@@ -770,9 +766,13 @@ def write_report(
             "Percentual do tempo abaixo do preço teto: N/A (requer série histórica de preços)"
         )
         lines.append("")
+        primary_window = f"{EVALUATION_WEEKS}w" if timeframe.upper() == "1W" else "45d"
+        secondary_window = (
+            f"{EVALUATION_WEEKS_18}w" if timeframe.upper() == "1W" else "90d"
+        )
         lines.append(
-            "| Modelo | Sinais | /ano | Combinados | Precisão 45d | Precisão 90d "
-            "| Falsos+ | Retorno médio 45d | Max DD pós-sinal |"
+            f"| Modelo | Sinais | /ano | Combinados | Precisão {primary_window} | Precisão {secondary_window} "
+            f"| Falsos+ | Retorno médio {primary_window} | Max DD pós-sinal |"
         )
         lines.append(
             "|--------|--------|------|------------|--------------|-------------- "
