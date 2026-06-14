@@ -21,6 +21,11 @@ Use this architecture as the default mental model:
 - `market_scanner`
   - current multi-symbol decision engine
   - classifies symbols with `market_state`, `adjusted_alignment`, and `action_bucket`
+- `dividend_tracker`
+  - fundamental dividend portfolio analysis
+  - price ceiling = dividend_base / min_dy per asset
+  - no technical analysis — BUY / OVERPRICED only
+  - config: `config/dividend_portfolio.yaml` (authoritative)
 - `options_tech_scanner`
   - legacy scanner package
   - may contain compatibility shims for migrated modules
@@ -58,3 +63,18 @@ At the start of the session:
 2. Confirm which module or workflow is the focus of the task.
 3. List any constraints or invariants that should not be broken.
 4. Do NOT make code changes until the current state is understood.
+
+---
+
+If the session involves `dividend_tracker` or `config/dividend_portfolio.yaml`,
+also read:
+
+- `docs/architecture/dividend-tracker.md`
+- `docs/ai/tasks/dividend-tracker-calibration.md`
+- `docs/ai/skills/dividend-analysis.md`
+
+And apply these invariants from `AGENTS.md`:
+- avg_6y MUST exclude the current year
+- No technical analysis in dividend decision
+- TAEE11 replaced EGIE3 on 2026-06-11 — do not revert
+- PEP target_weight is 0.0 (monitored only)

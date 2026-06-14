@@ -2,28 +2,26 @@
 
 ## Purpose
 
-`dividend_tracker` evaluates a user-defined dividend portfolio by combining
-fundamental dividend yield thresholds with the existing single-symbol technical
-signals from `stock_analyzer`.
+`dividend_tracker` evaluates a user-defined dividend portfolio against
+fundamental dividend yield thresholds.
 
 Its core question is:
 
-**"Which dividend assets are inside their price ceiling and technically worth
-buying or watching today?"**
+**"Which dividend assets are currently trading below their price ceiling
+(DY >= min_dy) and therefore candidates for contribution today?"**
 
 ---
 
 ## Architectural Role
 
-`dividend_tracker` is a consumer of local OHLC data and single-symbol technical
-analysis. It does not replace the scanner decision layer.
+`dividend_tracker` is a consumer of yfinance dividend data. It does not depend
+on `stock_analyzer` and does not perform technical analysis.
 
 ```text
 config/dividend_portfolio.yaml
   ->
 dividend_tracker
   -> yfinance dividend cache in data/dividends/
-  -> stock_analyzer technical signal
   ->
 reports/dividend_tracker/dividend_daily_report.md
 ```
@@ -37,9 +35,7 @@ dividend_data
   ->
 price_ceiling
   ->
-stock_analyzer
-  ->
-decision
+decision (BUY / OVERPRICED)
   ->
 report
 ```
@@ -55,9 +51,8 @@ report
 - caching dividend data in `data/dividends/` with a 24-hour TTL
 - calculating dividend price ceiling from trailing twelve-month dividends or
   six-year average annual dividends
-- combining price ceiling state with a technical signal
 - generating the dividend daily markdown report
-- optional budget allocation across `BUY` and `WATCH` assets
+- optional budget allocation across `BUY` assets
 
 ---
 
@@ -69,7 +64,12 @@ report
 - Lux, SMC, or RSI/SMA indicator logic
 - broad market scanner ranking
 - Scanner V3 fields such as `alignment`, `market_state`, or `action_bucket`
+- technical analysis of any kind
+- calls to `stock_analyzer` for signal generation
 - brokerage execution
+
+`ConvictionLevel`, `technical_models`, and `timeframe` config fields are
+silently ignored if present in YAML for backwards compatibility.
 
 Those belong to:
 
@@ -88,9 +88,19 @@ Parsed representation of `config/dividend_portfolio.yaml`.
 
 Includes:
 
-- `settings`
+- `settings` — `DividendSettings` (global thresholds and behavior flags)
 - `br_assets`
 - `us_assets`
+
+### `DividendSettings`
+
+Portfolio-level configuration.
+
+Includes:
+
+- `min_dy` — minimum dividend yield threshold (default 6%)
+- `dy_source` — dividend base method (`trailing`, `forward`, `average_6y`)
+- `currency_br` / `currency_us` — display currency labels
 
 ### `DividendAssetConfig`
 
@@ -102,11 +112,13 @@ Includes:
 - `sector`
 - `name`
 - `target_weight`
-- `technical_model`
 - `market`
 - optional `min_dy` override
 - optional `ceiling_method` override (`trailing` or `average_6y`)
 - optional `notes` for monitored assets
+
+Legacy YAML fields `technical_model`, `technical_models`, `timeframe`, and
+`conviction_multiplier` are silently ignored when loading config.
 
 ### `DividendData`
 
@@ -139,10 +151,8 @@ Final dividend contribution decision.
 
 Values:
 
-- `BUY`
-- `WATCH`
-- `WAIT`
-- `OVERPRICED`
+- `BUY` — price <= price_ceiling (DY >= min_dy)
+- `OVERPRICED` — price > price_ceiling (DY < min_dy)
 
 ---
 
@@ -171,112 +181,117 @@ just dividends-local budget=8000
 
 ---
 
-## Lógica de preço teto
+## Price Ceiling Logic
 
 ```
-preço_teto = dividendo_base(ceiling_method) / min_dy_efetivo
+price_ceiling = dividend_base(ceiling_method) / effective_min_dy
 ```
 
-Onde:
+Where:
 
-- `dividendo_base`
-  - `trailing` -> dividendo TTM (últimos 12 meses)
-  - `average_6y` -> média aritmética dos dividendos anuais dos últimos 6 anos
-    calendário com pagamentos; anos sem pagamento dentro da janela entram como zero
-- `min_dy_efetivo`
-  - `asset.min_dy` se definido no YAML para o ativo
-  - `settings.min_dy` caso contrário
+- `dividend_base`
+  - `trailing` -> TTM dividends (last 12 months)
+  - `average_6y` -> arithmetic mean of annual dividends over the last 6
+    complete calendar years; years with no payment within the window count as zero
+- `effective_min_dy`
+  - `asset.min_dy` if set in YAML for the asset
+  - `settings.min_dy` otherwise
 
-`average_6y` segue a metodologia AGF para suavizar distribuições irregulares.
-Ativos brasileiros podem ter anos com JCP alto, dividendos extraordinários ou
-pagamentos fracos; usar só TTM pode superestimar ou subestimar o dividendo
-sustentável.
+`average_6y` follows the AGF methodology to smooth irregular distributions.
+Brazilian assets may have years with high JCP, extraordinary dividends, or
+weak payments; using TTM alone can over- or under-estimate the sustainable
+dividend.
 
-### Tabela de referência atual
+### average_6y: current year exclusion
 
-| Ativo | ceiling_method | min_dy | Racional |
-|-------|----------------|--------|----------|
-| EGIE3 | average_6y | 6.0% | Distribuições BR irregulares; média suaviza |
-| ITSA4 | average_6y | 6.0% | Distribuições BR irregulares; média suaviza |
-| BBSE3 | average_6y | 6.0% | Distribuições BR irregulares; média suaviza |
-| VIVT3 | average_6y | 6.0% | Distribuições BR irregulares; média suaviza |
-| SAPR4 | average_6y | 6.0% | Distribuições BR irregulares; média suaviza |
-| SCHD | trailing | 6.0% | ETF com dividendo mais linear; TTM adequado |
-| DGRO | trailing | 6.0% | ETF com dividendo mais linear; TTM adequado |
-| VYM | trailing | 6.0% | ETF com dividendo mais linear; TTM adequado |
-| PEP | trailing | 3.8% | Dividend King 54a; mercado precifica 2.5-4.5% |
+`calculate_average_annual_dividend` MUST exclude the current (incomplete)
+calendar year from the six-year average. Including a partial year pulls the
+average down systematically.
+
+```python
+current_year = date.today().year
+hist_complete = hist[hist.index.year < current_year]
+```
+
+Example: running in June 2026, the average uses 2020–2025 (six complete years).
+2026 data is excluded regardless of how many months have elapsed.
+
+### Asset reference table
+
+| Asset  | ceiling_method | min_dy | Rationale |
+|--------|----------------|--------|-----------|
+| TAEE11 | average_6y     | 6.0%   | Replaced EGIE3 (2026-06-11). Pure transmission model, ANEEL-guaranteed revenue. Historical DY 6–9%. avg_6y R$3.56, TTM DY 8.41%. |
+| ITSA4  | trailing       | 6.0%   | avg_6y distorted by 14× dividend growth (R$0.12 in 2020 → R$1.72 in 2025). TTM (DY 9.81%) is the representative figure. |
+| BBSE3  | average_6y     | 6.0%   | Consistent historical DY 6–12%. avg_6y adequate; no distortion. |
+| VIVT3  | trailing       | 6.0%   | avg_6y penalises recent dividend growth. TTM R$2.42 (DY 7.27%) already exceeds 6% criterion. |
+| SAPR4  | average_6y     | 4.5%   | Structural DY 4–5%, never 6% historically. avg_6y correct after excluding current incomplete year. |
+| SCHD   | trailing       | 3.4%   | Historical average DY. Above average = relatively cheap vs own history. |
+| DGRO   | trailing       | 2.8%   | Historical average DY. |
+| VYM    | trailing       | 3.0%   | Historical average DY. |
+| PEP    | trailing       | 3.8%   | Dividend King 54y. US market prices 2.5–4.5% structurally. Monitored via put selling. |
 
 This table is a snapshot — `config/dividend_portfolio.yaml` is authoritative.
 
-## Seleção de modelo técnico por ativo
+---
 
-O campo `technical_model` em `dividend_portfolio.yaml` define qual modelo do
-`stock_analyzer` gera o sinal técnico que complementa o critério fundamentalista
-de preço teto.
+## Decision Logic
 
-### Filosofia
+Price ceiling only — no technical analysis:
 
-O modelo técnico não escolhe quais ativos pertencem à carteira. Essa decisão vem
-dos critérios fundamentalistas: setores escolhidos, histórico de dividendos,
-preço teto e DY mínimo.
+```
+BUY        → current_price <= price_ceiling  (DY >= min_dy)
+OVERPRICED → current_price > price_ceiling   (DY < min_dy)
+```
 
-O modelo técnico responde a uma pergunta mais estreita:
+### Why no technical analysis
 
-> "O preço teto foi atingido. Devo comprar hoje ou aguardar 2-3 dias?"
+10-year backtests (1D and 1W timeframes, 2016–2026) across all portfolio
+assets showed technical models added complexity without proportional gain:
 
-Por isso, a métrica relevante é a precisão de sinais de compra: percentual de
-sinais BUY seguidos de alta de pelo menos 5% em 45 dias. O `stock_analyzer`
-histórico expõe BUY/HOLD/SELL; WATCH é uma classificação do `dividend_tracker`
-sobre sinal recente, então o backtest mede BUY como evento técnico base.
+- `lux` 1D: 10–15 signals/year, 25–40% precision at 45 days
+- `smc` 1D: 0.4–0.8 signals/year, 37–57% precision (too infrequent for
+  monthly contributions)
+- `rsi-sma`: zero signals over 10 years on all assets
 
-### Critério de atualização
+The price ceiling based on minimum DY already captures the essential
+valuation filter. Disciplined DCA below the ceiling outperforms attempted
+technical timing for long-horizon dividend portfolios.
 
-O modelo por ativo é validado via backtest com janela de 10 anos (2016–2026). O
-modelo é atualizado quando um modelo alternativo supera o atual em mais de 5
-pontos percentuais de precisão e tem pelo menos 5 sinais avaliáveis. Diferenças
-menores não justificam mudança.
+See `reports/backtest/` for full results.
 
-### Janelas de avaliação
+### Backtest tool (analysis only, not operational)
 
-- **45 dias** — janela primária: percentual de sinais BUY com alta >= 5% em 45
-  dias corridos a partir da data do sinal
-- **90 dias** — janela secundária: mesmo critério aplicado a 90 dias
-- **Sinais combinados** — sinais onde o modelo diz BUY E o preço de entrada é
-  menor ou igual ao preço teto calculado do cache de dividendos
+`just backtest-dividends` runs historical analysis of technical models for
+reference purposes. It does not influence the daily decision.
 
-### Resultado do último backtest
+Evaluation windows:
 
-Ver: `reports/backtest/dividend_entry_points_10y.md`
+- **45 days** — percentage of BUY signals with gain >= 5%
+- **90 days** — same criterion over a larger window
+- **Combined signals** — model BUY AND price <= price_ceiling
 
-Última execução: 2026-06-10
+### Last backtest results
 
-### Tabela de resultados consolidados (backtest 10 anos)
+- Daily (1D): `reports/backtest/dividend_entry_points_10y.md`
+- Weekly (1W): `reports/backtest/dividend_entry_points_10y_weekly.md`
 
-Gerado por `just backtest-dividends`. Ver arquivo acima para métricas completas
-por modelo (precisão 45d, 90d, sinais/ano, retorno médio, drawdown pós-sinal).
+Weekly backtest uses 9-week (primary) and 18-week (secondary) windows,
+counted in bars — not calendar days.
 
-Campos gravados no YAML após `just backtest-dividends-apply`:
-
-| Campo | Descrição |
-|-------|-----------|
-| `backtest_ref` | Data da execução do backtest |
-| `backtest_precision` | Precisão 45d do modelo recomendado |
-| `backtest_signals_per_year` | Frequência anualizada de sinais do modelo recomendado |
-
-Nota: `apply_yaml_updates` usa PyYAML dump e não preserva comentários YAML.
+Last run: 2026-06-10
 
 ---
 
-## Ativos monitorados (`target_weight = 0.0`)
+## Monitored assets (`target_weight = 0.0`)
 
-Ativos com `target_weight: 0.0` são analisados e aparecem no relatório diário,
-mas são excluídos do Guia de Aporte. Esse padrão é usado para ativos operados via
-estratégias de opções, onde a entrada no ativo ocorre pelo exercício da opção e
-não por aporte direto.
+Assets with `target_weight: 0.0` are analysed and appear in the daily report,
+but are excluded from the contribution guide. This pattern is used for assets
+operated via options strategies, where entry occurs through option exercise
+rather than direct contribution.
 
-Ativos monitorados atualmente:
+Currently monitored:
 
-- PEP — operado via venda de puts recorrente na IBKR
+- PEP — operated via recurring cash-secured put selling on IBKR
 
 ---
 
@@ -284,7 +299,5 @@ Ativos monitorados atualmente:
 
 - Reads portfolio config from `config/dividend_portfolio.yaml`
 - Reads and writes dividend cache under `data/dividends/`
-- Calls `stock_analyzer.StockDataAnalyzer` directly for technical signals
-- Reads OHLC through `stock_analyzer`, which delegates local data access to
-  `stock_data_manager`
+- Does NOT call `stock_analyzer` — no technical signal dependency
 - Writes report to `reports/dividend_tracker/dividend_daily_report.md`

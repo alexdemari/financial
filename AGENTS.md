@@ -87,6 +87,67 @@ Coverage minimum per module: happy path, empty DataFrame, insufficient bars (< 5
 - The orchestrator must verify sub-agent work (run tests, read changes) before declaring tasks complete.
 - Run integration tests after fan-out completes and before any commit.
 
+## Dividend Tracker Domain Rules
+
+Non-negotiable rules for any session touching `dividend_tracker` or
+`config/dividend_portfolio.yaml`.
+
+### avg_6y must exclude the current year
+
+`calculate_average_annual_dividend` MUST filter out the current calendar year
+before computing the average. Partial-year data systematically understates
+the dividend base.
+
+```python
+current_year = date.today().year
+hist_complete = hist[hist.index.year < current_year]
+```
+
+### BR assets: yfinance includes JCP
+
+For Brazilian tickers (`.SA` suffix), `yfinance` returns dividends AND JCP
+(Juros sobre Capital Próprio) in the same `ticker.dividends` series. No
+separate adjustment or filtering is needed. This is the intended behavior.
+
+### ceiling_method rationale
+
+`trailing` for assets with rapid dividend growth (>50% in 5 years) or linear
+ETFs — avg_6y would understate current capacity.
+
+`average_6y` for assets with irregular annual distributions (typical for BR
+regulated sectors) — smooths extraordinary and weak years.
+
+### min_dy reflects structural DY, not aspirational targets
+
+Set min_dy to the asset's historical average DY range. If 6% global default
+would permanently mark an asset as OVERPRICED (it has never reached 6% DY),
+reduce min_dy to match structural range.
+
+Current calibrated values: see `config/dividend_portfolio.yaml` (authoritative)
+and `docs/architecture/dividend-tracker.md` (reference table).
+
+### TAEE11 replaced EGIE3 on 2026-06-11 — do not revert
+
+TAEE11 (pure transmission, ANEEL-guaranteed revenue) replaced EGIE3 (generation)
+due to materially higher DY (7.7% vs 3.6%) with equal or lower risk profile.
+See `docs/ai/tasks/dividend-tracker-calibration.md` for full rationale.
+
+### No technical analysis in dividend decision
+
+`dividend_tracker` does NOT call `stock_analyzer`. The decision is purely
+fundamental: `price <= price_ceiling → BUY`, otherwise `OVERPRICED`.
+
+10-year backtests confirmed no proportional gain from technical models for
+this strategy. Do not re-introduce `technical_model`, `technical_models`,
+`timeframe`, or `conviction_multiplier` fields into the decision flow.
+These YAML fields are silently ignored for backwards compatibility only.
+
+### PEP is monitored, not contributed
+
+`target_weight: 0.0` means PEP appears in the report for monitoring but
+receives no budget allocation. It is operated via cash-secured put selling
+on IBKR. Do not change target_weight without explicit instruction.
+
 ## What NOT to do
 
 - Do not re-read large files you've already read in this session unless they may have changed.
