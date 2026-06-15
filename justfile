@@ -397,6 +397,12 @@ gate: lint test verify-identical
 
 # ── IBKR ─────────────────────────────────────────────────────────────────────
 
+# Retrieve live IBKR positions and generate portfolio risk report (requires Client Portal running)
+ibkr-positions output-dir="reports/output" gateway="https://localhost:5000":
+    PYTHONPATH=src uv run python -m ibkr_positions.main \
+        --output-dir {{output-dir}} \
+        --gateway-url {{gateway}}
+
 ibkr-option-chain symbol expiration max_strikes="10" option-type="BOTH" strike-step="5":
     uv run python -m src.ibkr.main \
       --symbol {{symbol}} \
