@@ -1,52 +1,36 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-import requests
 
 from ibkr_positions.client import IBKRClient, IBKRConnectionError
 import fixtures  # noqa: E402 — loaded via conftest sys.path insert
 
-MOCK_ACCOUNTS_RESPONSE = fixtures.MOCK_ACCOUNTS_RESPONSE
-MOCK_LEDGER_RESPONSE = fixtures.MOCK_LEDGER_RESPONSE
-MOCK_POSITIONS_RESPONSE = fixtures.MOCK_POSITIONS_RESPONSE
-MOCK_SUMMARY_RESPONSE = fixtures.MOCK_SUMMARY_RESPONSE
+
+def _make_ib_mock(
+    accounts=None,
+    account_values=None,
+    portfolio_items=None,
+) -> MagicMock:
+    ib = MagicMock()
+    ib.managedAccounts.return_value = ["U1234567"] if accounts is None else accounts
+    ib.accountValues.return_value = (
+        fixtures.MOCK_ACCOUNT_VALUES if account_values is None else account_values
+    )
+    ib.portfolio.return_value = (
+        fixtures.MOCK_PORTFOLIO_ITEMS if portfolio_items is None else portfolio_items
+    )
+    return ib
 
 
-def _make_response(json_data):
-    mock = MagicMock()
-    mock.json.return_value = json_data
-    mock.raise_for_status.return_value = None
-    return mock
-
-
-def _ordered_get(*responses):
-    """Return a side_effect that cycles through responses in call order."""
-    call_count = [0]
-
-    def side_effect(url, **kwargs):
-        idx = call_count[0]
-        call_count[0] += 1
-        return responses[idx] if idx < len(responses) else _make_response({})
-
-    return side_effect
-
-
-def _patched_client(mock_session_class, *responses) -> IBKRClient:
-    mock_session = MagicMock()
-    mock_session_class.return_value = mock_session
-    mock_session.get.side_effect = _ordered_get(*responses)
+def _patched_client(mock_ib_class, ib_mock: MagicMock) -> IBKRClient:
+    mock_ib_class.return_value = ib_mock
     return IBKRClient()
 
 
-@patch("ibkr_positions.client.requests.Session")
-def test_get_portfolio_success(mock_session_class):
-    client = _patched_client(
-        mock_session_class,
-        _make_response(MOCK_ACCOUNTS_RESPONSE),
-        _make_response(MOCK_SUMMARY_RESPONSE),
-        _make_response(MOCK_LEDGER_RESPONSE),
-        _make_response(MOCK_POSITIONS_RESPONSE),
-    )
+@patch("ibkr_positions.client.IB")
+def test_get_portfolio_success(mock_ib_class):
+    ib_mock = _make_ib_mock()
+    client = _patched_client(mock_ib_class, ib_mock)
 
     portfolio = client.get_portfolio()
 
@@ -56,15 +40,9 @@ def test_get_portfolio_success(mock_session_class):
     assert len(portfolio.positions) == 2
 
 
-@patch("ibkr_positions.client.requests.Session")
-def test_get_portfolio_parses_stock_position(mock_session_class):
-    client = _patched_client(
-        mock_session_class,
-        _make_response(MOCK_ACCOUNTS_RESPONSE),
-        _make_response(MOCK_SUMMARY_RESPONSE),
-        _make_response(MOCK_LEDGER_RESPONSE),
-        _make_response(MOCK_POSITIONS_RESPONSE),
-    )
+@patch("ibkr_positions.client.IB")
+def test_get_portfolio_parses_stock_position(mock_ib_class):
+    client = _patched_client(mock_ib_class, _make_ib_mock())
 
     portfolio = client.get_portfolio()
     stock = next(p for p in portfolio.positions if p.asset_type == "STK")
@@ -78,15 +56,9 @@ def test_get_portfolio_parses_stock_position(mock_session_class):
     assert stock.delta is None
 
 
-@patch("ibkr_positions.client.requests.Session")
-def test_get_portfolio_parses_option_position(mock_session_class):
-    client = _patched_client(
-        mock_session_class,
-        _make_response(MOCK_ACCOUNTS_RESPONSE),
-        _make_response(MOCK_SUMMARY_RESPONSE),
-        _make_response(MOCK_LEDGER_RESPONSE),
-        _make_response(MOCK_POSITIONS_RESPONSE),
-    )
+@patch("ibkr_positions.client.IB")
+def test_get_portfolio_parses_option_position(mock_ib_class):
+    client = _patched_client(mock_ib_class, _make_ib_mock())
 
     portfolio = client.get_portfolio()
     opt = next(p for p in portfolio.positions if p.asset_type == "OPT")
@@ -95,64 +67,68 @@ def test_get_portfolio_parses_option_position(mock_session_class):
     assert opt.strike == 140.0
     assert opt.expiration == "2027-01-15"
     assert opt.underlying == "PEP"
-    assert opt.delta == -0.32
-    assert opt.underlying_price == 152.0
+    assert opt.delta is None
+    assert opt.underlying_price is None
 
 
-@patch("ibkr_positions.client.requests.Session")
-def test_client_portal_not_running_raises_clear_error(mock_session_class):
-    mock_session = MagicMock()
-    mock_session_class.return_value = mock_session
-    mock_session.get.side_effect = requests.exceptions.ConnectionError("refused")
+@patch("ibkr_positions.client.IB")
+def test_gateway_not_running_raises_clear_error(mock_ib_class):
+    ib_mock = MagicMock()
+    mock_ib_class.return_value = ib_mock
+    ib_mock.connect.side_effect = ConnectionRefusedError("refused")
 
     with pytest.raises(IBKRConnectionError) as exc_info:
         IBKRClient().get_portfolio()
 
     error_msg = str(exc_info.value)
-    assert "IBKR Client Portal is not running" in error_msg
-    assert "https://localhost:5000" in error_msg
+    assert "IB Gateway is not running" in error_msg
+    assert "7496" in error_msg
 
 
-@patch("ibkr_positions.client.requests.Session")
-def test_partial_response_missing_optional_fields(mock_session_class):
-    minimal_position = [
-        {
-            "contractDesc": "MSFT",
-            "ticker": "MSFT",
-            "position": 50.0,
-            "mktValue": 10000.0,
-            "assetClass": "STK",
-            # avgCost, unrealizedPnl, expiry, delta all absent
-        }
-    ]
-    client = _patched_client(
-        mock_session_class,
-        _make_response(MOCK_ACCOUNTS_RESPONSE),
-        _make_response(MOCK_SUMMARY_RESPONSE),
-        _make_response(MOCK_LEDGER_RESPONSE),
-        _make_response(minimal_position),
-    )
+@patch("ibkr_positions.client.IB")
+def test_no_accounts_raises_error(mock_ib_class):
+    ib_mock = _make_ib_mock(accounts=[])
+    client = _patched_client(mock_ib_class, ib_mock)
 
-    portfolio = client.get_portfolio()
-    assert len(portfolio.positions) == 1
-    pos = portfolio.positions[0]
-    assert pos.symbol == "MSFT"
-    assert pos.cost_basis == 0.0
-    assert pos.expiration is None
-    assert pos.delta is None
+    with pytest.raises(IBKRConnectionError, match="No accounts"):
+        client.get_portfolio()
 
 
-@patch("ibkr_positions.client.requests.Session")
-def test_http_error_raises_ibkr_connection_error(mock_session_class):
-    mock_session = MagicMock()
-    mock_session_class.return_value = mock_session
-    err_response = MagicMock()
-    err_response.status_code = 401
-    mock_session.get.side_effect = requests.exceptions.HTTPError(
-        "401 Unauthorized", response=err_response
-    )
+@patch("ibkr_positions.client.IB")
+def test_disconnect_called_even_on_error(mock_ib_class):
+    ib_mock = _make_ib_mock(accounts=[])
+    mock_ib_class.return_value = ib_mock
 
-    with pytest.raises(IBKRConnectionError) as exc_info:
+    with pytest.raises(IBKRConnectionError):
         IBKRClient().get_portfolio()
 
-    assert "HTTP error" in str(exc_info.value)
+    ib_mock.disconnect.assert_called_once()
+
+
+@patch("ibkr_positions.client.IB")
+def test_cash_balances_parsed_by_currency(mock_ib_class):
+    client = _patched_client(mock_ib_class, _make_ib_mock())
+
+    portfolio = client.get_portfolio()
+    currencies = {cb.currency for cb in portfolio.cash}
+
+    assert "USD" in currencies
+    assert "BRL" in currencies
+
+
+@patch("ibkr_positions.client.IB")
+def test_unparseable_position_skipped(mock_ib_class):
+    bad_item = MagicMock()
+    bad_item.account = "U1234567"
+    bad_item.contract.secType = "STK"
+    bad_item.contract.symbol = "BAD"
+    bad_item.position = "not_a_number"  # will cause float() to fail
+
+    ib_mock = _make_ib_mock(
+        portfolio_items=[bad_item] + list(fixtures.MOCK_PORTFOLIO_ITEMS)
+    )
+    client = _patched_client(mock_ib_class, ib_mock)
+
+    portfolio = client.get_portfolio()
+    # bad item skipped, 2 good positions remain
+    assert len(portfolio.positions) == 2

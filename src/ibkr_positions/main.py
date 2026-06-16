@@ -15,9 +15,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="Directory to write report files (default: reports/output)",
     )
     parser.add_argument(
-        "--gateway-url",
-        default="https://localhost:5000",
-        help="IBKR Client Portal gateway URL (default: https://localhost:5000)",
+        "--host",
+        default="127.0.0.1",
+        help="IB Gateway host (default: 127.0.0.1)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=7496,
+        help="IB Gateway TWS API port (default: 7496)",
+    )
+    parser.add_argument(
+        "--client-id",
+        type=int,
+        default=10,
+        help="TWS API client ID (default: 10)",
     )
     return parser
 
@@ -26,7 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    client = IBKRClient(gateway_url=args.gateway_url)
+    client = IBKRClient(host=args.host, port=args.port, client_id=args.client_id)
     try:
         portfolio = client.get_portfolio()
     except IBKRConnectionError as exc:
