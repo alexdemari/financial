@@ -53,7 +53,8 @@ All files written to `reports/output/` (date-stamped):
 4. **Portfolio Allocation** — market value and % of NLV by asset type
 5. **Cash by Currency** — balance and settled cash
 6. **Risk Analysis** — concentration alerts, margin metrics, cash coverage for short puts
-7. **Actionable Insights** — short premium summary, margin headroom, assignment risk
+7. **Enhanced Risk** — approximate net option delta, cash shortfall resolution, concentration actions
+8. **Actionable Insights** — short premium summary, margin headroom, assignment risk
 
 ---
 
@@ -103,6 +104,9 @@ NLV, total cash, buying power, initial/maintenance margin, excess liquidity.
 | `margin_utilization` | `initial_margin / NLV` |
 | `concentration_risk` | symbols where `abs(market_value) / total > 25%` |
 | `cash_coverage` | cash vs `sum(abs(qty) × strike × 100)` for all short puts |
+| `cash_shortfall_resolution` | ranked close suggestions for short puts that reduce assignment cash shortfall |
+| `delta_proxy` | approximate Black-Scholes delta using fixed 30% IV and 5% risk-free rate |
+| `portfolio_net_delta` | sum of approximate `delta × quantity × 100` across option positions |
 | `options_expiring_soon` | options expiring within 7 calendar days |
 | `short_puts_near_assignment` | short puts within 5% of strike |
 | `covered_calls_itm` | short calls where underlying > strike |
@@ -114,5 +118,7 @@ NLV, total cash, buying power, initial/maintenance margin, excess liquidity.
 Uses `ib_insync`. Connects with `readonly=True`, `timeout=10s`, `client_id=10`.
 Disconnects immediately after fetching all data.
 
-Delta is not populated — IBKR does not return greeks in the portfolio endpoint
-without a market data subscription. Field reserved for future enrichment.
+Live delta is not populated — IBKR does not return Greeks in the portfolio
+endpoint without a market data subscription. Reports include an approximate
+delta proxy when expiration, strike, option type, and an underlying price proxy
+are available.

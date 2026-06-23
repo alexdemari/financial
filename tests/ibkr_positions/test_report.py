@@ -85,7 +85,8 @@ def test_render_report_all_sections_present():
     assert "## 4. Consolidated Positions" in report
     assert "## 5. Open Options" in report
     assert "## 6. Risk Analysis" in report
-    assert "## 7. Actionable Insights" in report
+    assert "## 7. Enhanced Risk" in report
+    assert "## 8. Actionable Insights" in report
 
 
 def test_render_report_empty_positions_no_crash():
@@ -105,6 +106,44 @@ def test_render_report_option_in_section_5():
     assert "PEP" in report
     assert "PUT" in report
     assert "2027-01-15" in report
+
+
+def test_render_report_includes_enhanced_risk_details():
+    concentrated_stock = Position(
+        symbol="AAPL",
+        asset_type="STK",
+        quantity=100.0,
+        market_value=30000.0,
+        cost_basis=25000.0,
+        unrealized_pnl=5000.0,
+        currency="USD",
+    )
+    short_put = Position(
+        symbol="PEP 15JAN2027 140 P",
+        asset_type="OPT",
+        quantity=-1.0,
+        market_value=-286.0,
+        cost_basis=286.0,
+        unrealized_pnl=-100.0,
+        currency="USD",
+        expiration="2027-01-15",
+        strike=140.0,
+        option_type="PUT",
+        underlying="PEP",
+        underlying_price=152.0,
+    )
+
+    report = render_positions_report(
+        _make_portfolio(
+            positions=[concentrated_stock, short_put],
+            cash_balance=1000.0,
+            nlv=50000.0,
+        )
+    )
+
+    assert "Net option delta:" in report
+    assert "CLOSE PEP 15JAN2027 140 P" in report
+    assert "AAPL: 60.0% of NLV" in report
 
 
 def test_render_report_no_technical_columns():

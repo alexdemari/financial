@@ -2,13 +2,16 @@ from datetime import date, timedelta
 
 import pytest
 
-from ibkr_positions.models import AccountSummary, Position
+from ibkr_positions.models import AccountSummary, Portfolio, Position
 from ibkr_positions.risk import (
     cash_coverage,
+    cash_shortfall_resolution,
     concentration_risk,
     covered_calls_itm,
+    delta_proxy,
     margin_utilization,
     options_expiring_soon,
+    portfolio_net_delta,
     short_puts_near_assignment,
 )
 
@@ -32,6 +35,7 @@ def _put(
     underlying_price: float,
     expiration: str | None = None,
     market_value: float = -100.0,
+    unrealized_pnl: float = 0.0,
 ) -> Position:
     return Position(
         symbol=symbol,
@@ -39,7 +43,7 @@ def _put(
         quantity=quantity,
         market_value=market_value,
         cost_basis=100.0,
-        unrealized_pnl=0.0,
+        unrealized_pnl=unrealized_pnl,
         currency="USD",
         expiration=expiration,
         strike=strike,
@@ -56,6 +60,7 @@ def _call(
     strike: float,
     underlying_price: float,
     expiration: str | None = None,
+    unrealized_pnl: float = 0.0,
 ) -> Position:
     return Position(
         symbol=symbol,
@@ -63,7 +68,7 @@ def _call(
         quantity=quantity,
         market_value=-100.0,
         cost_basis=100.0,
-        unrealized_pnl=0.0,
+        unrealized_pnl=unrealized_pnl,
         currency="USD",
         expiration=expiration,
         strike=strike,
@@ -82,6 +87,20 @@ def _summary(nlv: float, cash: float = 5000.0, margin: float = 0.0) -> AccountSu
         initial_margin=margin,
         maintenance_margin=margin * 0.7,
         excess_liquidity=nlv - margin,
+    )
+
+
+def _portfolio(
+    positions: list[Position],
+    nlv: float = 50000.0,
+    cash: float = 5000.0,
+) -> Portfolio:
+    return Portfolio(
+        account_id="U1234567",
+        as_of="2026-06-15T10:00:00+00:00",
+        summary=_summary(nlv=nlv, cash=cash),
+        cash=[],
+        positions=positions,
     )
 
 
@@ -220,3 +239,130 @@ def test_cash_coverage_no_short_puts():
     s = _summary(nlv=50000.0, cash=10000.0)
     result = cash_coverage(s, [_stock("AAPL", 10000.0)])
     assert result["worst_case_assignment_cost"] == 0.0
+
+
+# delta_proxy
+
+
+def test_delta_proxy_call_atm_is_near_half():
+    expiration = (date.today() + timedelta(days=30)).isoformat()
+    position = _call(
+        "ATM_CALL",
+        quantity=1.0,
+        strike=100.0,
+        underlying_price=100.0,
+        expiration=expiration,
+    )
+
+    assert delta_proxy(position) == pytest.approx(0.5, abs=0.06)
+
+
+def test_delta_proxy_put_atm_is_near_minus_half():
+    expiration = (date.today() + timedelta(days=30)).isoformat()
+    position = _put(
+        "ATM_PUT",
+        quantity=1.0,
+        strike=100.0,
+        underlying_price=100.0,
+        expiration=expiration,
+    )
+
+    assert delta_proxy(position) == pytest.approx(-0.5, abs=0.06)
+
+
+def test_delta_proxy_expired_option_returns_zero():
+    expiration = date.today().isoformat()
+    position = _put(
+        "EXPIRED_PUT",
+        quantity=1.0,
+        strike=100.0,
+        underlying_price=100.0,
+        expiration=expiration,
+    )
+
+    assert delta_proxy(position) == 0.0
+
+
+def test_delta_proxy_non_option_returns_zero():
+    assert delta_proxy(_stock("AAPL", 10000.0)) == 0.0
+
+
+def test_delta_proxy_missing_underlying_price_uses_cost_basis_proxy():
+    expiration = (date.today() + timedelta(days=30)).isoformat()
+    position = Position(
+        symbol="CALL_WITH_PROXY",
+        asset_type="OPT",
+        quantity=1.0,
+        market_value=0.0,
+        cost_basis=10000.0,
+        unrealized_pnl=0.0,
+        currency="USD",
+        expiration=expiration,
+        strike=100.0,
+        option_type="CALL",
+        underlying="AAPL",
+        underlying_price=None,
+    )
+
+    assert delta_proxy(position) == pytest.approx(0.5, abs=0.06)
+
+
+# portfolio_net_delta
+
+
+def test_portfolio_net_delta_sums_all_option_legs():
+    expiration = (date.today() + timedelta(days=90)).isoformat()
+    positions = [
+        _put("SHORT_PUT_1", -1.0, 100.0, 100.0, expiration=expiration),
+        _put("SHORT_PUT_2", -1.0, 100.0, 100.0, expiration=expiration),
+        _call("SHORT_CALL", -1.0, 150.0, 100.0, expiration=expiration),
+        _stock("AAPL", 10000.0),
+    ]
+
+    result = portfolio_net_delta(_portfolio(positions))
+
+    assert result > 80.0
+    assert result < 120.0
+
+
+# cash_shortfall_resolution
+
+
+def test_cash_shortfall_resolution_empty_when_no_shortfall():
+    portfolio = _portfolio(
+        [_put("COVERED_PUT", -1.0, 100.0, 105.0)],
+        cash=20000.0,
+    )
+
+    assert cash_shortfall_resolution(portfolio) == []
+
+
+def test_cash_shortfall_resolution_ranks_by_loss():
+    portfolio = _portfolio(
+        [
+            _put("LOWER_LOSS", -1.0, 100.0, 105.0, unrealized_pnl=-100.0),
+            _put("HIGHER_LOSS", -1.0, 100.0, 105.0, unrealized_pnl=-500.0),
+        ],
+        cash=0.0,
+    )
+
+    actions = cash_shortfall_resolution(portfolio)
+
+    assert actions[0]["symbol"] == "HIGHER_LOSS"
+    assert actions[1]["symbol"] == "LOWER_LOSS"
+
+
+def test_cash_shortfall_resolution_stops_when_shortfall_covered():
+    portfolio = _portfolio(
+        [
+            _put("FIRST_PUT", -1.0, 100.0, 105.0, unrealized_pnl=-500.0),
+            _put("SECOND_PUT", -1.0, 100.0, 105.0, unrealized_pnl=-100.0),
+        ],
+        cash=10000.0,
+    )
+
+    actions = cash_shortfall_resolution(portfolio)
+
+    assert [action["symbol"] for action in actions] == ["FIRST_PUT"]
+    assert actions[0]["assignment_cost"] == pytest.approx(10000.0)
+    assert actions[0]["shortfall_reduction"] == pytest.approx(10000.0)

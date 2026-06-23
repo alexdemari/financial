@@ -7,10 +7,12 @@ from pathlib import Path
 from ibkr_positions.models import Portfolio, Position
 from ibkr_positions.risk import (
     cash_coverage,
+    cash_shortfall_resolution,
     concentration_risk,
     covered_calls_itm,
     margin_utilization,
     options_expiring_soon,
+    portfolio_net_delta,
     short_puts_near_assignment,
 )
 
@@ -151,7 +153,56 @@ def render_positions_report(
 
     lines += [
         "",
-        "## 7. Actionable Insights",
+        "## 7. Enhanced Risk",
+        "",
+        "### Approximate Net Portfolio Delta",
+        "",
+    ]
+    net_delta = portfolio_net_delta(portfolio)
+    lines.append(f"- Net option delta: {net_delta:+.2f} ({_delta_label(net_delta)})")
+    lines.append(
+        "- Estimate uses fixed 30% IV and 5% risk-free rate when live Greeks are unavailable."
+    )
+
+    shortfall_actions = cash_shortfall_resolution(portfolio)
+    lines += [
+        "",
+        "### Cash Shortfall Resolution",
+        "",
+    ]
+    if shortfall_actions:
+        for action in shortfall_actions:
+            lines.append(
+                f"- {action['action']} {action['symbol']}: reduces shortfall by "
+                f"{_fmt_money(float(action['shortfall_reduction']))} "
+                f"(assignment cost {_fmt_money(float(action['assignment_cost']))}, "
+                f"unrealized PnL {_fmt_pnl(float(action['unrealized_pnl']))})"
+            )
+    elif coverage["worst_case_assignment_cost"] > 0:
+        lines.append(
+            "- No shortfall action needed; cash covers short-put assignment risk."
+        )
+    else:
+        lines.append("- No short-put assignment cash shortfall.")
+
+    concentration_details = _build_concentration_details(portfolio)
+    lines += [
+        "",
+        "### Concentration Details",
+        "",
+    ]
+    if concentration_details:
+        for detail in concentration_details:
+            lines.append(
+                f"- {detail['symbol']}: {float(detail['weight']):.1%} of NLV. "
+                f"Suggested action: {detail['suggested_action']}"
+            )
+    else:
+        lines.append("- No position exceeds the 25% concentration threshold.")
+
+    lines += [
+        "",
+        "## 8. Actionable Insights",
         "",
     ]
     insights = _build_insights(portfolio, margin_util, coverage)
@@ -299,6 +350,37 @@ def _build_insights(
             )
 
     return insights
+
+
+def _build_concentration_details(portfolio: Portfolio) -> list[dict[str, float | str]]:
+    if portfolio.summary.net_liquidation == 0.0:
+        return []
+
+    details: list[dict[str, float | str]] = []
+    flagged_symbols = concentration_risk(portfolio.positions, threshold=0.25)
+    for symbol in flagged_symbols:
+        symbol_value = sum(
+            abs(position.market_value)
+            for position in portfolio.positions
+            if position.symbol == symbol
+        )
+        weight = symbol_value / portfolio.summary.net_liquidation
+        details.append(
+            {
+                "symbol": symbol,
+                "weight": weight,
+                "suggested_action": "reduce exposure or hedge before adding risk",
+            }
+        )
+    return details
+
+
+def _delta_label(net_delta: float) -> str:
+    if net_delta > 0.10:
+        return "bullish"
+    if net_delta < -0.10:
+        return "bearish"
+    return "neutral"
 
 
 def _fmt_money(value: float) -> str:

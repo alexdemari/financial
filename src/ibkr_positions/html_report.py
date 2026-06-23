@@ -6,10 +6,12 @@ from pathlib import Path
 from ibkr_positions.models import Portfolio, Position
 from ibkr_positions.risk import (
     cash_coverage,
+    cash_shortfall_resolution,
     concentration_risk,
     covered_calls_itm,
     margin_utilization,
     options_expiring_soon,
+    portfolio_net_delta,
     short_puts_near_assignment,
 )
 
@@ -303,6 +305,73 @@ def render_html_report(
         ]
     html_parts.append("</div>")  # risk section
 
+    # --- enhanced risk ---
+    net_delta = portfolio_net_delta(portfolio)
+    shortfall_actions = cash_shortfall_resolution(portfolio)
+    concentration_details = _build_concentration_details(portfolio)
+    delta_cls = (
+        "pos" if net_delta > 0.10 else ("neg" if net_delta < -0.10 else "neutral")
+    )
+    html_parts += [
+        "<div class='section'>",
+        "<h2>Enhanced Risk</h2>",
+        "<table>",
+        "<thead><tr><th>Metric</th><th>Value</th><th>Context</th></tr></thead>",
+        "<tbody>",
+        f"<tr><td>Approximate Net Option Delta</td><td class='{delta_cls}'>{net_delta:+.2f}</td><td>{_delta_label(net_delta)}</td></tr>",
+        "<tr><td>Delta Assumption</td><td>Approximate</td><td>Fixed 30% IV and 5% risk-free rate</td></tr>",
+        "</tbody></table>",
+        "<br><h2 style='margin-top:16px'>Cash Shortfall Resolution</h2>",
+    ]
+    if shortfall_actions:
+        html_parts += [
+            "<table>",
+            "<thead><tr><th>Action</th><th>Symbol</th><th>Shortfall Reduction</th><th>Assignment Cost</th><th>Unrealized P&L</th></tr></thead>",
+            "<tbody>",
+        ]
+        for action in shortfall_actions:
+            pnl = float(action["unrealized_pnl"])
+            html_parts.append(
+                f"<tr>"
+                f"<td>{action['action']}</td>"
+                f"<td><strong>{action['symbol']}</strong></td>"
+                f"<td>{_m(float(action['shortfall_reduction']))}</td>"
+                f"<td>{_m(float(action['assignment_cost']))}</td>"
+                f"<td class='{'pos' if pnl >= 0.0 else 'neg'}'>{_m(pnl, sign=True)}</td>"
+                f"</tr>"
+            )
+        html_parts += ["</tbody></table>"]
+    elif coverage["worst_case_assignment_cost"] > 0:
+        html_parts.append(
+            "<p class='neutral'>No shortfall action needed; cash covers short-put assignment risk.</p>"
+        )
+    else:
+        html_parts.append(
+            "<p class='neutral'>No short-put assignment cash shortfall.</p>"
+        )
+
+    html_parts.append("<br><h2 style='margin-top:16px'>Concentration Details</h2>")
+    if concentration_details:
+        html_parts += [
+            "<table>",
+            "<thead><tr><th>Symbol</th><th>% of NLV</th><th>Suggested Action</th></tr></thead>",
+            "<tbody>",
+        ]
+        for detail in concentration_details:
+            html_parts.append(
+                f"<tr>"
+                f"<td><strong>{detail['symbol']}</strong></td>"
+                f"<td class='neg'>{float(detail['weight']):.1%}</td>"
+                f"<td>{detail['suggested_action']}</td>"
+                f"</tr>"
+            )
+        html_parts += ["</tbody></table>"]
+    else:
+        html_parts.append(
+            "<p class='neutral'>No position exceeds the 25% concentration threshold.</p>"
+        )
+    html_parts.append("</div>")
+
     # --- insights ---
     if insights:
         html_parts += [
@@ -417,3 +486,34 @@ def _build_insights(
                 f"Cash shortfall of {_m(coverage['shortfall'])} if all short puts assigned"
             )
     return insights
+
+
+def _build_concentration_details(portfolio: Portfolio) -> list[dict[str, float | str]]:
+    if portfolio.summary.net_liquidation == 0.0:
+        return []
+
+    details: list[dict[str, float | str]] = []
+    flagged_symbols = concentration_risk(portfolio.positions, threshold=0.25)
+    for symbol in flagged_symbols:
+        symbol_value = sum(
+            abs(position.market_value)
+            for position in portfolio.positions
+            if position.symbol == symbol
+        )
+        weight = symbol_value / portfolio.summary.net_liquidation
+        details.append(
+            {
+                "symbol": symbol,
+                "weight": weight,
+                "suggested_action": "reduce exposure or hedge before adding risk",
+            }
+        )
+    return details
+
+
+def _delta_label(net_delta: float) -> str:
+    if net_delta > 0.10:
+        return "bullish"
+    if net_delta < -0.10:
+        return "bearish"
+    return "neutral"
