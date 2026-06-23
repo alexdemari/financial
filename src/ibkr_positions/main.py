@@ -4,6 +4,7 @@ import argparse
 import sys
 
 from ibkr_positions.client import IBKRClient, IBKRConnectionError
+from ibkr_positions.options_export import write_options_tracker_live_csv
 from ibkr_positions.report import write_positions_report
 
 
@@ -48,9 +49,13 @@ def main(argv: list[str] | None = None) -> int:
     md_path, csv_path, html_path = write_positions_report(
         portfolio, output_dir=args.output_dir
     )
+    options_csv_path = write_options_tracker_live_csv(
+        portfolio, output_dir=args.output_dir
+    )
     print(f"Report: {md_path}")
     print(f"CSV:    {csv_path}")
     print(f"HTML:   {html_path}")
+    print(f"Options CSV: {options_csv_path}")
     return 0
 
 

@@ -60,11 +60,13 @@ def _parse_european_float(s: str) -> float | None:
 
 
 def _parse_date(s: str) -> date | None:
-    """Parse DD/MM/YYYY date string."""
+    """Parse DD/MM/YYYY or YYYY-MM-DD date string."""
     s = s.strip()
     if not s:
         return None
     try:
+        if "-" in s:
+            return date.fromisoformat(s)
         d, m, y = s.split("/")
         return date(int(y), int(m), int(d))
     except (ValueError, AttributeError):

@@ -39,6 +39,12 @@ def test_parse_european_float_thousands():
     assert _parse_european_float("1.234,56") == pytest.approx(1234.56)
 
 
+def test_parse_date_iso_format():
+    from market_scanner.portfolio import _parse_date
+
+    assert _parse_date("2026-07-17") == date(2026, 7, 17)
+
+
 # ---------------------------------------------------------------------------
 # _derive_side
 # ---------------------------------------------------------------------------

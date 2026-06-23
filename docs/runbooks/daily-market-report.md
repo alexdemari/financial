@@ -71,6 +71,10 @@ PYTHONPATH=src uv run python -m market_scanner.daily_report \
 
 # Standalone exit monitor (positions only, no full report)
 just positions
+
+# Standalone exit monitor using live IBKR snapshot
+just ibkr-positions
+just positions-live
 ```
 
 ---
@@ -179,10 +183,12 @@ Rankings show all fresh symbols sorted by signal recency + consistency, no backt
 |------|-------------|
 | `src/market_scanner/daily_report.py` | Report orchestration and rendering |
 | `src/market_scanner/options_filter.py` | Options liquidity fetch + classification (yfinance) |
-| `src/market_scanner/portfolio.py` | Parse `options_tracker.csv`, return open positions |
+| `src/ibkr_positions/options_export.py` | Export live IBKR option positions to `reports/output/options_tracker_live.csv` |
+| `src/market_scanner/portfolio.py` | Parse `options_tracker.csv` or the live IBKR snapshot, return open positions |
 | `src/market_scanner/exit_monitor.py` | Evaluate open positions against scan; EXIT/WATCH/HOLD |
 | `src/market_scanner/exits.py` | Exit rule functions (reused by exit_monitor) |
 | `options_tracker.csv` | Personal options trade log (gitignored). Semicolon-delimited, European decimals, DD/MM/YYYY. Col 25 = `signal_source` (lux/smc/dual/—). Open rows have empty Close Date (col 18). |
+| `reports/output/options_tracker_live.csv` | Point-in-time live IBKR option snapshot written by `just ibkr-positions`; consumed by `just positions-live`. |
 | `reports/market_scanner/scan_daily.csv` | Input: today's scan |
 | `reports/market_scanner/execution_recommended_rules.csv` | Input: backtest qualification (weekly) |
 | `reports/market_scanner/daily_report.md` | Output: daily report |
