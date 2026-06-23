@@ -115,19 +115,21 @@ def test_render_report_no_technical_columns():
 
 def test_write_positions_report_creates_md_and_csv(tmp_path: Path):
     generated_at = datetime(2026, 6, 15, 10, 0, tzinfo=UTC)
-    md_path, csv_path = write_positions_report(
+    md_path, csv_path, html_path = write_positions_report(
         _make_portfolio(positions=[_STOCK]),
         output_dir=tmp_path,
         generated_at=generated_at,
     )
     assert md_path.exists()
     assert csv_path.exists()
+    assert html_path.exists()
     assert md_path.name == "ibkr_positions_2026-06-15.md"
     assert csv_path.name == "ibkr_positions_2026-06-15.csv"
+    assert html_path.name == "ibkr_positions_2026-06-15.html"
 
 
 def test_write_positions_report_csv_has_correct_columns(tmp_path: Path):
-    _, csv_path = write_positions_report(
+    _, csv_path, _html = write_positions_report(
         _make_portfolio(positions=[_STOCK]),
         output_dir=tmp_path,
     )
@@ -138,10 +140,11 @@ def test_write_positions_report_csv_has_correct_columns(tmp_path: Path):
 
 def test_write_positions_report_creates_output_dir(tmp_path: Path):
     output_dir = tmp_path / "nested" / "output"
-    md_path, csv_path = write_positions_report(
+    md_path, csv_path, html_path = write_positions_report(
         _make_portfolio(),
         output_dir=output_dir,
     )
     assert output_dir.exists()
     assert md_path.exists()
     assert csv_path.exists()
+    assert html_path.exists()

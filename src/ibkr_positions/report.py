@@ -169,7 +169,9 @@ def write_positions_report(
     portfolio: Portfolio,
     output_dir: str | Path = "reports/output",
     generated_at: datetime | None = None,
-) -> tuple[Path, Path]:
+) -> tuple[Path, Path, Path]:
+    from ibkr_positions.html_report import write_html_report
+
     report_time = generated_at or datetime.now(UTC)
     date_str = report_time.strftime("%Y-%m-%d")
     output = Path(output_dir)
@@ -183,8 +185,11 @@ def write_positions_report(
     _write_positions_csv(
         portfolio.positions, portfolio.summary.net_liquidation, csv_path
     )
+    html_path = write_html_report(
+        portfolio, output_dir=output, generated_at=report_time
+    )
 
-    return md_path, csv_path
+    return md_path, csv_path, html_path
 
 
 def _write_positions_csv(

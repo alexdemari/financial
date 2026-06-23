@@ -45,9 +45,12 @@ def main(argv: list[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 1
 
-    md_path, csv_path = write_positions_report(portfolio, output_dir=args.output_dir)
+    md_path, csv_path, html_path = write_positions_report(
+        portfolio, output_dir=args.output_dir
+    )
     print(f"Report: {md_path}")
     print(f"CSV:    {csv_path}")
+    print(f"HTML:   {html_path}")
     return 0
 
 

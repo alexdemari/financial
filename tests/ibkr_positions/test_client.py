@@ -86,6 +86,21 @@ def test_gateway_not_running_raises_clear_error(mock_ib_class):
 
 
 @patch("ibkr_positions.client.IB")
+def test_gateway_timeout_raises_clear_error(mock_ib_class):
+    ib_mock = MagicMock()
+    mock_ib_class.return_value = ib_mock
+    ib_mock.connect.side_effect = TimeoutError("timed out")
+
+    with pytest.raises(IBKRConnectionError) as exc_info:
+        IBKRClient(host="172.29.240.1").get_portfolio()
+
+    error_msg = str(exc_info.value)
+    assert "IB Gateway is not running" in error_msg
+    assert "172.29.240.1" in error_msg
+    assert "WSL access is allowed" in error_msg
+
+
+@patch("ibkr_positions.client.IB")
 def test_no_accounts_raises_error(mock_ib_class):
     ib_mock = _make_ib_mock(accounts=[])
     client = _patched_client(mock_ib_class, ib_mock)

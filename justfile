@@ -397,11 +397,18 @@ gate: lint test verify-identical
 
 # ── IBKR ─────────────────────────────────────────────────────────────────────
 
-# Retrieve live IBKR positions and generate portfolio risk report (requires IB Gateway running on port 7496)
-ibkr-positions output-dir="reports/output" host="127.0.0.1" port="7496":
+# Retrieve live IBKR positions and generate portfolio risk report.
+# From WSL, the default host is the Windows gateway; IB Gateway must allow WSL access on port 7496.
+ibkr-positions output-dir="reports/output" host="" port="7496":
+    #!/usr/bin/env bash
+    if [ -z "{{host}}" ]; then
+        HOST=$(ip route show default | awk '{print $3}')
+    else
+        HOST="{{host}}"
+    fi
     PYTHONPATH=src uv run python -m ibkr_positions.main \
         --output-dir {{output-dir}} \
-        --host {{host}} \
+        --host "$HOST" \
         --port {{port}}
 
 ibkr-option-chain symbol expiration max_strikes="10" option-type="BOTH" strike-step="5":

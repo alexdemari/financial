@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 _GATEWAY_NOT_RUNNING = (
     "Error: IB Gateway is not running on {host}:{port}\n"
-    "Ensure IB Gateway is open and API is enabled on port {port}."
+    "Ensure IB Gateway is open, API is enabled on port {port}, and WSL access is allowed."
 )
 
 
@@ -40,7 +40,7 @@ class IBKRClient:
                 readonly=True,
                 timeout=10,
             )
-        except (ConnectionRefusedError, OSError) as exc:
+        except (ConnectionRefusedError, OSError, TimeoutError) as exc:
             raise IBKRConnectionError(
                 _GATEWAY_NOT_RUNNING.format(host=self._host, port=self._port)
             ) from exc

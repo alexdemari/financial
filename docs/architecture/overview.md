@@ -104,6 +104,17 @@ See:
 - `market-scanner-decision-layer.md`
 - `legacy-options-scanner.md`
 
+### `ibkr_positions`
+
+Owns live portfolio state and risk reporting.
+
+- connects to IB Gateway via TWS API (read-only)
+- fetches positions, account summary, cash balances
+- computes unrealized P&L, margin utilization, cash coverage for short puts
+- renders Markdown, CSV, and HTML reports with performance section
+
+See `ibkr-positions.md`.
+
 ### Current Backtest
 
 Owns Scanner V3 signal validation.
