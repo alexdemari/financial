@@ -65,17 +65,23 @@ def generate_explanations(
     output_format: str = "markdown",
     max_tokens: int = 4000,
     portfolio_context: str | None = None,
+    macro_context: str | None = None,
 ) -> str:
     sanitized = [_sanitize_row(r) for r in rows]
     json_rows = json.dumps(sanitized, indent=2, default=str)
     user_prompt = _USER_PROMPT_TEMPLATE.format(
         json_rows=json_rows, output_format=output_format
     )
+    system = _SYSTEM_INSTRUCTION
     if portfolio_context:
-        prompt = (
-            f"{_SYSTEM_INSTRUCTION}\n{_PORTFOLIO_INSTRUCTION}\n\n"
-            f"{portfolio_context}\n\n{user_prompt}"
-        )
+        system = f"{system}\n{_PORTFOLIO_INSTRUCTION}"
+    context_blocks = []
+    if macro_context:
+        context_blocks.append(macro_context)
+    if portfolio_context:
+        context_blocks.append(portfolio_context)
+    if context_blocks:
+        prompt = f"{system}\n\n" + "\n\n".join(context_blocks) + f"\n\n{user_prompt}"
     else:
-        prompt = f"{_SYSTEM_INSTRUCTION}\n\n{user_prompt}"
+        prompt = f"{system}\n\n{user_prompt}"
     return provider.generate(prompt, max_tokens=max_tokens)

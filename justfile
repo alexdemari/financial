@@ -257,7 +257,7 @@ positions-live portfolio="reports/output/options_tracker_live.csv" \
 # Daily report + LLM explanation (requires ANTHROPIC_API_KEY or OPENAI_API_KEY)
 # provider: anthropic | openai | local  model: optional override  top_n: candidates to explain
 daily-report-llm provider="anthropic" model="" top_n="" format="markdown" \
-                 portfolio="options_tracker.csv" ibkr_snapshot="":
+                 portfolio="options_tracker.csv" ibkr_snapshot="" no_macro="":
     uv run python -m market_scanner.daily_report \
       --scan reports/market_scanner/scan_daily.csv \
       --recommendations reports/market_scanner/execution_recommended_rules.csv \
@@ -273,6 +273,7 @@ daily-report-llm provider="anthropic" model="" top_n="" format="markdown" \
       {{ if model != "" { "--llm-model " + model } else { "" } }} \
       {{ if top_n != "" { "--llm-top-n " + top_n } else { "" } }} \
       {{ if ibkr_snapshot != "" { "--ibkr-snapshot " + ibkr_snapshot } else { "" } }} \
+      {{ if no_macro != "" { "--no-macro" } else { "" } }} \
       --llm-output-format {{format}}
     @echo "✓ LLM report written to reports/market_scanner/"
 
@@ -288,7 +289,8 @@ daily universe="data/scanner_universe_filtered.csv" \
       workers="8" \
       smc_watchlist_days="10" \
       smc_min_pf="5.0" \
-      portfolio="options_tracker.csv":
+      portfolio="options_tracker.csv" \
+      no_macro="":
     uv run python -m stock_data_manager.main \
       -f {{universe}} -d {{data_dir}}
     uv run python -m market_scanner.scan \
@@ -308,7 +310,8 @@ daily universe="data/scanner_universe_filtered.csv" \
       --smc-min-pf {{smc_min_pf}} \
       --output reports/market_scanner/daily_report.md \
       --output-candidates reports/market_scanner/daily_candidates.csv \
-      --archive-dir reports/market_scanner/daily
+      --archive-dir reports/market_scanner/daily \
+      {{ if no_macro != "" { "--no-macro" } else { "" } }}
     @echo "✓ Daily report: reports/market_scanner/daily_report.md"
 
 # Regenera execution_recommended_rules.csv (rodar semanalmente ou após mudanças)

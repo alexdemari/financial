@@ -4,11 +4,15 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pandas as pd
 from tabulate import tabulate
 
 from market_scanner.market_state import AVOID, CANDIDATE, NEEDS_REVIEW, WATCHLIST
+
+if TYPE_CHECKING:
+    from market_scanner.macro_context import MacroSnapshot
 
 
 DEFAULT_MAX_DAYS = 2
@@ -556,6 +560,7 @@ def render_daily_report(
     smc_recommendations_df: pd.DataFrame | None = None,
     macro_events: bool = True,
     macro_days_ahead: int = 14,
+    macro_snapshot: "MacroSnapshot | None" = None,
 ) -> str:
     if generated_at is None:
         generated_at = datetime.now(UTC)
@@ -596,6 +601,11 @@ def render_daily_report(
     has_positions = not positions_eval_df.empty
 
     lines: list[str] = [f"# Daily Report — {date_str}", ""]
+
+    if macro_snapshot is not None:
+        from market_scanner.macro_context import format_macro_block
+
+        lines += [format_macro_block(macro_snapshot), ""]
 
     next_section = 1
     if has_positions:
@@ -920,6 +930,7 @@ def write_daily_report(
     portfolio_path: str | Path | None = None,
     macro_events: bool = True,
     macro_days_ahead: int = 14,
+    macro: bool = True,
     llm_explain: bool = False,
     llm_provider: str = DEFAULT_LLM_PROVIDER,
     llm_model: str | None = None,
@@ -941,6 +952,12 @@ def write_daily_report(
         if smc_rec_path.exists():
             smc_recommendations_df = pd.read_csv(smc_rec_path)
 
+    macro_snapshot: MacroSnapshot | None = None
+    if macro:
+        from market_scanner.macro_context import fetch_macro
+
+        macro_snapshot = fetch_macro()
+
     report = render_daily_report(
         scan_df,
         recommendations_df,
@@ -954,6 +971,7 @@ def write_daily_report(
         smc_recommendations_df=smc_recommendations_df,
         macro_events=macro_events,
         macro_days_ahead=macro_days_ahead,
+        macro_snapshot=macro_snapshot,
     )
 
     output = Path(output_path)
@@ -984,6 +1002,7 @@ def write_daily_report(
             llm_output_format=llm_output_format,
             output_dir=Path(output_path).parent,
             ibkr_snapshot=Path(ibkr_snapshot) if ibkr_snapshot is not None else None,
+            macro_snapshot=macro_snapshot,
         )
 
     return report
@@ -1001,6 +1020,7 @@ def _run_llm_explanation(
     llm_output_format: str,
     output_dir: Path,
     ibkr_snapshot: Path | None,
+    macro_snapshot: "MacroSnapshot | None" = None,
 ) -> None:
     try:
         from market_scanner.llm.explainer import generate_explanations
@@ -1034,11 +1054,17 @@ def _run_llm_explanation(
             if ibkr_snapshot is not None
             else None
         )
+        macro_context_str: str | None = None
+        if macro_snapshot is not None:
+            from market_scanner.macro_context import format_macro_prompt_block
+
+            macro_context_str = format_macro_prompt_block(macro_snapshot)
         explanations = generate_explanations(
             rows,
             provider,
             output_format=llm_output_format,
             portfolio_context=portfolio_context,
+            macro_context=macro_context_str,
         )
         report_path = write_llm_report(
             explanations,
@@ -1117,6 +1143,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Disable macro economic calendar section (default: enabled, fetches from Nasdaq)",
     )
     parser.add_argument(
+        "--no-macro",
+        action="store_false",
+        dest="macro",
+        default=True,
+        help="Skip BCB/Yahoo macro indicator fetch (offline use)",
+    )
+    parser.add_argument(
         "--macro-days",
         type=int,
         default=14,
@@ -1187,6 +1220,7 @@ def main(argv: list[str] | None = None) -> int:
         portfolio_path=args.portfolio_path,
         macro_events=args.macro_events,
         macro_days_ahead=args.macro_days,
+        macro=args.macro,
         llm_explain=args.llm_explain,
         llm_provider=args.llm_provider,
         llm_model=args.llm_model,

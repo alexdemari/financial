@@ -1,6 +1,6 @@
 # Task: Macro Context Injector — Selic, USD/BRL, S&P 500, Ibovespa in Daily Report
 
-**Status:** Planned
+**Status:** Completed
 **Skill:** add-feature
 **Scope:** `src/market_scanner/macro_context.py` (new), `src/market_scanner/daily_report.py`
 **Effort:** S
