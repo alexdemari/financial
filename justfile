@@ -423,6 +423,12 @@ ibkr-positions output-dir="reports/output" host="" port="7496":
         --host "$HOST" \
         --port {{port}}
 
+# Show IBKR account performance history. Pass days as positional: just ibkr-history 30
+ibkr-history days="90":
+    PYTHONPATH=src uv run python -m ibkr_positions.snapshot_store \
+        --history data/ibkr/history.jsonl \
+        --days {{days}}
+
 # Reconcile options_tracker.csv against live IBKR snapshot. Runs ibkr-positions first, then diffs.
 ibkr-reconcile output-dir="reports/output" host="" port="7496":
     #!/usr/bin/env bash

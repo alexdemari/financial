@@ -6,6 +6,7 @@ import sys
 from ibkr_positions.client import IBKRClient, IBKRConnectionError
 from ibkr_positions.options_export import write_options_tracker_live_csv
 from ibkr_positions.report import write_positions_report
+from ibkr_positions.snapshot_store import append_snapshot
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -46,6 +47,7 @@ def main(argv: list[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 1
 
+    append_snapshot(portfolio)
     md_path, csv_path, html_path = write_positions_report(
         portfolio, output_dir=args.output_dir
     )
