@@ -62,3 +62,4 @@ skill_hub_courses.py
 
 # Personal financial data
 options_tracker.csv
+data/ibkr/history.jsonl

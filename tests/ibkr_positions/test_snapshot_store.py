@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from ibkr_positions.models import AccountSummary, CashBalance, Portfolio, Position
-from ibkr_positions.snapshot_store import append_snapshot, load_history
+from ibkr_positions.snapshot_store import append_snapshot, load_history, main
 
 
 def _make_portfolio() -> Portfolio:
@@ -122,6 +122,11 @@ def test_load_history_days_limit(tmp_path: Path) -> None:
     assert result[-1]["date"] == "2026-06-10"
 
 
+def test_load_history_rejects_non_positive_days(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="days must be greater than zero"):
+        load_history(history_path=tmp_path / "history.jsonl", days=0)
+
+
 def test_load_history_missing_file(tmp_path: Path) -> None:
     result = load_history(history_path=tmp_path / "nonexistent.jsonl")
     assert result == []
@@ -140,3 +145,13 @@ def test_snapshot_fields_populated(tmp_path: Path) -> None:
     assert entry["stk_pnl"] == 3000.0
     assert entry["unrealized_pnl"] == 3000.0 + (-100.0)
     assert entry["margin_utilization"] == pytest.approx(12500.0 / 50000.0)
+
+
+def test_history_cli_rejects_non_positive_days(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--history", str(tmp_path / "history.jsonl"), "--days", "0"])
+
+    assert exc_info.value.code == 2
+    assert "must be greater than zero" in capsys.readouterr().err

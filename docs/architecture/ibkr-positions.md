@@ -15,6 +15,7 @@ This module is read-only. It never submits or modifies orders.
 just ibkr-positions                        # auto-detects Windows host IP
 just ibkr-positions port=4001              # live account (default: 7496)
 just ibkr-positions output-dir=reports/my  # custom output dir
+just ibkr-history 30                       # last 30 daily account snapshots
 just positions-live reports/my/options_tracker_live.csv
 ```
 
@@ -42,6 +43,15 @@ All files written to `reports/output/` (date-stamped):
 | `ibkr_positions_YYYY-MM-DD.csv` | Flat positions table |
 | `ibkr_positions_YYYY-MM-DD.html` | Self-contained HTML with performance report |
 | `options_tracker_live.csv` | Live option snapshot consumed by `positions-live` |
+| `data/ibkr/history.jsonl` | Upserted daily account snapshot used by `ibkr-history` |
+
+---
+
+`ibkr-positions` updates one history entry per calendar day after a successful
+portfolio fetch. Repeated runs on the same day replace that day's entry.
+`ibkr-history` reports NLV, cash, unrealized P&L, option P&L, and the premium
+represented by currently open short-option positions. This premium is a
+point-in-time snapshot, not cumulative realized premium.
 
 ---
 
@@ -74,6 +84,7 @@ src/ibkr_positions/
 ├── risk.py         — concentration_risk, margin_utilization, cash_coverage, etc.
 ├── report.py       — Markdown + CSV renderer; orchestrates all output
 ├── html_report.py  — Self-contained HTML renderer with performance section
+├── snapshot_store.py — Daily JSONL snapshot upsert and history summary CLI
 └── main.py         — CLI entry point (--host, --port, --output-dir, --client-id)
 ```
 

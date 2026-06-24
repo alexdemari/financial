@@ -65,6 +65,8 @@ def load_history(
     history_path: Path = HISTORY_PATH, days: int | None = None
 ) -> list[dict]:
     """Return history entries sorted by date ascending, optionally capped to last N days."""
+    if days is not None and days <= 0:
+        raise ValueError("days must be greater than zero")
     if not history_path.exists():
         return []
     entries = [
@@ -133,7 +135,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--days",
-        type=int,
+        type=_positive_int,
         default=None,
         help="Limit output to last N days",
     )
@@ -141,6 +143,13 @@ def main(argv: list[str] | None = None) -> int:
     entries = load_history(history_path=args.history, days=args.days)
     _print_history_table(entries)
     return 0
+
+
+def _positive_int(value: str) -> int:
+    parsed_value = int(value)
+    if parsed_value <= 0:
+        raise argparse.ArgumentTypeError("must be greater than zero")
+    return parsed_value
 
 
 if __name__ == "__main__":
