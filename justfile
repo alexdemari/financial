@@ -422,6 +422,24 @@ ibkr-positions output-dir="reports/output" host="" port="7496":
         --host "$HOST" \
         --port {{port}}
 
+# Reconcile options_tracker.csv against live IBKR snapshot. Runs ibkr-positions first, then diffs.
+ibkr-reconcile output-dir="reports/output" host="" port="7496":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -z "{{host}}" ]; then
+        HOST=$(ip route show default | awk '{print $3}')
+    else
+        HOST="{{host}}"
+    fi
+    PYTHONPATH=src uv run python -m ibkr_positions.main \
+        --output-dir {{output-dir}} \
+        --host "$HOST" \
+        --port {{port}}
+    PYTHONPATH=src uv run python -m ibkr_positions.reconciler \
+        --live   {{output-dir}}/options_tracker_live.csv \
+        --tracker options_tracker.csv \
+        --output  {{output-dir}}/reconciliation_$(date +%Y-%m-%d).md
+
 ibkr-option-chain symbol expiration max_strikes="10" option-type="BOTH" strike-step="5":
     uv run python -m src.ibkr.main \
       --symbol {{symbol}} \
