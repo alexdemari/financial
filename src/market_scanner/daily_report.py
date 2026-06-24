@@ -925,6 +925,7 @@ def write_daily_report(
     llm_model: str | None = None,
     llm_top_n: int | None = None,
     llm_output_format: str = DEFAULT_LLM_OUTPUT_FORMAT,
+    ibkr_snapshot: str | Path | None = None,
 ) -> str:
     """Write the Markdown report to disk and return the report content."""
     scan_df = pd.read_csv(scan_path)
@@ -982,6 +983,7 @@ def write_daily_report(
             llm_model=llm_model,
             llm_output_format=llm_output_format,
             output_dir=Path(output_path).parent,
+            ibkr_snapshot=Path(ibkr_snapshot) if ibkr_snapshot is not None else None,
         )
 
     return report
@@ -998,10 +1000,12 @@ def _run_llm_explanation(
     llm_model: str | None,
     llm_output_format: str,
     output_dir: Path,
+    ibkr_snapshot: Path | None,
 ) -> None:
     try:
         from market_scanner.llm.explainer import generate_explanations
         from market_scanner.llm.factory import get_llm_provider
+        from market_scanner.llm.portfolio_context import build_portfolio_context
         from market_scanner.report_writer import write_llm_report
 
         fresh_df = filter_fresh_signals(scan_df, max_days, strategy)
@@ -1019,8 +1023,16 @@ def _run_llm_explanation(
 
         provider = get_llm_provider(llm_provider, llm_model)
         rows = top_df.to_dict(orient="records")
+        portfolio_context = (
+            build_portfolio_context(ibkr_snapshot)
+            if ibkr_snapshot is not None
+            else None
+        )
         explanations = generate_explanations(
-            rows, provider, output_format=llm_output_format
+            rows,
+            provider,
+            output_format=llm_output_format,
+            portfolio_context=portfolio_context,
         )
         report_path = write_llm_report(
             explanations,
@@ -1133,6 +1145,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_LLM_OUTPUT_FORMAT,
         help="Output format for LLM report (default: markdown)",
     )
+    parser.add_argument(
+        "--ibkr-snapshot",
+        type=Path,
+        default=None,
+        help="IBKR positions CSV or JSON snapshot for portfolio-aware LLM context",
+    )
     return parser
 
 
@@ -1168,6 +1186,7 @@ def main(argv: list[str] | None = None) -> int:
         llm_model=args.llm_model,
         llm_top_n=args.llm_top_n,
         llm_output_format=args.llm_output_format,
+        ibkr_snapshot=args.ibkr_snapshot,
     )
     print(f"Exported daily report: {args.output}")
     return 0

@@ -234,7 +234,8 @@ def write_positions_report(
     md_content = render_positions_report(portfolio, generated_at=report_time)
     md_path.write_text(md_content, encoding="utf-8")
     _write_positions_csv(
-        portfolio.positions, portfolio.summary.net_liquidation, csv_path
+        portfolio,
+        csv_path,
     )
     html_path = write_html_report(
         portfolio, output_dir=output, generated_at=report_time
@@ -244,10 +245,13 @@ def write_positions_report(
 
 
 def _write_positions_csv(
-    positions: list[Position],
-    net_liquidation: float,
+    portfolio: Portfolio,
     csv_path: Path,
 ) -> None:
+    positions = portfolio.positions
+    net_liquidation = portfolio.summary.net_liquidation
+    coverage = cash_coverage(portfolio.summary, positions)
+    net_portfolio_delta = portfolio_net_delta(portfolio)
     fieldnames = [
         "symbol",
         "type",
@@ -256,6 +260,13 @@ def _write_positions_csv(
         "cost_basis",
         "unrealized_pnl",
         "weight",
+        "underlying",
+        "option_type",
+        "strike",
+        "expiration",
+        "available_cash",
+        "cash_shortfall",
+        "net_portfolio_delta",
     ]
     with csv_path.open("w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=fieldnames)
@@ -271,6 +282,13 @@ def _write_positions_csv(
                     "cost_basis": p.cost_basis,
                     "unrealized_pnl": p.unrealized_pnl,
                     "weight": f"{weight:.4f}",
+                    "underlying": p.underlying or "",
+                    "option_type": p.option_type or "",
+                    "strike": p.strike if p.strike is not None else "",
+                    "expiration": p.expiration or "",
+                    "available_cash": portfolio.summary.total_cash,
+                    "cash_shortfall": coverage["shortfall"],
+                    "net_portfolio_delta": net_portfolio_delta,
                 }
             )
 

@@ -30,6 +30,11 @@ is visible as a column in each ranking table.
 # Rotina completa recomendada (dados + scan + report + LLM + posições abertas)
 just daily && just daily-report-llm
 
+# LLM portfolio-aware using the read-only IBKR positions snapshot
+just ibkr-positions
+just daily-report-llm \
+  ibkr_snapshot="reports/output/ibkr_positions_YYYY-MM-DD.csv"
+
 # Sem LLM (mais rápido)
 just daily                          # inclui options_tracker.csv por padrão
 just daily portfolio=""             # sem seção de posições
@@ -119,6 +124,7 @@ PYTHONPATH=src uv run python -m market_scanner.daily_report \
 | `--smc-min-pf` | `5.0` | Min profit_factor threshold for SMC watchlist. |
 | `--options-filter` | off | Add live options liquidity section (requires internet, ~10-30s). |
 | `--portfolio-path` | optional | Path to `options_tracker.csv` for open positions exit signals. |
+| `--ibkr-snapshot` | optional | CSV/JSON IBKR snapshot injected only into the LLM prompt; ignored unless `--llm-explain` is set. |
 
 ---
 

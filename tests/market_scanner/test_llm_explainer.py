@@ -2,6 +2,7 @@ import pytest
 
 from market_scanner.llm.explainer import generate_explanations, _sanitize_row
 from market_scanner.llm.factory import get_llm_provider
+from market_scanner.llm.portfolio_context import build_portfolio_context
 
 
 class FakeProvider:
@@ -57,6 +58,41 @@ def test_prompt_includes_required_scanner_fields() -> None:
     assert "market_state" in provider.last_prompt
     assert "adjusted_alignment" in provider.last_prompt
     assert "action_bucket" in provider.last_prompt
+
+
+def test_portfolio_context_injected_when_snapshot_provided(tmp_path) -> None:
+    snapshot_path = tmp_path / "ibkr_positions.csv"
+    snapshot_path.write_text(
+        "symbol,type,qty,cost_basis,unrealized_pnl,weight,available_cash,"
+        "cash_shortfall,net_portfolio_delta\n"
+        "AAPL,STK,10,1500,300,0.3000,5000,2000,42.5\n",
+        encoding="utf-8",
+    )
+    provider = PromptCapturingProvider()
+
+    generate_explanations(
+        [{"symbol": "MSFT", "action_bucket": "candidate"}],
+        provider,
+        portfolio_context=build_portfolio_context(snapshot_path),
+    )
+
+    assert "PORTFOLIO CONTEXT" in provider.last_prompt
+    assert "Cash available USD: $5,000" in provider.last_prompt
+    assert "Concentration >25% NLV: AAPL" in provider.last_prompt
+    assert "Do not recommend entering positions already held." in provider.last_prompt
+    assert len(build_portfolio_context(snapshot_path)) <= 1_500
+
+
+def test_no_portfolio_context_when_snapshot_absent() -> None:
+    provider = PromptCapturingProvider()
+
+    generate_explanations(
+        [{"symbol": "MSFT", "action_bucket": "candidate"}],
+        provider,
+    )
+
+    assert "PORTFOLIO CONTEXT" not in provider.last_prompt
+    assert "positions already held" not in provider.last_prompt
 
 
 def test_prompt_does_not_include_raw_ohlc_fields() -> None:

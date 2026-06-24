@@ -257,7 +257,7 @@ positions-live portfolio="reports/output/options_tracker_live.csv" \
 # Daily report + LLM explanation (requires ANTHROPIC_API_KEY or OPENAI_API_KEY)
 # provider: anthropic | openai | local  model: optional override  top_n: candidates to explain
 daily-report-llm provider="anthropic" model="" top_n="" format="markdown" \
-                 portfolio="options_tracker.csv":
+                 portfolio="options_tracker.csv" ibkr_snapshot="":
     uv run python -m market_scanner.daily_report \
       --scan reports/market_scanner/scan_daily.csv \
       --recommendations reports/market_scanner/execution_recommended_rules.csv \
@@ -272,6 +272,7 @@ daily-report-llm provider="anthropic" model="" top_n="" format="markdown" \
       --llm-provider {{provider}} \
       {{ if model != "" { "--llm-model " + model } else { "" } }} \
       {{ if top_n != "" { "--llm-top-n " + top_n } else { "" } }} \
+      {{ if ibkr_snapshot != "" { "--ibkr-snapshot " + ibkr_snapshot } else { "" } }} \
       --llm-output-format {{format}}
     @echo "✓ LLM report written to reports/market_scanner/"
 

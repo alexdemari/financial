@@ -173,7 +173,11 @@ def test_write_positions_report_csv_has_correct_columns(tmp_path: Path):
         output_dir=tmp_path,
     )
     content = csv_path.read_text()
-    assert "symbol,type,qty,market_value,cost_basis,unrealized_pnl,weight" in content
+    assert (
+        "symbol,type,qty,market_value,cost_basis,unrealized_pnl,weight,underlying,"
+        "option_type,strike,expiration,available_cash,cash_shortfall,"
+        "net_portfolio_delta" in content
+    )
     assert "AAPL" in content
 
 
