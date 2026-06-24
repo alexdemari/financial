@@ -1,6 +1,6 @@
 # Task: Inject Live IBKR Portfolio Context into `daily-report-llm`
 
-**Status:** Planned
+**Status:** Completed
 **Skill:** add-feature
 **Scope:** `src/market_scanner/daily_report.py`, `src/market_scanner/llm/explainer.py`
 **Effort:** S

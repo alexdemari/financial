@@ -47,7 +47,11 @@ def main(argv: list[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 1
 
-    append_snapshot(portfolio)
+    try:
+        append_snapshot(portfolio)
+    except Exception as exc:
+        print(f"Warning: snapshot history not updated: {exc}", file=sys.stderr)
+
     md_path, csv_path, html_path = write_positions_report(
         portfolio, output_dir=args.output_dir
     )

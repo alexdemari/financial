@@ -8,7 +8,8 @@ from pathlib import Path
 from ibkr_positions.models import Portfolio
 from ibkr_positions.risk import margin_utilization, portfolio_net_delta
 
-HISTORY_PATH = Path("data/ibkr/history.jsonl")
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+HISTORY_PATH = PROJECT_ROOT / "data/ibkr/history.jsonl"
 
 
 def _build_snapshot(portfolio: Portfolio, today: str) -> dict:
@@ -17,6 +18,8 @@ def _build_snapshot(portfolio: Portfolio, today: str) -> dict:
     stk_positions = [p for p in positions if p.asset_type in ("STK", "ETF")]
     short_opts = [p for p in opt_positions if p.quantity < 0]
 
+    # IBKR currently supplies positive cost basis, but keep snapshots robust to
+    # manually constructed Portfolio values and future adapter sign changes.
     options_premium_received = sum(abs(p.cost_basis) for p in short_opts)
     options_current_value = sum(p.market_value for p in opt_positions)
     options_pnl = sum(p.unrealized_pnl for p in opt_positions)
@@ -58,6 +61,7 @@ def append_snapshot(portfolio: Portfolio, history_path: Path = HISTORY_PATH) -> 
                 entries[entry["date"]] = entry
 
     entries[today] = snapshot
+    entries = dict(sorted(entries.items()))
     history_path.write_text("\n".join(json.dumps(e) for e in entries.values()) + "\n")
 
 
@@ -99,29 +103,30 @@ def _print_history_table(entries: list[dict]) -> None:
         return f"${v:>11,.2f}"
 
     def fmt_pnl(v: float) -> str:
-        sign = "+" if v >= 0 else ""
-        return f"{sign}${v:>10,.2f}"
+        sign = "+" if v >= 0 else "-"
+        return f"{sign}${abs(v):>10,.2f}"
 
     for e in entries:
         print(
             f"| {e['date']} "
-            f"| {fmt_money(e['nlv'])} "
-            f"| {fmt_money(e['cash'])} "
-            f"| {fmt_pnl(e['unrealized_pnl'])} "
-            f"| {fmt_pnl(e['options_pnl'])} "
-            f"| {fmt_money(e['options_premium_received'])} |"
+            f"| {fmt_money(e.get('nlv', 0.0))} "
+            f"| {fmt_money(e.get('cash', 0.0))} "
+            f"| {fmt_pnl(e.get('unrealized_pnl', 0.0))} "
+            f"| {fmt_pnl(e.get('options_pnl', 0.0))} "
+            f"| {fmt_money(e.get('options_premium_received', 0.0))} |"
         )
 
     print()
 
-    first_nlv = entries[0]["nlv"]
-    last_nlv = entries[-1]["nlv"]
+    first_nlv = entries[0].get("nlv", 0.0)
+    last_nlv = entries[-1].get("nlv", 0.0)
     nlv_change = last_nlv - first_nlv
     nlv_pct = (nlv_change / first_nlv * 100) if first_nlv else 0.0
     sign = "+" if nlv_change >= 0 else ""
     print(f"NLV change ({n}d): {sign}${nlv_change:,.2f} ({sign}{nlv_pct:.2f}%)")
     print(
-        f"Premium received (latest snapshot): ${entries[-1]['options_premium_received']:,.2f}"
+        "Premium received (latest snapshot): "
+        f"${entries[-1].get('options_premium_received', 0.0):,.2f}"
     )
 
 

@@ -1,13 +1,20 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from ibkr_positions.models import AccountSummary, CashBalance, Portfolio, Position
-from ibkr_positions.snapshot_store import append_snapshot, load_history, main
+from ibkr_positions.snapshot_store import (
+    HISTORY_PATH,
+    _print_history_table,
+    append_snapshot,
+    load_history,
+    main,
+)
 
 
 def _make_portfolio() -> Portfolio:
@@ -86,14 +93,16 @@ def test_same_day_upserts(tmp_path: Path) -> None:
 
 def test_different_day_appends(tmp_path: Path) -> None:
     history_path = tmp_path / "history.jsonl"
-    for day in ("2026-06-22", "2026-06-23"):
+    for day in ("2026-06-23", "2026-06-22"):
         with _patch_today(day):
             append_snapshot(_make_portfolio(), history_path=history_path)
 
     lines = [ln for ln in history_path.read_text().splitlines() if ln.strip()]
     assert len(lines) == 2
-    dates = {json.loads(ln)["date"] for ln in lines}
-    assert dates == {"2026-06-22", "2026-06-23"}
+    assert [json.loads(line)["date"] for line in lines] == [
+        "2026-06-22",
+        "2026-06-23",
+    ]
 
 
 def test_load_history_sorted(tmp_path: Path) -> None:
@@ -145,6 +154,66 @@ def test_snapshot_fields_populated(tmp_path: Path) -> None:
     assert entry["stk_pnl"] == 3000.0
     assert entry["unrealized_pnl"] == 3000.0 + (-100.0)
     assert entry["margin_utilization"] == pytest.approx(12500.0 / 50000.0)
+
+
+def test_snapshot_empty_positions_uses_zero_totals(tmp_path: Path) -> None:
+    history_path = tmp_path / "history.jsonl"
+    portfolio = replace(_make_portfolio(), positions=[])
+
+    with _patch_today("2026-06-23"):
+        append_snapshot(portfolio, history_path=history_path)
+
+    entry = json.loads(history_path.read_text())
+    assert entry["invested"] == 0.0
+    assert entry["unrealized_pnl"] == 0.0
+    assert entry["options_premium_received"] == 0.0
+    assert entry["options_current_value"] == 0.0
+    assert entry["options_pnl"] == 0.0
+    assert entry["stk_pnl"] == 0.0
+
+
+def test_long_option_does_not_add_received_premium(tmp_path: Path) -> None:
+    history_path = tmp_path / "history.jsonl"
+    long_option = replace(
+        _make_portfolio().positions[-1],
+        symbol="PEP LONG",
+        quantity=1,
+        cost_basis=125.0,
+    )
+    portfolio = replace(
+        _make_portfolio(),
+        positions=[*_make_portfolio().positions, long_option],
+    )
+
+    with _patch_today("2026-06-23"):
+        append_snapshot(portfolio, history_path=history_path)
+
+    entry = json.loads(history_path.read_text())
+    assert entry["options_premium_received"] == 300.0
+
+
+def test_history_table_handles_missing_fields_negative_pnl_and_zero_nlv(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _print_history_table(
+        [
+            {
+                "date": "2026-06-23",
+                "nlv": 0.0,
+                "options_pnl": -1000.0,
+            }
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert "-$  1,000.00" in output
+    assert "NLV change (1d): +$0.00 (+0.00%)" in output
+    assert "Premium received (latest snapshot): $0.00" in output
+
+
+def test_default_history_path_is_anchored_to_project_root() -> None:
+    assert HISTORY_PATH.is_absolute()
+    assert HISTORY_PATH.parts[-3:] == ("data", "ibkr", "history.jsonl")
 
 
 def test_history_cli_rejects_non_positive_days(

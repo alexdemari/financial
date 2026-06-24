@@ -1,6 +1,6 @@
 # Task: Annual IRPF Report — Foreign Operations Converted to BRL via PTAX
 
-**Status:** Planned
+**Status:** Completed
 **Skill:** add-feature
 **Scope:** `src/irpf_report/` (new module), `justfile`
 **Effort:** M

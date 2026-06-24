@@ -1,6 +1,8 @@
 # Task: Daily IBKR Snapshot History — Cumulative Performance Tracking
 
-**Status:** Planned
+**Status:** Completed for point-in-time snapshot history
+**Remaining:** True YTD collected-premium aggregation requires trade history;
+it is not available from point-in-time open positions.
 **Skill:** add-feature
 **Scope:** `src/ibkr_positions/snapshot_store.py` (new), `justfile`
 **Effort:** S

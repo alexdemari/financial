@@ -1,6 +1,6 @@
 # Task: Auto-Reconcile `options_tracker.csv` Against Live IBKR Positions
 
-**Status:** Planned
+**Status:** Completed
 **Skill:** add-feature
 **Scope:** `src/ibkr_positions/reconciler.py` (new), `justfile`
 **Effort:** S

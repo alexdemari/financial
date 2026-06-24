@@ -1,6 +1,6 @@
 # Task: IBKR Risk Dashboard — Cash Coverage, Concentration, Delta Proxy
 
-**Status:** Planned
+**Status:** Completed
 **Skill:** add-feature
 **Scope:** `src/ibkr_positions/risk.py`, `src/ibkr_positions/html_report.py`, `src/ibkr_positions/report.py`
 **Effort:** M
