@@ -1,41 +1,21 @@
 from __future__ import annotations
 
 import csv
-from datetime import date
+import logging
+from datetime import date, datetime
 from pathlib import Path
 
 from ibkr_positions.models import Portfolio, Position
+from market_scanner.options_tracker_schema import (
+    OPTIONS_TRACKER_COLUMNS,
+    format_contract_quantity,
+    format_european_float,
+)
 
 OPTIONS_TRACKER_LIVE_FILENAME = "options_tracker_live.csv"
+OPTIONS_TRACKER_LIVE_COLUMNS = list(OPTIONS_TRACKER_COLUMNS)
 
-OPTIONS_TRACKER_LIVE_COLUMNS = [
-    "entry_date",
-    "platform",
-    "currency",
-    "symbol",
-    "underlying",
-    "option_type",
-    "open_direction",
-    "expiration",
-    "strike",
-    "premium_received",
-    "quantity",
-    "current_value",
-    "unrealized_pnl",
-    "delta",
-    "iv",
-    "dte",
-    "collateral",
-    "close_action",
-    "close_date",
-    "close_quantity",
-    "close_value",
-    "close_costs",
-    "result",
-    "size",
-    "close_description",
-    "signal_source",
-]
+logger = logging.getLogger(__name__)
 
 
 def write_options_tracker_live_csv(
@@ -49,9 +29,13 @@ def write_options_tracker_live_csv(
     csv_path = output / OPTIONS_TRACKER_LIVE_FILENAME
 
     today = as_of or date.today()
-    option_positions = [
-        position for position in portfolio.positions if position.asset_type == "OPT"
-    ]
+    option_rows = []
+    for position in portfolio.positions:
+        if position.asset_type != "OPT" or position.quantity == 0:
+            continue
+        row = _position_to_options_tracker_row(position, today)
+        if row is not None:
+            option_rows.append(row)
 
     with csv_path.open("w", newline="", encoding="utf-8") as file_handle:
         writer = csv.DictWriter(
@@ -60,37 +44,44 @@ def write_options_tracker_live_csv(
             delimiter=";",
         )
         writer.writeheader()
-        for position in option_positions:
-            writer.writerow(_position_to_options_tracker_row(position, today))
+        writer.writerows(option_rows)
 
     return csv_path
 
 
-def _position_to_options_tracker_row(position: Position, as_of: date) -> dict[str, str]:
-    if position.expiration is None:
-        expiration_date = None
-        dte = ""
-    else:
-        expiration_date = date.fromisoformat(position.expiration)
-        dte = str((expiration_date - as_of).days)
+def _position_to_options_tracker_row(
+    position: Position, as_of: date
+) -> dict[str, str] | None:
+    if not position.underlying:
+        logger.warning("Skipping option %s: missing underlying symbol", position.symbol)
+        return None
+
+    expiration_date = _parse_expiration(position.expiration)
+    if expiration_date is None:
+        logger.warning(
+            "Skipping option %s: invalid expiration %r",
+            position.symbol,
+            position.expiration,
+        )
+        return None
 
     return {
-        "entry_date": as_of.isoformat(),
+        "entry_date": "",
         "platform": "IBKR",
         "currency": position.currency,
-        "symbol": position.underlying or position.symbol,
-        "underlying": position.underlying or position.symbol,
+        "symbol": position.underlying,
+        "underlying": position.underlying,
         "option_type": (position.option_type or "").upper(),
         "open_direction": _open_direction(position.quantity),
-        "expiration": expiration_date.isoformat() if expiration_date else "",
-        "strike": _format_decimal(position.strike),
-        "premium_received": _format_decimal(position.cost_basis),
-        "quantity": _format_quantity(position.quantity),
-        "current_value": _format_decimal(position.market_value),
-        "unrealized_pnl": _format_decimal(position.unrealized_pnl),
-        "delta": _format_decimal(position.delta),
+        "expiration": expiration_date.isoformat(),
+        "strike": format_european_float(position.strike),
+        "premium_received": format_european_float(position.cost_basis),
+        "quantity": format_contract_quantity(position.quantity),
+        "current_value": format_european_float(position.market_value),
+        "unrealized_pnl": format_european_float(position.unrealized_pnl),
+        "delta": format_european_float(position.delta),
         "iv": "",
-        "dte": dte,
+        "dte": str((expiration_date - as_of).days),
         "collateral": "",
         "close_action": "",
         "close_date": "",
@@ -105,16 +96,23 @@ def _position_to_options_tracker_row(position: Position, as_of: date) -> dict[st
 
 
 def _open_direction(quantity: float) -> str:
+    if quantity == 0:
+        raise ValueError("Zero-quantity positions have no open direction")
     return "V" if quantity < 0 else "C"
 
 
-def _format_decimal(value: float | None) -> str:
-    if value is None:
-        return ""
-    return f"{value:.2f}".replace(".", ",")
-
-
-def _format_quantity(quantity: float) -> str:
-    if quantity.is_integer():
-        return str(int(quantity))
-    return str(quantity).replace(".", ",")
+def _parse_expiration(value: str | None) -> date | None:
+    if not value:
+        return None
+    normalized_value = value.strip()
+    if len(normalized_value) == 8 and normalized_value.isdigit():
+        normalized_value = (
+            f"{normalized_value[:4]}-{normalized_value[4:6]}-{normalized_value[6:]}"
+        )
+    try:
+        return date.fromisoformat(normalized_value)
+    except ValueError:
+        try:
+            return datetime.fromisoformat(normalized_value).date()
+        except ValueError:
+            return None

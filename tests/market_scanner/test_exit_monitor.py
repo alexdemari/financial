@@ -143,6 +143,19 @@ def test_hold_below_watch_buffer_bars_n():
     assert result.iloc[0]["exit_status"] == EXIT_STATUS_HOLD
 
 
+def test_watch_when_bars_n_entry_date_is_unavailable(caplog):
+    pos = _make_position(entry_date=None, recommended_exit_rule="bars_5")
+    scan = _scan_df(_make_scan_row(symbol="AAPL"))
+
+    result = evaluate_positions([pos], scan, as_of_date=date(2026, 5, 10))
+
+    assert result.iloc[0]["exit_status"] == EXIT_STATUS_WATCH
+    assert result.iloc[0]["days_held"] is None
+    assert result.iloc[0]["entry_date"] == ""
+    assert "entry date unavailable" in result.iloc[0]["exit_reason"]
+    assert "entry date unavailable" in caplog.text
+
+
 # ---------------------------------------------------------------------------
 # Symbol not in scan
 # ---------------------------------------------------------------------------

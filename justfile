@@ -244,12 +244,13 @@ positions portfolio="options_tracker.csv" scan="reports/market_scanner/scan_dail
       --dte-watch-days {{dte_watch_days}}
 
 # Show exit signals using the live IBKR options snapshot written by ibkr-positions
-positions-live scan="reports/market_scanner/scan_daily.csv" \
+positions-live portfolio="reports/output/options_tracker_live.csv" \
+               scan="reports/market_scanner/scan_daily.csv" \
                dte_exit_days="7" dte_watch_days="14":
     PYTHONPATH=src uv run python -m market_scanner.exit_monitor \
       --scan {{scan}} \
       --recommendations reports/market_scanner/execution_recommended_rules.csv \
-      --portfolio reports/output/options_tracker_live.csv \
+      --portfolio {{portfolio}} \
       --dte-exit-days {{dte_exit_days}} \
       --dte-watch-days {{dte_watch_days}}
 

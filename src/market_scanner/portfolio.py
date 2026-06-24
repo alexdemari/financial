@@ -9,24 +9,28 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
+
+from market_scanner.options_tracker_schema import (
+    OPTIONS_TRACKER_COLUMNS,
+    parse_european_float,
+)
 
 logger = logging.getLogger(__name__)
 
-# Column indices in options_tracker.csv
-_COL_DATE = 0
-_COL_ASSET = 3
-_COL_TYPE = 5  # PUT | CALL
-_COL_CV = 6  # C (buy) | V (sell)
-_COL_EXPIRY = 7
-_COL_STRIKE = 8
-_COL_PREMIUM = 9
-_COL_CONTRACTS = 10
-_COL_DELTA = 13
-_COL_IV = 14
-_COL_CLOSE_DATE = 18
-_COL_SIGNAL_SOURCE = 25
+_COL_DATE = OPTIONS_TRACKER_COLUMNS.index("entry_date")
+_COL_ASSET = OPTIONS_TRACKER_COLUMNS.index("symbol")
+_COL_TYPE = OPTIONS_TRACKER_COLUMNS.index("option_type")
+_COL_CV = OPTIONS_TRACKER_COLUMNS.index("open_direction")
+_COL_EXPIRY = OPTIONS_TRACKER_COLUMNS.index("expiration")
+_COL_STRIKE = OPTIONS_TRACKER_COLUMNS.index("strike")
+_COL_PREMIUM = OPTIONS_TRACKER_COLUMNS.index("premium_received")
+_COL_CONTRACTS = OPTIONS_TRACKER_COLUMNS.index("quantity")
+_COL_DELTA = OPTIONS_TRACKER_COLUMNS.index("delta")
+_COL_IV = OPTIONS_TRACKER_COLUMNS.index("iv")
+_COL_CLOSE_DATE = OPTIONS_TRACKER_COLUMNS.index("close_date")
+_COL_SIGNAL_SOURCE = OPTIONS_TRACKER_COLUMNS.index("signal_source")
 
 _DEFAULT_EXIT_RULE = "alignment_break"
 
@@ -35,13 +39,13 @@ _DEFAULT_EXIT_RULE = "alignment_break"
 class Position:
     symbol: str
     side: str  # bullish | bearish
-    entry_date: date
+    entry_date: date | None
     option_type: str  # call | put
     option_direction: str  # long | short
     option_strike: float
     option_expiry: date
     premium_paid: float
-    contracts: int
+    contracts: float
     delta: float | None
     iv: float | None
     signal_source: str  # lux | smc | dual | —
@@ -50,13 +54,7 @@ class Position:
 
 def _parse_european_float(s: str) -> float | None:
     """Convert European decimal '1,45' or '-0,78' to float. Returns None if empty."""
-    s = s.strip().replace(".", "").replace(",", ".")
-    if not s:
-        return None
-    try:
-        return float(s)
-    except ValueError:
-        return None
+    return parse_european_float(s)
 
 
 def _parse_date(s: str) -> date | None:
@@ -65,8 +63,11 @@ def _parse_date(s: str) -> date | None:
     if not s:
         return None
     try:
-        if "-" in s:
-            return date.fromisoformat(s)
+        if "/" not in s:
+            try:
+                return date.fromisoformat(s)
+            except ValueError:
+                return datetime.fromisoformat(s.replace("Z", "+00:00")).date()
         d, m, y = s.split("/")
         return date(int(y), int(m), int(d))
     except (ValueError, AttributeError):
@@ -139,8 +140,7 @@ def load_open_positions(csv_path: Path | str) -> list[Position]:
 
         entry_date = _parse_date(cols[_COL_DATE]) if len(cols) > _COL_DATE else None
         if entry_date is None:
-            logger.debug("Skipping row %d: invalid entry date", line_num)
-            continue
+            logger.warning("Row %d has no valid entry date", line_num)
 
         option_type_raw = cols[_COL_TYPE].strip() if len(cols) > _COL_TYPE else ""
         cv_raw = cols[_COL_CV].strip() if len(cols) > _COL_CV else ""
@@ -174,10 +174,10 @@ def load_open_positions(csv_path: Path | str) -> list[Position]:
         if not signal_source:
             signal_source = "—"
 
-        try:
-            contracts = int(contracts_raw)
-        except (ValueError, TypeError):
-            contracts = 0
+        contracts = _parse_european_float(contracts_raw)
+        if contracts is None:
+            logger.warning("Skipping row %d: invalid contract quantity", line_num)
+            continue
 
         if strike is None or premium is None:
             logger.debug("Skipping row %d: missing strike or premium", line_num)
@@ -217,7 +217,7 @@ def positions_to_df(positions: list[Position]) -> "pd.DataFrame":  # noqa: F821
             {
                 "symbol": p.symbol,
                 "side": p.side,
-                "entry_date": p.entry_date.isoformat(),
+                "entry_date": p.entry_date.isoformat() if p.entry_date else "",
                 "option_type": p.option_type,
                 "option_direction": p.option_direction,
                 "option_strike": p.option_strike,

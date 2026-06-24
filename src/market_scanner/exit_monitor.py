@@ -110,7 +110,7 @@ def _worst_status(
 def _evaluate_one(
     position: Position,
     scan_row: dict | None,
-    days_held: int,
+    days_held: int | None,
     as_of_date: date = date.today(),
     dte_exit_days: int = DEFAULT_DTE_EXIT_DAYS,
     dte_watch_days: int = DEFAULT_DTE_WATCH_DAYS,
@@ -132,6 +132,13 @@ def _evaluate_one(
     # bars_N rules
     if rule in _BARS_N_RULES:
         limit = _BARS_N_RULES[rule]
+        if days_held is None:
+            logger.warning(
+                "Cannot evaluate %s for %s: entry date unavailable",
+                rule,
+                position.symbol,
+            )
+            return _merge((EXIT_STATUS_WATCH, f"{rule}: entry date unavailable"))
         if exit_after_n_bars(days_held, limit):
             return _merge(
                 (EXIT_STATUS_EXIT, f"{rule}: {days_held} days held (limit {limit})")
@@ -198,7 +205,7 @@ def evaluate_positions(
 
     rows = []
     for pos in positions:
-        days_held = (today - pos.entry_date).days
+        days_held = (today - pos.entry_date).days if pos.entry_date else None
 
         # Override exit rule from backtest recommendations if available
         rule_override = _lookup_exit_rule(pos.symbol, pos.side, recommendations_df)
@@ -239,7 +246,7 @@ def evaluate_positions(
                 "option_direction": pos.option_direction,
                 "option_strike": pos.option_strike,
                 "option_expiry": pos.option_expiry.isoformat(),
-                "entry_date": pos.entry_date.isoformat(),
+                "entry_date": pos.entry_date.isoformat() if pos.entry_date else "",
                 "days_held": days_held,
                 "dte": (pos.option_expiry - today).days,
                 "premium_paid": pos.premium_paid,

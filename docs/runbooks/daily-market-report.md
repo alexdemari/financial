@@ -75,6 +75,8 @@ just positions
 # Standalone exit monitor using live IBKR snapshot
 just ibkr-positions
 just positions-live
+# Custom ibkr-positions output directory:
+just positions-live reports/my/options_tracker_live.csv
 ```
 
 ---

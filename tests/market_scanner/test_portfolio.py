@@ -45,6 +45,16 @@ def test_parse_date_iso_format():
     assert _parse_date("2026-07-17") == date(2026, 7, 17)
 
 
+@pytest.mark.parametrize(
+    "value",
+    ["2026-07-17T10:00:00", "2026-07-17 10:00:00", "2026-07-17T10:00:00Z"],
+)
+def test_parse_date_iso_datetime(value):
+    from market_scanner.portfolio import _parse_date
+
+    assert _parse_date(value) == date(2026, 7, 17)
+
+
 # ---------------------------------------------------------------------------
 # _derive_side
 # ---------------------------------------------------------------------------
@@ -91,9 +101,10 @@ def _open_row(
     delta="-0,25",
     iv="25,00",
     signal_source="lux",
+    entry_date="26/05/2026",
 ):
     # Close Date (col 18) is empty → open position
-    return f"26/05/2026;IBKR;USD;{asset};;{typ};{cv};{expiry};{strike};{premium};{contracts};-0,77;143,23;{delta};{iv};75%;;;;;;;;;;{signal_source}"
+    return f"{entry_date};IBKR;USD;{asset};;{typ};{cv};{expiry};{strike};{premium};{contracts};-0,77;143,23;{delta};{iv};75%;;;;;;;;;;{signal_source}"
 
 
 def _closed_row():
@@ -147,3 +158,24 @@ def test_load_open_positions_long_call_is_bullish(tmp_path):
     result = load_open_positions(path)
     assert result[0].side == "bullish"
     assert result[0].option_direction == "long"
+
+
+def test_load_open_positions_preserves_missing_entry_date(tmp_path, caplog):
+    path = _write_csv(
+        tmp_path,
+        [_open_row(entry_date="", signal_source="ibkr_live")],
+    )
+
+    result = load_open_positions(path)
+
+    assert len(result) == 1
+    assert result[0].entry_date is None
+    assert "no valid entry date" in caplog.text
+
+
+def test_load_open_positions_parses_fractional_contracts(tmp_path):
+    path = _write_csv(tmp_path, [_open_row(contracts="1,5")])
+
+    result = load_open_positions(path)
+
+    assert result[0].contracts == pytest.approx(1.5)

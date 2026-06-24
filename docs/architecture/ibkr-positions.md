@@ -15,6 +15,7 @@ This module is read-only. It never submits or modifies orders.
 just ibkr-positions                        # auto-detects Windows host IP
 just ibkr-positions port=4001              # live account (default: 7496)
 just ibkr-positions output-dir=reports/my  # custom output dir
+just positions-live reports/my/options_tracker_live.csv
 ```
 
 **Prerequisites (WSL2 → Windows):**
@@ -40,8 +41,14 @@ All files written to `reports/output/` (date-stamped):
 | `ibkr_positions_YYYY-MM-DD.md` | Markdown report |
 | `ibkr_positions_YYYY-MM-DD.csv` | Flat positions table |
 | `ibkr_positions_YYYY-MM-DD.html` | Self-contained HTML with performance report |
+| `options_tracker_live.csv` | Live option snapshot consumed by `positions-live` |
 
 ---
+
+The IBKR portfolio snapshot does not include each position's opening trade date.
+`positions-live` therefore reports `WATCH` with `entry date unavailable` when a
+backtest recommendation selects a `bars_N` exit rule. Alignment and DTE rules
+continue to evaluate normally.
 
 ## Report Sections
 
