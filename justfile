@@ -449,6 +449,15 @@ ibkr-option-chain symbol expiration max_strikes="10" option-type="BOTH" strike-s
       --strike-step {{strike-step}}
 
 
+# ── IRPF ─────────────────────────────────────────────────────────────────────
+
+# Generate BRL IRPF report from IBKR trades CSV export
+irpf year="2025":
+    uv run python -m irpf_report.main \
+        --trades data/ibkr/trades_{{year}}.csv \
+        --year {{year}} \
+        --output reports/irpf/irpf_{{year}}.md
+
 # ── AI / Agent tooling ────────────────────────────────────────────────────────
 
 # Sincroniza skills entre .claude/skills/ e .codex/skills/
