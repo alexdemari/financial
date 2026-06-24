@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Any
 
 _CONCENTRATION_THRESHOLD = 0.25
-_MAX_CONTEXT_CHARACTERS = 1_500
+# Conservative proxy for the 400-token prompt budget (~300 tokens at 4 chars/token).
+_MAX_CONTEXT_CHARACTERS = 1_200
 _MAX_POSITIONS = 20
 
 
@@ -47,7 +48,11 @@ def build_portfolio_context(snapshot_path: Path) -> str:
     ]
     context = "\n".join(lines)
     if len(context) > _MAX_CONTEXT_CHARACTERS:
-        context = context[: _MAX_CONTEXT_CHARACTERS - 4].rstrip() + "\n..."
+        truncated_context = context[: _MAX_CONTEXT_CHARACTERS - 4]
+        last_newline = truncated_context.rfind("\n")
+        if last_newline != -1:
+            truncated_context = truncated_context[:last_newline]
+        context = truncated_context.rstrip() + "\n..."
     return context
 
 

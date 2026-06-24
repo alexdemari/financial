@@ -2,6 +2,7 @@ import pandas as pd
 
 from market_scanner.daily_report import (
     RankingStrategy,
+    _run_llm_explanation,
     build_qualified_set,
     build_smc_high_conviction_watchlist,
     build_top_candidates,
@@ -807,3 +808,45 @@ def test_strategy_sections_in_render_use_backtest_filter() -> None:
     # Neither qualifies for smc (rec is lux-only) → SMC ranking empty
     assert "NVDA" not in smc_ranking
     assert "AAPL" not in smc_ranking
+
+
+def test_missing_ibkr_snapshot_runs_llm_without_portfolio_context(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    class CapturingProvider:
+        def __init__(self) -> None:
+            self.prompt = ""
+
+        def generate(self, prompt: str, **kwargs) -> str:
+            self.prompt = prompt
+            return "explanation"
+
+    provider = CapturingProvider()
+    monkeypatch.setattr(
+        "market_scanner.llm.factory.get_llm_provider",
+        lambda provider_name, model: provider,
+    )
+    monkeypatch.setattr(
+        "market_scanner.report_writer.write_llm_report",
+        lambda content, **kwargs: tmp_path / "llm_report.md",
+    )
+    scan_df = pd.DataFrame([_make_scan_row("AAPL", smc_days=1)])
+
+    _run_llm_explanation(
+        scan_df=scan_df,
+        recommendations_df=None,
+        top=1,
+        max_days=2,
+        strategy=RankingStrategy.smc,
+        llm_provider="local",
+        llm_model=None,
+        llm_output_format="markdown",
+        output_dir=tmp_path,
+        ibkr_snapshot=tmp_path / "missing.csv",
+    )
+
+    output = capsys.readouterr().out
+    assert "WARNING: --ibkr-snapshot not found:" in output
+    assert "running without portfolio context" in output
+    assert "LLM explanation report written to:" in output
+    assert "PORTFOLIO CONTEXT" not in provider.prompt

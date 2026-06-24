@@ -1023,6 +1023,12 @@ def _run_llm_explanation(
 
         provider = get_llm_provider(llm_provider, llm_model)
         rows = top_df.to_dict(orient="records")
+        if ibkr_snapshot is not None and not ibkr_snapshot.exists():
+            print(
+                f"WARNING: --ibkr-snapshot not found: {ibkr_snapshot}; "
+                "running without portfolio context"
+            )
+            ibkr_snapshot = None
         portfolio_context = (
             build_portfolio_context(ibkr_snapshot)
             if ibkr_snapshot is not None

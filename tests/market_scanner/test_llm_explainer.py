@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from market_scanner.llm.explainer import generate_explanations, _sanitize_row
@@ -80,7 +82,70 @@ def test_portfolio_context_injected_when_snapshot_provided(tmp_path) -> None:
     assert "Cash available USD: $5,000" in provider.last_prompt
     assert "Concentration >25% NLV: AAPL" in provider.last_prompt
     assert "Do not recommend entering positions already held." in provider.last_prompt
-    assert len(build_portfolio_context(snapshot_path)) <= 1_500
+    assert len(build_portfolio_context(snapshot_path)) <= 1_200
+
+
+def test_portfolio_context_empty_csv_reports_no_positions(tmp_path) -> None:
+    snapshot_path = tmp_path / "empty.csv"
+    snapshot_path.write_text(
+        "symbol,type,qty,cost_basis,unrealized_pnl,weight\n",
+        encoding="utf-8",
+    )
+
+    context = build_portfolio_context(snapshot_path)
+
+    assert "Open positions:\nnone" in context
+    assert "Cash available USD: n/a" in context
+    assert "Concentration >25% NLV: none" in context
+
+
+def test_portfolio_context_reads_json_snapshot(tmp_path) -> None:
+    snapshot_path = tmp_path / "ibkr_positions.json"
+    snapshot_path.write_text(
+        json.dumps(
+            {
+                "summary": {"total_cash": 12_500},
+                "risk": {
+                    "cash_shortfall": 3_000,
+                    "net_portfolio_delta": -17.25,
+                },
+                "positions": [
+                    {
+                        "symbol": "AAPL",
+                        "asset_type": "STK",
+                        "quantity": 10,
+                        "cost_basis": 1_500,
+                        "unrealized_pnl": 150,
+                        "weight": 0.3,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    context = build_portfolio_context(snapshot_path)
+
+    assert "Cash available USD: $12,500" in context
+    assert "Cash shortfall (short puts worst-case): $3,000" in context
+    assert "Net portfolio delta (approx): -17.2" in context
+    assert "- AAPL STK qty=10 uPnL=+10.0%" in context
+
+
+def test_portfolio_context_truncates_only_at_line_boundaries(tmp_path) -> None:
+    snapshot_path = tmp_path / "large.csv"
+    rows = [f"SYMBOL_{index}_{'X' * 70},STK,1,100,1,0.01" for index in range(20)]
+    snapshot_path.write_text(
+        "symbol,type,qty,cost_basis,unrealized_pnl,weight\n" + "\n".join(rows) + "\n",
+        encoding="utf-8",
+    )
+
+    context = build_portfolio_context(snapshot_path)
+
+    assert len(context) <= 1_200
+    assert context.endswith("\n...")
+    for line in context.splitlines()[5:-1]:
+        assert line.endswith("uPnL=+1.0%")
 
 
 def test_no_portfolio_context_when_snapshot_absent() -> None:
