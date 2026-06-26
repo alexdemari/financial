@@ -16,59 +16,62 @@ from ibkr_positions.risk import (
 )
 
 _CSS = """
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-       background: #f0f2f5; color: #1a1a2e; font-size: 14px; }
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0f1117; color: #e2e8f0; font-size: 14px; line-height: 1.5;
+}
 .container { max-width: 1200px; margin: 0 auto; padding: 24px 16px; }
-h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; color: #0d1b2a; }
-.subtitle { color: #6b7280; font-size: 13px; margin-bottom: 24px; }
-h2 { font-size: 15px; font-weight: 600; color: #0d1b2a; margin-bottom: 12px;
-     padding-bottom: 6px; border-bottom: 2px solid #e5e7eb; }
-.section { background: #fff; border-radius: 8px; padding: 20px;
-           margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; color: #f1f5f9; }
+.subtitle { color: #64748b; font-size: 13px; margin-bottom: 24px; }
+h2 { font-size: 15px; font-weight: 600; color: #cbd5e1; margin-bottom: 12px;
+     padding-bottom: 6px; border-bottom: 1px solid #2d3139; }
+.section { background: #151820; border: 1px solid #1e2230; border-radius: 8px;
+           padding: 20px; margin-bottom: 20px; }
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr));
          gap: 12px; margin-bottom: 20px; }
-.card { background: #fff; border-radius: 8px; padding: 16px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.card { background: #151820; border: 1px solid #1e2230; border-radius: 8px; padding: 16px; }
 .card-label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
-              color: #6b7280; margin-bottom: 4px; }
-.card-value { font-size: 20px; font-weight: 700; color: #0d1b2a; }
-.card-value.pos { color: #059669; }
-.card-value.neg { color: #dc2626; }
+              color: #64748b; margin-bottom: 4px; }
+.card-value { font-size: 20px; font-weight: 700; color: #f1f5f9; }
+.card-value.pos { color: #34d399; }
+.card-value.neg { color: #f87171; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th { background: #f9fafb; text-align: left; padding: 8px 10px; font-weight: 600;
+th { background: #1e2230; text-align: left; padding: 8px 10px; font-weight: 600;
      font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
-     color: #6b7280; border-bottom: 1px solid #e5e7eb; white-space: nowrap; }
-td { padding: 8px 10px; border-bottom: 1px solid #f3f4f6; }
+     color: #64748b; border-bottom: 1px solid #2d3139; white-space: nowrap; }
+td { padding: 8px 10px; border-bottom: 1px solid #1a1d24; color: #cbd5e1; }
 tr:last-child td { border-bottom: none; }
-tr:hover td { background: #f9fafb; }
-.pos { color: #059669; font-weight: 600; }
-.neg { color: #dc2626; font-weight: 600; }
-.neutral { color: #6b7280; }
+tr:hover td { background: #1a1d24; }
+.pos { color: #34d399; font-weight: 600; }
+.neg { color: #f87171; font-weight: 600; }
+.neutral { color: #64748b; }
 .badge { display: inline-block; padding: 2px 8px; border-radius: 9999px;
          font-size: 11px; font-weight: 600; }
-.badge-stk { background: #dbeafe; color: #1d4ed8; }
-.badge-opt { background: #fce7f3; color: #be185d; }
-.badge-etf { background: #d1fae5; color: #065f46; }
-.badge-call { background: #dbeafe; color: #1d4ed8; }
-.badge-put  { background: #fee2e2; color: #991b1b; }
+.badge-stk { background: #1e3a5f; color: #60a5fa; }
+.badge-opt { background: #3b1f3b; color: #e879f9; }
+.badge-etf { background: #14362e; color: #34d399; }
+.badge-call { background: #1e3a5f; color: #60a5fa; }
+.badge-put  { background: #3b1414; color: #f87171; }
 .alerts { list-style: none; }
 .alerts li { padding: 8px 12px; border-radius: 6px; margin-bottom: 6px;
-             background: #fef3c7; border-left: 4px solid #f59e0b;
-             font-size: 13px; color: #92400e; }
-.alerts li.ok { background: #d1fae5; border-color: #059669; color: #065f46; }
-.insights li { padding: 6px 0; border-bottom: 1px solid #f3f4f6; color: #374151; }
+             background: #2d2008; border-left: 4px solid #f59e0b;
+             font-size: 13px; color: #fcd34d; }
+.alerts li.ok { background: #0d2b1e; border-color: #34d399; color: #6ee7b7; }
+.insights li { padding: 6px 0; border-bottom: 1px solid #1e2230; color: #94a3b8; }
 .insights li:last-child { border-bottom: none; }
 .perf-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px,1fr));
              gap: 12px; margin-bottom: 16px; }
-.perf-card { border: 1px solid #e5e7eb; border-radius: 6px; padding: 14px; }
-.perf-card-label { font-size: 11px; text-transform: uppercase; color: #6b7280;
+.perf-card { border: 1px solid #2d3139; border-radius: 6px; padding: 14px;
+             background: #0f1117; }
+.perf-card-label { font-size: 11px; text-transform: uppercase; color: #64748b;
                    letter-spacing: .04em; margin-bottom: 4px; }
 .perf-card-val { font-size: 17px; font-weight: 700; }
-.bar-bg { background: #f3f4f6; border-radius: 9999px; height: 6px; margin-top: 4px; }
+.bar-bg { background: #1e2230; border-radius: 9999px; height: 6px; margin-top: 4px; }
 .bar-fill { height: 6px; border-radius: 9999px; }
-.bar-pos { background: #059669; }
-.bar-neg { background: #dc2626; }
+.bar-pos { background: #34d399; }
+.bar-neg { background: #f87171; }
+p.neutral { color: #64748b; font-size: 13px; margin-top: 8px; }
 """
 
 
@@ -149,7 +152,7 @@ def render_html_report(
         )
     # portfolio total
     html_parts.append(
-        f"<div class='perf-card' style='border-color:#6366f1'>"
+        f"<div class='perf-card' style='border-color:#6366f1;background:#0f1117'>"
         f"<div class='perf-card-label'>Portfolio Total</div>"
         f"<div class='perf-card-val {'pos' if total_unrealized >= 0 else 'neg'}'>"
         f"{_m(total_unrealized, sign=True)}</div>"
@@ -384,7 +387,7 @@ def render_html_report(
         html_parts += ["</ul>", "</div>"]
 
     html_parts += [
-        "<div style='text-align:center;color:#9ca3af;font-size:11px;margin-top:12px'>",
+        "<div style='text-align:center;color:#4b5563;font-size:11px;margin-top:24px;padding-top:16px;border-top:1px solid #1e2230'>",
         f"Generated {date_str} · Account {portfolio.account_id}",
         "</div>",
         "</div>",  # container

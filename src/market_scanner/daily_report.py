@@ -974,9 +974,12 @@ def write_daily_report(
         macro_snapshot=macro_snapshot,
     )
 
+    from market_scanner.html_report import write_daily_html
+
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(report, encoding="utf-8")
+    write_daily_html(report, output)
 
     if archive_dir is not None:
         archive = Path(archive_dir)

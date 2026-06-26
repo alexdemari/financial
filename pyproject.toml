@@ -9,6 +9,7 @@ dependencies = [
     "ib-insync>=0.9.86",
     "ibapi>=9.81.1.post1",
     "joblib>=1.5.3",
+    "markdown>=3.10.2",
     "mplfinance>=0.12.10b0",
     "nest-asyncio>=1.6.0",
     "pandas>=2.3.3",
