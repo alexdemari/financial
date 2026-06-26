@@ -1,6 +1,6 @@
 # Task: Pipeline IBKR → `dividend_tracker` — USD Dividend Projection + Cash Coverage
 
-**Status:** Planned
+**Status:** Completed
 **Skill:** add-feature
 **Scope:** `src/dividend_tracker/`, `justfile`
 **Effort:** S
