@@ -1,6 +1,6 @@
 # Task: Daily IBKR Snapshot History — Cumulative Performance Tracking
 
-**Status:** Completed for point-in-time snapshot history
+**Status:** Completed
 **Remaining:** True YTD collected-premium aggregation requires trade history;
 it is not available from point-in-time open positions.
 **Skill:** add-feature
