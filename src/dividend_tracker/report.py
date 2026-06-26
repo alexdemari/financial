@@ -10,6 +10,8 @@ def render_dividend_report(
     budget: float | None = None,
     generated_at: datetime | None = None,
     processing_errors: list[str] | None = None,
+    income_projections: list[dict] | None = None,
+    usd_cash: float | None = None,
 ) -> str:
     report_time = generated_at or datetime.now(UTC)
     errors = processing_errors or []
@@ -30,6 +32,10 @@ def render_dividend_report(
     lines.extend(_render_asset_table(decisions, market="BR", currency="BRL"))
     lines.extend(["", "## Ativos US", ""])
     lines.extend(_render_asset_table(decisions, market="US", currency="USD"))
+
+    if income_projections is not None:
+        lines.extend(["", "## USD Income Projection (based on IBKR positions)", ""])
+        lines.extend(_render_income_projection_section(income_projections, usd_cash))
 
     if errors:
         lines.extend(["", "## Erros de processamento", ""])
@@ -60,6 +66,8 @@ def write_dividend_report(
     output_path: str | Path,
     budget: float | None = None,
     processing_errors: list[str] | None = None,
+    income_projections: list[dict] | None = None,
+    usd_cash: float | None = None,
 ) -> Path:
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -68,6 +76,8 @@ def write_dividend_report(
             decisions,
             budget=budget,
             processing_errors=processing_errors,
+            income_projections=income_projections,
+            usd_cash=usd_cash,
         ),
         encoding="utf-8",
     )
@@ -164,6 +174,43 @@ def _render_monitored_table(decisions: list[AssetDecision]) -> list[str]:
             f"{decision.asset.notes or '-'} |"
         )
     return rows
+
+
+def _render_income_projection_section(
+    projections: list[dict],
+    usd_cash: float | None,
+) -> list[str]:
+    if not projections:
+        lines = ["No IBKR STK positions matched dividend portfolio assets."]
+    else:
+        lines = [
+            "| Symbol | Shares | Div/Share/Year | Projected Annual Income | DY on Cost |",
+            "|---|---:|---:|---:|---:|",
+        ]
+        for row in projections:
+            lines.append(
+                "| "
+                f"{row['symbol']} | "
+                f"{row['shares']:.0f} | "
+                f"US${row['annual_div_per_share']:.2f} | "
+                f"US${row['projected_annual_income_usd']:,.0f}/year | "
+                f"{row['dy_on_cost_pct']:.1f}% |"
+            )
+        total = sum(r["projected_annual_income_usd"] for r in projections)
+        lines.append("")
+        lines.append(
+            f"**Total projected USD income:** US${total:,.0f}/year"
+            f" (~US${total / 12:,.0f}/month)"
+        )
+
+    if usd_cash is not None:
+        lines.append(f"**USD cash available (IBKR):** US${usd_cash:,.2f}")
+
+    lines.append(
+        "\n*Note: projections use trailing 12-month dividends per share."
+        " Not a guarantee of future income.*"
+    )
+    return lines
 
 
 def format_money(value: float, currency: str) -> str:

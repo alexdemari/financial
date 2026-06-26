@@ -142,6 +142,32 @@ dividends-local budget="":
     fi
 
 
+# Dividend analysis enriched with live IBKR positions snapshot
+dividends-ibkr budget="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    SNAPSHOT=$(ls reports/output/ibkr_positions_*.csv 2>/dev/null | sort | tail -1)
+    if [ -z "$SNAPSHOT" ]; then
+        echo "No IBKR snapshot found. Run 'just ibkr-positions' first."
+        exit 1
+    fi
+    tickers=$(PYTHONPATH=src uv run python -c "import yaml; c = yaml.safe_load(open('config/dividend_portfolio.yaml')); tickers = [a['ticker'] + '.SA' for a in c.get('br_assets', [])] + [a['ticker'] for a in c.get('us_assets', [])]; print(' '.join(tickers))")
+    echo "Atualizando dados: ${tickers}"
+    PYTHONPATH=src uv run python -m stock_data_manager.main -s ${tickers}
+    echo "Gerando relatorio de dividendos com posicoes IBKR: $SNAPSHOT"
+    if [ -n "{{budget}}" ]; then
+        PYTHONPATH=src uv run python -m dividend_tracker.main \
+            --ibkr-positions "$SNAPSHOT" \
+            --budget {{budget}} \
+            --output reports/dividend_tracker/dividend_daily_report.md
+    else
+        PYTHONPATH=src uv run python -m dividend_tracker.main \
+            --ibkr-positions "$SNAPSHOT" \
+            --output reports/dividend_tracker/dividend_daily_report.md
+    fi
+    echo "Relatorio gerado: reports/dividend_tracker/dividend_daily_report.md"
+
+
 # Análise histórica — não usado na operação diária
 backtest-dividends:
     PYTHONPATH=src uv run python -m dividend_tracker.backtest \
