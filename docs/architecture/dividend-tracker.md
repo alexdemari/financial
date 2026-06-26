@@ -295,9 +295,38 @@ Currently monitored:
 
 ---
 
+## IBKR Enrichment (`ibkr_enricher.py`)
+
+When `--ibkr-positions <CSV>` is passed, `ibkr_enricher` reads the IBKR
+positions snapshot and adds two fields to the report:
+
+- **USD income projection** — annualised dividend income in USD for held US ETF
+  positions (SCHD, DGRO, VYM, PEP), based on current IBKR quantity × trailing
+  annual dividend per share.
+- **Available cash** — USD cash balance from the IBKR snapshot, shown alongside
+  the contribution guide.
+
+The enricher reads only `STK` and `ETF` rows from the CSV. It never modifies
+the snapshot file.
+
+```bash
+just dividends-ibkr budget=8000   # auto-finds latest ibkr_positions_*.csv
+# or directly:
+PYTHONPATH=src uv run python -m dividend_tracker.main \
+  --ibkr-positions reports/output/ibkr_positions_YYYY-MM-DD.csv \
+  --budget 8000 \
+  --output reports/dividend_tracker/dividend_daily_report.md
+```
+
+**Prerequisite:** `just ibkr-positions` must have run today to produce a fresh
+snapshot. `just dividends-ibkr` fails fast with a clear error if no snapshot exists.
+
+---
+
 ## Integration Points
 
 - Reads portfolio config from `config/dividend_portfolio.yaml`
 - Reads and writes dividend cache under `data/dividends/`
+- Optionally reads IBKR positions CSV via `ibkr_enricher` (T07)
 - Does NOT call `stock_analyzer` — no technical signal dependency
 - Writes report to `reports/dividend_tracker/dividend_daily_report.md`

@@ -79,13 +79,15 @@ continue to evaluate normally.
 
 ```
 src/ibkr_positions/
-├── client.py       — IB Gateway connection via ib_insync; fetches portfolio
-├── models.py       — Portfolio, Position, AccountSummary, CashBalance dataclasses
-├── risk.py         — concentration_risk, margin_utilization, cash_coverage, etc.
-├── report.py       — Markdown + CSV renderer; orchestrates all output
-├── html_report.py  — Self-contained HTML renderer with performance section
+├── client.py         — IB Gateway connection via ib_insync; fetches portfolio
+├── models.py         — Portfolio, Position, AccountSummary, CashBalance dataclasses
+├── risk.py           — concentration_risk, margin_utilization, cash_coverage, etc.
+├── report.py         — Markdown + CSV renderer; orchestrates all output
+├── html_report.py    — Self-contained HTML renderer with performance section
 ├── snapshot_store.py — Daily JSONL snapshot upsert and history summary CLI
-└── main.py         — CLI entry point (--host, --port, --output-dir, --client-id)
+├── options_export.py — Export live option positions to options_tracker_live.csv
+├── reconciler.py     — Diff live IBKR snapshot vs options_tracker.csv; read-only
+└── main.py           — CLI entry point (--host, --port, --output-dir, --client-id)
 ```
 
 ---
@@ -128,6 +130,31 @@ NLV, total cash, buying power, initial/maintenance margin, excess liquidity.
 | `options_expiring_soon` | options expiring within 7 calendar days |
 | `short_puts_near_assignment` | short puts within 5% of strike |
 | `covered_calls_itm` | short calls where underlying > strike |
+
+---
+
+## Reconciliation (`reconciler.py`)
+
+Diffs the live IBKR option snapshot against `options_tracker.csv` and prints
+a structured report of discrepancies (positions in one source but not the other,
+or quantity mismatches).
+
+```bash
+just ibkr-reconcile                # runs ibkr-positions first, then reconciler
+just ibkr-reconcile output-dir=reports/output  # custom output dir
+```
+
+Output written to `reports/output/reconciliation_YYYY-MM-DD.md`.
+
+The reconciler is **read-only** — it never modifies either file.
+
+Discrepancy categories:
+
+| Category | Meaning |
+|----------|---------|
+| `only_in_ibkr` | Position live in IBKR but absent from options_tracker.csv |
+| `only_in_tracker` | Position in tracker CSV but not found live in IBKR |
+| `qty_mismatch` | Quantity differs between sources |
 
 ---
 

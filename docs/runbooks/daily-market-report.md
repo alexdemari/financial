@@ -185,11 +185,46 @@ Rankings show all fresh symbols sorted by signal recency + consistency, no backt
 
 ---
 
+## Macro Context (T08)
+
+`just daily-report-llm` fetches live macro indicators and injects them into
+both the Markdown report header and the LLM prompt.
+
+### What is fetched
+
+| Indicator | Source |
+|-----------|--------|
+| Selic meta rate | BCB API (`bcdata.sgs.432`) |
+| USD/BRL (PTAX venda) | BCB Olinda API (falls back up to 3 business days) |
+| S&P 500 close + 1d change | yfinance (`^GSPC`) |
+| Ibovespa close + 1d change | yfinance (`^BVSP`) |
+
+All fetches have a 5s timeout and fail silently — individual `None` values if
+a source is unavailable. The report still generates.
+
+### Macro calendar
+
+`macro_calendar.py` fetches upcoming US macro events (NFP, FOMC, CPI, PCE,
+GDP, etc.) from a public economic calendar API and renders a table in the
+report for the next N days (default 14).
+
+### Disabling macro
+
+```bash
+just daily-report-llm no_macro=true
+# or:
+PYTHONPATH=src uv run python -m market_scanner.daily_report --no-macro ...
+```
+
+---
+
 ## Related Files
 
 | File | Description |
 |------|-------------|
 | `src/market_scanner/daily_report.py` | Report orchestration and rendering |
+| `src/market_scanner/macro_context.py` | Fetch Selic, PTAX, S&P 500, Ibovespa; format for report + LLM prompt |
+| `src/market_scanner/macro_calendar.py` | Fetch upcoming US macro events; render calendar table |
 | `src/market_scanner/options_filter.py` | Options liquidity fetch + classification (yfinance) |
 | `src/ibkr_positions/options_export.py` | Export live IBKR option positions to `reports/output/options_tracker_live.csv` |
 | `src/market_scanner/portfolio.py` | Parse `options_tracker.csv` or the live IBKR snapshot, return open positions |
