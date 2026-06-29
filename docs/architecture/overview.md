@@ -115,6 +115,21 @@ Owns live portfolio state and risk reporting.
 
 See `ibkr-positions.md`.
 
+### `ibkr_trades`
+
+Owns trade execution history and derives `options_tracker.csv` automatically.
+
+- parses IBKR Flex Query XML exports for full historical backfill
+- fetches new executions incrementally via `ib_insync` (daily sync)
+- maintains an append-only `trades_history.csv` with deduplication by `trade_id`
+- detects rolls and infers strategy per trade
+- derives `options_tracker.csv` from net open positions in history
+
+`just ibkr-positions` runs `ibkr-sync` + `ibkr-generate-tracker` automatically
+before the positions report, so `options_tracker.csv` is always current.
+
+See `ibkr-trades.md`.
+
 ### Current Backtest
 
 Owns Scanner V3 signal validation.

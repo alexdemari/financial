@@ -1,6 +1,6 @@
 # Task: IBKR Trade History Store — Auto-generate `options_tracker.csv` from Execution Records
 
-**Status:** Planned
+**Status:** Completed
 **Skill:** add-feature
 **Scope:** `src/ibkr_trades/` (new module), `justfile`
 **Effort:** L

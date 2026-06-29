@@ -12,12 +12,16 @@ This module is read-only. It never submits or modifies orders.
 ## Usage
 
 ```bash
-just ibkr-positions                        # auto-detects Windows host IP
+just ibkr-positions                        # auto-detects Windows host IP; also syncs trades + rebuilds options_tracker.csv
 just ibkr-positions port=4001              # live account (default: 7496)
 just ibkr-positions output-dir=reports/my  # custom output dir
 just ibkr-history 30                       # last 30 daily account snapshots
 just positions-live reports/my/options_tracker_live.csv
 ```
+
+`ibkr-positions` automatically runs `ibkr-sync` (fetch new executions) and
+`ibkr-generate-tracker` (rebuild `options_tracker.csv`) before the report.
+See `ibkr-trades.md` for the trade history module.
 
 **Prerequisites (WSL2 → Windows):**
 
