@@ -1,6 +1,6 @@
 # Task T10: Programmatic Flex Query Download (`flex_fetcher.py`)
 
-**Status:** Planned
+**Status:** Completed
 **Skill:** add-feature
 **Scope:** `src/ibkr_trades/flex_fetcher.py` (new), `justfile`
 **Effort:** S
