@@ -58,6 +58,37 @@ def test_parse_history_csv_excludes_open_trades(tmp_path: Path) -> None:
     assert [trade.symbol for trade in trades] == ["AAPL"]
 
 
+def test_parse_history_csv_excludes_cash_rows(tmp_path: Path) -> None:
+    history_path = _write_history(
+        tmp_path,
+        [
+            _history_row(),
+            _history_row(trade_id="T2", symbol="USD", asset_type="CASH"),
+        ],
+    )
+
+    trades = parse_history_csv(history_path, 2025)
+
+    assert [trade.symbol for trade in trades] == ["AAPL"]
+
+
+def test_parse_history_csv_excludes_non_usd_rows(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    history_path = _write_history(
+        tmp_path,
+        [
+            _history_row(),
+            _history_row(trade_id="T2", symbol="SAP", currency="EUR"),
+        ],
+    )
+
+    trades = parse_history_csv(history_path, 2025)
+
+    assert [trade.symbol for trade in trades] == ["AAPL"]
+    assert "skipped 1 non-USD currency(ies): EUR" in capsys.readouterr().err
+
+
 def test_parse_history_csv_skips_null_pnl_with_warning(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -69,7 +100,7 @@ def test_parse_history_csv_skips_null_pnl_with_warning(
 
     assert trades == []
     assert (
-        "⚠ Skipping AAPL 2025-03-15: " "pnl_realized missing (run just ibkr-flex-fetch)"
+        "⚠ Skipping AAPL 2025-03-15: pnl_realized missing (run just ibkr-flex-fetch)"
     ) in capsys.readouterr().out
 
 

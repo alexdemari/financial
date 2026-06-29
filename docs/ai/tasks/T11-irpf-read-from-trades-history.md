@@ -65,7 +65,8 @@ When done, the following must be true:
    not yet fully run), those rows are skipped with a printed warning per row:
    `"⚠ Skipping {symbol} {date}: pnl_realized missing (run just ibkr-flex-fetch)"`.
 6. `uv run pytest tests/irpf_report/` passes; no existing tests broken.
-7. 4 new tests added in `tests/irpf_report/test_history_reader.py`.
+7. History-mode behavior is covered in
+   `tests/irpf_report/test_history_reader.py`.
 
 ---
 
@@ -94,10 +95,10 @@ When done, the following must be true:
 | `symbol` | `symbol` | |
 | `asset_type` | `asset_type` | |
 | `quantity` | `quantity` | |
-| `proceeds` | `proceeds` | USD gross proceeds |
-| `pnl_realized` | `realized_pnl` | Core field for IRPF |
-| `proceeds - pnl_realized` | `basis` | Derived: cost basis = proceeds − P&L |
-| `currency` | *(validation only)* | Assert == "USD", warn if not |
+| `proceeds` | `proceeds_usd` | USD gross proceeds |
+| `pnl_realized` | `pnl_usd` | Core field for IRPF |
+| `proceeds - pnl_realized` | `cost_usd` | Derived: cost basis = proceeds − P&L |
+| `currency` | `currency` | Require `"USD"`; skip and warn otherwise |
 
 ### New function in `src/irpf_report/trades.py`
 
@@ -142,9 +143,10 @@ def parse_history_csv(path: Path, year: int) -> list[Trade]:
             symbol       = row["symbol"],
             asset_type   = row["asset_type"],
             quantity     = float(row["quantity"]),
-            proceeds     = float(row["proceeds"]),
-            basis        = float(row["proceeds"]) - float(row["pnl_realized"]),
-            realized_pnl = float(row["pnl_realized"]),
+            proceeds_usd = float(row["proceeds"]),
+            cost_usd     = float(row["proceeds"]) - float(row["pnl_realized"]),
+            pnl_usd      = float(row["pnl_realized"]),
+            currency     = row["currency"],
         ))
 
     return trades
