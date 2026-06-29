@@ -533,12 +533,30 @@ ibkr-option-chain symbol expiration max_strikes="10" option-type="BOTH" strike-s
 
 # ── IRPF ─────────────────────────────────────────────────────────────────────
 
-# Generate BRL IRPF report from IBKR trades CSV export
+# Generate BRL IRPF report, preferring canonical history over the legacy export
 irpf year="2025":
-    uv run python -m irpf_report.main \
-        --trades data/ibkr/trades_{{year}}.csv \
-        --year {{year}} \
-        --output reports/irpf/irpf_{{year}}.md
+    #!/usr/bin/env bash
+    set -euo pipefail
+    HISTORY="data/ibkr/trades_history.csv"
+    LEGACY="data/ibkr/trades_{{year}}.csv"
+    if [ -f "$HISTORY" ]; then
+        echo "Using trades_history.csv for IRPF {{year}}"
+        PYTHONPATH=src uv run python -m irpf_report.main \
+            --history "$HISTORY" \
+            --year {{year}} \
+            --output reports/irpf/irpf_{{year}}.md
+    elif [ -f "$LEGACY" ]; then
+        echo "Using legacy CSV: $LEGACY"
+        PYTHONPATH=src uv run python -m irpf_report.main \
+            --trades "$LEGACY" \
+            --year {{year}} \
+            --output reports/irpf/irpf_{{year}}.md
+    else
+        echo "Error: no trade data found."
+        echo "Run 'just ibkr-trades-daily' or provide $LEGACY"
+        exit 1
+    fi
+    echo "✓ IRPF report: reports/irpf/irpf_{{year}}.md"
 
 # ── AI / Agent tooling ────────────────────────────────────────────────────────
 

@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
+import pandas as pd
+
 
 @dataclass
 class Trade:
@@ -73,6 +75,56 @@ def parse_ibkr_csv(path: Path) -> list[Trade]:
                     currency=currency,
                 )
             )
+
+    if skipped_currencies:
+        print(
+            f"Warning: skipped {len(skipped_currencies)} non-USD currency(ies): "
+            f"{', '.join(sorted(skipped_currencies))}. Only USD trades are supported.",
+            file=sys.stderr,
+        )
+
+    return trades
+
+
+def parse_history_csv(path: Path, year: int) -> list[Trade]:
+    """Parse closed USD trades for a calendar year from canonical trade history."""
+    history = pd.read_csv(path, dtype={"trade_id": str, "pnl_realized": float})
+    year_prefix = f"{year}-"
+    filtered_history = history[
+        history["date"].astype(str).str.startswith(year_prefix)
+        & history["asset_type"].isin(("STK", "OPT", "ETF"))
+        & history["open_close"].str.contains("C", na=False)
+    ]
+
+    trades: list[Trade] = []
+    skipped_currencies: set[str] = set()
+    for _, row in filtered_history.iterrows():
+        if pd.isna(row["pnl_realized"]):
+            print(
+                f"⚠ Skipping {row['symbol']} {row['date']}: "
+                "pnl_realized missing (run just ibkr-flex-fetch)"
+            )
+            continue
+
+        currency = str(row["currency"]).strip()
+        if currency != "USD":
+            skipped_currencies.add(currency)
+            continue
+
+        proceeds_usd = float(row["proceeds"])
+        pnl_usd = float(row["pnl_realized"])
+        trades.append(
+            Trade(
+                date=date.fromisoformat(str(row["date"])),
+                symbol=str(row["symbol"]),
+                asset_type=str(row["asset_type"]),
+                quantity=float(row["quantity"]),
+                proceeds_usd=proceeds_usd,
+                cost_usd=proceeds_usd - pnl_usd,
+                pnl_usd=pnl_usd,
+                currency=currency,
+            )
+        )
 
     if skipped_currencies:
         print(

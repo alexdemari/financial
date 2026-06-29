@@ -11,7 +11,7 @@ from irpf_report.calculator import (
     enrich_trades,
 )
 from irpf_report.report import render_markdown, write_report
-from irpf_report.trades import parse_ibkr_csv
+from irpf_report.trades import parse_history_csv, parse_ibkr_csv
 
 
 def main() -> None:
@@ -19,7 +19,10 @@ def main() -> None:
         description="Generate IRPF BRL report from IBKR trades CSV"
     )
     parser.add_argument(
-        "--trades", required=True, type=Path, help="Path to IBKR trades CSV export"
+        "--trades", type=Path, help="IBKR Activity Statement CSV (legacy input)"
+    )
+    parser.add_argument(
+        "--history", type=Path, help="trades_history.csv from ibkr_trades"
     )
     parser.add_argument(
         "--year", required=True, type=int, help="Calendar year (e.g. 2025)"
@@ -29,13 +32,38 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    if not args.trades.exists():
-        print(f"Error: trades file not found: {args.trades}", file=sys.stderr)
+    default_history = Path("data/ibkr/trades_history.csv")
+    default_trades = Path(f"data/ibkr/trades_{args.year}.csv")
+    if args.history:
+        input_path = args.history
+        history_mode = True
+    elif args.trades:
+        input_path = args.trades
+        history_mode = False
+    elif default_history.exists():
+        input_path = default_history
+        history_mode = True
+        print("Using trades_history.csv (run 'just ibkr-flex-fetch' to refresh)")
+    elif default_trades.exists():
+        input_path = default_trades
+        history_mode = False
+        print(f"Using legacy trades CSV: {default_trades}")
+    else:
+        parser.error(
+            "No trade data found. Provide --history or --trades, "
+            "or run 'just ibkr-trades-daily' first."
+        )
+
+    if not input_path.exists():
+        print(f"Error: trades file not found: {input_path}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Parsing trades from {args.trades}...")
-    trades = parse_ibkr_csv(args.trades)
-    year_trades = [t for t in trades if t.date.year == args.year]
+    print(f"Parsing trades from {input_path}...")
+    if history_mode:
+        year_trades = parse_history_csv(input_path, args.year)
+    else:
+        trades = parse_ibkr_csv(input_path)
+        year_trades = [trade for trade in trades if trade.date.year == args.year]
     print(f"Found {len(year_trades)} closed USD trades for {args.year}")
 
     print("Fetching PTAX rates...")

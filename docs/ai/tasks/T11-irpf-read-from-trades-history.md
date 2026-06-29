@@ -1,6 +1,6 @@
 # Task T11: `irpf_report` — Read from `trades_history.csv` (Eliminate Manual Annual Export)
 
-**Status:** Planned
+**Status:** Completed
 **Skill:** add-feature
 **Scope:** `src/irpf_report/trades.py`, `src/irpf_report/main.py`, `justfile`
 **Effort:** S
