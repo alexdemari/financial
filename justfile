@@ -438,6 +438,12 @@ gate: lint test verify-identical
 
 # ── IBKR ─────────────────────────────────────────────────────────────────────
 
+# Download latest Flex Query XML from IBKR.
+# Skips gracefully if IBKR data has not been refreshed for today.
+ibkr-flex-fetch output="data/ibkr/flex_latest.xml":
+    PYTHONPATH=src uv run python -m ibkr_trades.flex_fetcher \
+        --output {{output}}
+
 # One-time backfill from Flex Query XML export.
 # Export from IBKR: Reports → Activity → Flex Queries → All trades since inception → XML
 ibkr-backfill flex="data/ibkr/flex_export.xml":
@@ -466,8 +472,10 @@ ibkr-generate-tracker:
         --tracker  options_tracker.csv \
         --backup-dir data/ibkr
 
-# Full daily flow: sync new trades + rebuild options_tracker.csv.
+# Full daily flow: fetch Flex XML, backfill, sync new trades, and rebuild tracker.
 ibkr-trades-daily host="" port="7496":
+    just ibkr-flex-fetch
+    just ibkr-backfill flex=data/ibkr/flex_latest.xml
     just ibkr-sync host={{host}} port={{port}}
     just ibkr-generate-tracker
     @echo "options_tracker.csv rebuilt from live trade history"
