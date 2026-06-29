@@ -438,15 +438,53 @@ gate: lint test verify-identical
 
 # ── IBKR ─────────────────────────────────────────────────────────────────────
 
-# Retrieve live IBKR positions and generate portfolio risk report.
-# From WSL, the default host is the Windows gateway; IB Gateway must allow WSL access on port 7496.
-ibkr-positions output-dir="reports/output" host="" port="7496":
+# One-time backfill from Flex Query XML export.
+# Export from IBKR: Reports → Activity → Flex Queries → All trades since inception → XML
+ibkr-backfill flex="data/ibkr/flex_export.xml":
+    PYTHONPATH=src uv run python -m ibkr_trades.main backfill \
+        --flex {{flex}} \
+        --history data/ibkr/trades_history.csv
+    @echo "Backfill complete. Run 'just ibkr-generate-tracker' to rebuild options_tracker.csv"
+
+# Fetch new trades from IB Gateway since last sync date (requires running IB Gateway).
+ibkr-sync host="" port="7496":
     #!/usr/bin/env bash
+    set -euo pipefail
     if [ -z "{{host}}" ]; then
         HOST=$(ip route show default | awk '{print $3}')
     else
         HOST="{{host}}"
     fi
+    PYTHONPATH=src uv run python -m ibkr_trades.main sync \
+        --host "$HOST" --port {{port}} \
+        --history data/ibkr/trades_history.csv
+
+# Rebuild options_tracker.csv from trade history (offline, no IB Gateway needed).
+ibkr-generate-tracker:
+    PYTHONPATH=src uv run python -m ibkr_trades.main generate-tracker \
+        --history  data/ibkr/trades_history.csv \
+        --tracker  options_tracker.csv \
+        --backup-dir data/ibkr
+
+# Full daily flow: sync new trades + rebuild options_tracker.csv.
+ibkr-trades-daily host="" port="7496":
+    just ibkr-sync host={{host}} port={{port}}
+    just ibkr-generate-tracker
+    @echo "options_tracker.csv rebuilt from live trade history"
+
+# Retrieve live IBKR positions and generate portfolio risk report.
+# Also syncs trade history and rebuilds options_tracker.csv before the report.
+# From WSL, the default host is the Windows gateway; IB Gateway must allow WSL access on port 7496.
+ibkr-positions output-dir="reports/output" host="" port="7496":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -z "{{host}}" ]; then
+        HOST=$(ip route show default | awk '{print $3}')
+    else
+        HOST="{{host}}"
+    fi
+    just ibkr-sync host="$HOST" port={{port}}
+    just ibkr-generate-tracker
     PYTHONPATH=src uv run python -m ibkr_positions.main \
         --output-dir {{output-dir}} \
         --host "$HOST" \

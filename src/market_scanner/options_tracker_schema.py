@@ -38,12 +38,24 @@ def format_european_float(value: float | None, decimal_places: int = 2) -> str:
 
 
 def parse_european_float(value: str) -> float | None:
-    """Parse a tracker number using optional dot thousands separators."""
-    normalized_value = value.strip().replace(".", "").replace(",", ".")
-    if not normalized_value:
+    """Parse a tracker number in European (comma decimal) or US (period decimal) format."""
+    s = value.strip()
+    if not s:
         return None
+    has_dot = "." in s
+    has_comma = "," in s
     try:
-        return float(normalized_value)
+        if has_dot and has_comma:
+            if s.rfind(".") > s.rfind(","):
+                return float(s.replace(",", ""))  # US thousands: 1,234.56
+            else:
+                return float(
+                    s.replace(".", "").replace(",", ".")
+                )  # EU thousands: 1.234,56
+        elif has_comma:
+            return float(s.replace(",", "."))  # EU decimal: 1,45
+        else:
+            return float(s)  # US decimal or integer: 2.86, 140
     except ValueError:
         return None
 
