@@ -475,8 +475,8 @@ ibkr-generate-tracker:
 # Full daily flow: fetch Flex XML, backfill, sync new trades, and rebuild tracker.
 ibkr-trades-daily host="" port="7496":
     just ibkr-flex-fetch
-    just ibkr-backfill flex=data/ibkr/flex_latest.xml
-    just ibkr-sync host={{host}} port={{port}}
+    just ibkr-backfill data/ibkr/flex_latest.xml
+    just ibkr-sync "{{host}}" "{{port}}"
     just ibkr-generate-tracker
     @echo "options_tracker.csv rebuilt from live trade history"
 
@@ -491,7 +491,7 @@ ibkr-positions output-dir="reports/output" host="" port="7496":
     else
         HOST="{{host}}"
     fi
-    just ibkr-sync host="$HOST" port={{port}}
+    just ibkr-sync "$HOST" "{{port}}"
     just ibkr-generate-tracker
     PYTHONPATH=src uv run python -m ibkr_positions.main \
         --output-dir {{output-dir}} \
