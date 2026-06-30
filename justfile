@@ -52,6 +52,29 @@ format:
 type-check:
     uv run mypy src tests
 
+
+# ── Local web dashboard ──────────────────────────────────────────────────────
+
+# Build frontend and start read-only dashboard
+web host="127.0.0.1" port="8000":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd frontend
+    npm run build
+    cd ..
+    PYTHONPATH=src uv run uvicorn web.server:app --host {{host}} --port {{port}}
+
+# Start backend and Vite frontend with hot reload
+web-dev:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    trap 'kill 0' EXIT
+    WEB_DEV_CORS=1 PYTHONPATH=src uv run uvicorn web.server:app \
+        --host 127.0.0.1 --port 8000 --reload &
+    cd frontend
+    npm run dev
+
+
 # Full local quality check before committing
 check: format lint-fix type-check test
 

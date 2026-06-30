@@ -22,6 +22,18 @@ into a single modular monolith.
 | IBKR trade history: auto-derive `options_tracker.csv` | `ibkr_trades` | `just ibkr-trades-daily` |
 | Open options exit monitor (DTE, signals) | `market_scanner.exit_monitor` | `just positions` |
 | Brazilian IRPF annual report (USD → BRL via PTAX) | `irpf_report` | `just irpf` |
+| Read-only local dashboard | `web` | `just web` |
+
+---
+
+## Local dashboard
+
+Install frontend dependencies once with `cd frontend && npm install`. Then run
+`just web` and open <http://localhost:8000>. For frontend hot reload, run
+`just web-dev` and open <http://localhost:5173>.
+
+Dashboard reads existing report files only. It does not run portfolio or scanner
+jobs and shows source timestamps or setup commands when data is missing.
 
 ---
 

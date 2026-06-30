@@ -110,8 +110,8 @@ src/web/
 │   ├── dividends.py    GET /api/report/dividends
 │   └── macro.py        GET /api/macro
 └── readers/
-    ├── ibkr_csv.py     reads ibkr_positions_*.csv → AccountSnapshot, Position[]
-    ├── history_jsonl.py reads data/ibkr/history.jsonl → HistoryEntry[]
+    ├── ibkr_csv.py     reads ibkr_positions_*.csv → Position[]
+    ├── history_jsonl.py reads history.jsonl → AccountSnapshot, HistoryEntry[]
     ├── tracker_csv.py  reads options_tracker.csv → OpenLeg[]
     ├── scan_csv.py     reads scan_daily.csv → ScannerRow[]
     └── markdown.py     reads *.md → HTML string via `markdown` library
@@ -165,10 +165,10 @@ frontend/src/         (React, fetches /api/*)
 http://localhost:8000
 ```
 
-### Reader: `ibkr_csv.py`
+### Readers: positions CSV and account history
 
 ```python
-# src/web/readers/ibkr_csv.py
+# AccountSnapshot is defined in history_jsonl.py; Position in ibkr_csv.py.
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -186,8 +186,8 @@ class AccountSnapshot:
     unrealized_pnl_pct: float
     margin_utilization: float
     net_delta_approx: float | None
-    as_of: str          # ISO datetime from filename
-    file_mtime: str     # when file was last written
+    as_of: str          # date from latest history entry
+    last_updated: str   # history.jsonl file mtime
 
 @dataclass
 class Position:
@@ -211,20 +211,18 @@ def latest_ibkr_csv() -> Path | None:
     files = sorted(REPORTS_DIR.glob("ibkr_positions_*.csv"))
     return files[-1] if files else None
 
-def read_account_snapshot() -> AccountSnapshot | None:
-    path = latest_ibkr_csv()
-    if path is None:
-        return None
-    df = pd.read_csv(path)
-    # parse account summary row vs position rows
-    ...
-
 def read_positions() -> list[Position]:
     path = latest_ibkr_csv()
     if path is None:
         return []
     ...
 ```
+
+`ibkr_positions_*.csv` contains position rows, not an account summary. Its
+`available_cash` must not be treated as total cash or used to invent NLV.
+`read_account_snapshot()` lives in `history_jsonl.py` and maps the latest
+history entry. `options_tracker.csv` is semicolon-delimited; `tracker_csv.py`
+must use `delimiter=";"` (or pandas `sep=";"`).
 
 ### Reader: `history_jsonl.py`
 
@@ -250,7 +248,8 @@ def read_history(days: int = 90) -> list[dict]:
 # src/web/routers/account.py
 
 from fastapi import APIRouter
-from web.readers.ibkr_csv import read_account_snapshot, read_positions
+from web.readers.history_jsonl import read_account_snapshot
+from web.readers.ibkr_csv import read_positions
 from web.readers.tracker_csv import read_open_legs
 
 router = APIRouter(prefix="/api")
@@ -377,15 +376,14 @@ used by the frontend to show the "setup checklist" on first run.
 # Start local web dashboard (production mode — serves built frontend)
 web host="127.0.0.1" port="8000":
     #!/usr/bin/env bash
-    cd frontend && npm run build 2>/dev/null || true
+    cd frontend && npm run build
     PYTHONPATH=src uv run uvicorn web.server:app \
-        --host {{host}} --port {{port}} --reload
-    @echo "Dashboard: http://{{host}}:{{port}}"
+        --host {{host}} --port {{port}}
 
 # Development mode: backend with reload + Vite dev server (hot reload)
 web-dev:
     #!/usr/bin/env bash
-    PYTHONPATH=src uv run uvicorn web.server:app \
+    WEB_DEV_CORS=1 PYTHONPATH=src uv run uvicorn web.server:app \
         --host 127.0.0.1 --port 8000 --reload &
     cd frontend && npm run dev
 ```
@@ -407,12 +405,11 @@ web-dev:
   "dependencies": {
     "react": "^18",
     "react-dom": "^18",
-    "recharts": "^2",
-    "react-markdown": "^9"
+    "recharts": "^2"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4",
-    "vite": "^5",
+    "vite": "^6.4.3",
     "tailwindcss": "^3",
     "autoprefixer": "^10"
   }
@@ -508,6 +505,9 @@ def test_status_endpoint_lists_all_expected_files(client)
 # GET /api/status → response contains all known file keys
 ```
 
+Also cover newest dated position file, `days=N` truncation and API forwarding,
+semicolon tracker parsing, malformed rows, and risk concentration/shortfall.
+
 ---
 
 ## Verification
@@ -579,12 +579,11 @@ on the next refresh (60s auto or manual F5).
 - **No mobile.** Local-only on WSL2; accessible from Windows browser at
   `localhost:8000`. Mobile access requires a tunnel (e.g., `cloudflared`)
   — out of scope.
-- **Macro data** shown on dashboard comes from the last `daily_report.md`
-  header, not from a live fetch. Live macro requires the dashboard to call
-  the BCB/yfinance APIs directly — deferred to T13 or later.
+- **Macro data** comes from exact named cells in the macro table in the last
+  `daily_report.md`, without regex. Missing reports or indicators return
+  `null`. A structured sidecar remains a future producer change.
 - **Scanner tab** renders the full `daily_report.md` as HTML. It is not
   an interactive table. Interactive scanner filtering is a future feature.
 - **No WebSocket / push.** Auto-refresh polls every 60 seconds.
   Real-time updates via WebSocket are a future enhancement.
-- `frontend/node_modules/` and `src/web/static/` must be added to
-  `.gitignore`.
+- `.gitignore` includes `frontend/node_modules/` and `src/web/static/`.

@@ -41,6 +41,8 @@ logs/
 # Distribution
 build/
 dist/
+frontend/node_modules/
+src/web/static/
 *.egg-info/
 
 # Jupyter
