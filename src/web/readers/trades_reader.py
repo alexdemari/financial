@@ -160,7 +160,7 @@ def _btg_row_to_trade(row: pd.Series, broker: str) -> TradeRow:
         currency=_text(row.get("currency")) or "BRL",
         strategy=_text(row.get("strategy")),
         option_type=_text(row.get("option_type")),
-        strike=_optional_float(row.get("strike", row.get("preco_exercicio"))),
+        strike=_optional_float(_first_present(row, "strike", "preco_exercicio")),
         expiration=_optional_date_text(row.get("expiration")),
     )
 
@@ -168,6 +168,14 @@ def _btg_row_to_trade(row: pd.Series, broker: str) -> TradeRow:
 def _normalize_btg_asset_type(value: object) -> str:
     asset_type = (_text(value) or "").upper()
     return {"ACAO": "STK", "AÇÃO": "STK"}.get(asset_type, asset_type)
+
+
+def _first_present(row: pd.Series, *columns: str) -> object:
+    for column in columns:
+        value = row.get(column)
+        if value is not None and not pd.isna(value) and value != "":
+            return value
+    return None
 
 
 def _float(value: object) -> float:

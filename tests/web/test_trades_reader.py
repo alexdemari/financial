@@ -90,6 +90,46 @@ def test_trade_row_has_all_required_fields(tmp_path, monkeypatch):
     assert trade["direction"] == "BUY"
 
 
+def test_ibkr_negative_quantity_is_sell(tmp_path, monkeypatch):
+    _set_paths(monkeypatch, tmp_path)
+    _write_csv(trades_reader.IBKR_HISTORY, [_ibkr_trade(quantity=-1)])
+
+    assert trades_reader.read_all_trades()[0]["direction"] == "SELL"
+
+
+def test_btg_option_uses_preco_exercicio_when_strike_is_blank(tmp_path, monkeypatch):
+    _set_paths(monkeypatch, tmp_path)
+    _write_csv(
+        trades_reader.BTG_OPCOES,
+        [
+            {
+                "date": "2026-06-12",
+                "symbol": "PETRR417",
+                "asset_type": "OPT",
+                "direction": "SELL",
+                "quantity": -100,
+                "price": 1.25,
+                "proceeds": 125,
+                "commission": -0.5,
+                "pnl_realized": 30,
+                "currency": "BRL",
+                "option_type": "CALL",
+                "strike": None,
+                "preco_exercicio": 17.0,
+                "expiration": "2026-07-17",
+            }
+        ],
+    )
+
+    trade = trades_reader.read_all_trades()[0]
+
+    assert trade["broker"] == "BTG-Opções"
+    assert trade["asset_type"] == "OPT"
+    assert trade["option_type"] == "CALL"
+    assert trade["strike"] == 17.0
+    assert trade["expiration"] == "2026-07-17"
+
+
 def test_monthly_summary_groups_by_month_and_currency():
     trades = [
         {"date": "2026-06-01", "currency": "USD", "pnl_realized": 100},
