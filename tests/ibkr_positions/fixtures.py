@@ -1,4 +1,5 @@
 """Mock ib_insync objects for IBKRClient tests."""
+
 from collections import namedtuple
 from unittest.mock import MagicMock
 

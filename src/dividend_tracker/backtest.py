@@ -802,8 +802,7 @@ def write_report(
             rational = result.change_reason
 
         lines.append(
-            f"**Modelo recomendado: {result.recommended_model}**  "
-            f"Racional: {rational}"
+            f"**Modelo recomendado: {result.recommended_model}**  Racional: {rational}"
         )
         lines.append("")
 
