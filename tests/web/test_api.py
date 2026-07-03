@@ -4,7 +4,7 @@ from web import server
 from web.readers import history_jsonl
 from web.readers.history_jsonl import AccountSnapshot
 from web.readers.ibkr_csv import Position
-from web.routers import account, history, trades
+from web.routers import account, history, patrimonio, trades
 
 
 def test_account_endpoint_returns_hint_without_data(tmp_path, monkeypatch):
@@ -61,6 +61,16 @@ def test_trades_endpoint_returns_rows_summary_and_sources(monkeypatch):
         "monthly_summary": [{"trade_count": 1}],
         "sources": {"ibkr": None},
     }
+
+
+def test_patrimonio_endpoint_returns_consolidated_data(monkeypatch):
+    expected = {"total_brl": 123.45}
+    monkeypatch.setattr(patrimonio, "read_patrimonio", lambda: expected)
+
+    response = TestClient(server.app).get("/api/patrimonio")
+
+    assert response.status_code == 200
+    assert response.json() == expected
 
 
 def test_risk_reports_concentration_and_cash_shortfall(monkeypatch):

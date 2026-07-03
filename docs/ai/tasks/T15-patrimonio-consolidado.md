@@ -1,6 +1,6 @@
 # Task T15: Dashboard — Aba "Patrimônio" (Visão Consolidada BR + USD)
 
-**Status:** Planned
+**Status:** Completed (2026-07-03)
 **Skill:** add-feature
 **Scope:** `src/web/readers/patrimonio_reader.py` (new), `src/web/routers/patrimonio.py` (new), `frontend/src/components/PatrimonioView.jsx` (new)
 **Effort:** M
@@ -365,3 +365,14 @@ uv run ruff check src/web/readers/patrimonio_reader.py \
   A consolidated BRL history including BTG would require daily snapshots
   from BTG too — currently BTG data is point-in-time (one file per period).
   This is a future task post T15.
+
+## Implementation notes
+
+- The canonical PTAX cache remains `data/cache/ptax/`, as defined by
+  `irpf_report.ptax`; the reader checks the newest valid cache entry before
+  allowing the existing BCB fallback.
+- IBKR NLV is authoritative. The difference between NLV and classified IBKR
+  position values is allocated to cash so the allocation reconciles to the
+  consolidated total.
+- The API returns `complete: false` when a required account source or the PTAX
+  conversion is unavailable. The frontend labels that result as partial.

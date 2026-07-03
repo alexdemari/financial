@@ -5,15 +5,17 @@ import HistoryChart from "./components/HistoryChart";
 import MacroStrip from "./components/MacroStrip";
 import MarkdownView from "./components/MarkdownView";
 import OptionsTable from "./components/OptionsTable";
+import PatrimonioView from "./components/PatrimonioView";
 import { Panel } from "./components/Panel";
 import RiskAlerts from "./components/RiskAlerts";
 import ScannerTable from "./components/ScannerTable";
 import TradesTable from "./components/TradesTable";
 import { useApi } from "./hooks/useApi";
 
-const tabs = ["Dashboard", "Portfolio", "History", "Scanner", "Dividends", "Trades"];
+const tabs = ["Patrimônio", "Dashboard", "Portfolio", "History", "Scanner", "Dividends", "Trades"];
 export default function App() {
-  const [tab, setTab] = useState("Dashboard");
+  const [tab, setTab] = useState("Patrimônio");
+  const patrimonio = useApi("/api/patrimonio").data;
   const account = useApi("/api/account").data;
   const positions = useApi("/api/positions").data;
   const risk = useApi("/api/risk").data;
@@ -25,6 +27,7 @@ export default function App() {
   const trades = useApi("/api/trades").data;
   return <main><header className="top"><div><p>LOCAL · READ ONLY</p><h1>Financial Dashboard</h1></div>
     <nav>{tabs.map((name) => <button className={tab === name ? "active" : ""} onClick={() => setTab(name)} key={name}>{name}</button>)}</nav></header>
+    {tab === "Patrimônio" && <PatrimonioView data={patrimonio} />}
     {tab === "Dashboard" && <><AccountCards account={account} /><Panel title="Macro"><MacroStrip macro={macro} /></Panel>
       <div className="grid"><OptionsTable positions={positions} updated={account?.last_updated} /><RiskAlerts risk={risk} /></div><ScannerTable scanner={scanner} /></>}
     {tab === "Portfolio" && <div className="grid"><AllocationChart positions={positions} /><Panel title="Positions" updated={account?.last_updated}>

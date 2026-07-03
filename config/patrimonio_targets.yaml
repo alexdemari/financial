@@ -1,0 +1,54 @@
+# Patrimônio allocation targets (Family Office Advisor Pro guidelines)
+# Ranges are inclusive percentages of total patrimônio in BRL.
+
+currency_mix:
+  brl_pct:
+    target_min: 60
+    target_max: 75
+    label: "BRL (BR)"
+  usd_pct:
+    target_min: 25
+    target_max: 40
+    label: "USD (Exterior)"
+
+asset_classes:
+  renda_fixa_br:
+    target_min: 35
+    target_max: 50
+    label: "Renda Fixa BR"
+    color: "#3b82f6"
+  acoes_br:
+    target_min: 15
+    target_max: 25
+    label: "Ações BR"
+    color: "#10b981"
+  bdr:
+    target_min: 0
+    target_max: 5
+    label: "BDR"
+    color: "#6366f1"
+  opcoes_br:
+    target_min: 0
+    target_max: 5
+    label: "Opções BR"
+    color: "#f59e0b"
+  acoes_usd:
+    target_min: 15
+    target_max: 30
+    label: "Ações USD"
+    color: "#0ea5e9"
+  etf_usd:
+    target_min: 5
+    target_max: 15
+    label: "ETF USD"
+    color: "#8b5cf6"
+  opcoes_usd:
+    target_min: 0
+    target_max: 5
+    label: "Opções USD"
+    color: "#ec4899"
+  caixa:
+    target_min: 5
+    target_max: 15
+    label: "Caixa (BR + USD)"
+    color: "#94a3b8"
