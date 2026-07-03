@@ -1,6 +1,6 @@
 # Task T14: BTG Extrato XLSX Parser — Duas Contas com Merge
 
-**Status:** Planned
+**Status:** Complete
 **Skill:** add-feature
 **Scope:** `src/btg_parser/` (new module), `justfile`
 **Effort:** M
@@ -450,3 +450,40 @@ uv run ruff check src/btg_parser/ tests/btg_parser/
 - SAPR4 appears in `config/dividend_portfolio.yaml` but not in the BTG extrato
   template — it may be in the BTG-Geral account or not currently held.
   The parser handles missing assets gracefully.
+
+---
+
+## Deviations from this spec found during implementation
+
+Verified against real BTG-Opções and BTG-Geral extrato files (multiple months,
+2022-2026):
+
+- Real workbooks have 8 sheets, not 6: `Futuros BMF` and `Fale Conosco` also
+  exist and are ignored (not required for T13/T15).
+- `Posição > Opções` header cell is literally `"Data Exercício R$"`, not
+  `"Data Exercício"` — column lookup matches on prefix to tolerate this.
+- `Movimentação > Ações | Aluguel` real column order is
+  `Data, Posição, Código, Transação, Taxa %, Qtde., Preço de Referência R$,
+  Valor Contratado R$` — columns are read by header name (not position), so
+  this doesn't need special-casing.
+- `Transação` values are far richer than `BUY|SELL|DIVIDEND|EMPRESTIMO`.
+  Confirmed values also include `JUROS S/CAPITAL` (mapped to `JCP`, matching
+  the project's existing JCP-in-dividends convention), `VENCIMENTO DA OPCAO`
+  (`EXPIRATION`), `BONIFICACAO/SPLIT`, `DEPÓSITO`, `RETIRADA`, `RENDIMENTO`,
+  `EVENTO DE BOLSA`, `GRUPAMENTO (INPLIT)`, `RESTITUIÇÃO DE CAPITAL`. Unmapped
+  values pass through as their raw uppercased text (`direction` field) rather
+  than crashing or being dropped.
+- The canonical trades schema does **not** include a `strike` column — strike
+  price is only present on the *positions* side (`Posição > Opções`), never in
+  `Movimentação > Opções`. `trades_reader.py` (T13) originally assumed a
+  `strike`/`preco_exercicio` fallback on trade rows; this was already
+  effectively dead code and has been left as-is (resolves to `None` for BTG
+  option trades, which the frontend renders as `—`).
+- **Integration bug found and fixed in T13's `trades_reader.py`:**
+  `_read_btg_trades` filtered rows by `pnl_realized.notna()` to select
+  "realized" trades. Since BTG never reports per-trade P&L (documented above),
+  every BTG trade has `pnl_realized = null`, so that filter silently dropped
+  100% of BTG trades from the Trades tab. Existing T13 tests didn't catch this
+  because their fixtures always set a non-null `pnl_realized`. Fixed by
+  dropping the filter for BTG (all movimentação rows are already settled
+  trades) and gating only on the `date` column being present.

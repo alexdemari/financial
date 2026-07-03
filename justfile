@@ -53,6 +53,26 @@ type-check:
     uv run mypy src tests
 
 
+# ── BTG data ──────────────────────────────────────────────────────────────────
+
+# Parse BTG XLSX export(s) and write canonical CSVs to data/btg/
+# Place XLSX files in data/btg/uploads/ with _opcoes or _geral in filename.
+# Example: extrato_opcoes_jun2026.xlsx, extrato_geral_jun2026.xlsx
+btg-parse input-dir="data/btg/uploads":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -z "$(ls {{input-dir}}/*.xlsx 2>/dev/null)" ]; then
+        echo "No XLSX files found in {{input-dir}}"
+        echo "Place your BTG extracts there with '_opcoes' or '_geral' in the filename."
+        exit 1
+    fi
+    PYTHONPATH=src uv run python -m btg_parser.main \
+        --input-dir {{input-dir}} \
+        --output-dir data/btg
+    echo "BTG data written to data/btg/"
+    echo "Run 'just web' to see BTG trades and positions in the dashboard."
+
+
 # ── Local web dashboard ──────────────────────────────────────────────────────
 
 # Build frontend and start read-only dashboard

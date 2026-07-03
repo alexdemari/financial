@@ -37,6 +37,12 @@ jobs and shows source timestamps or setup commands when data is missing. The
 Trades tab merges realized IBKR and BTG operations without converting currencies;
 filters run locally in the browser.
 
+To populate BTG data, place monthly extrato XLSX files (filename containing
+`_opcoes` or `_geral`) in `data/btg/uploads/` and run `just btg-parse`. It
+writes canonical positions/trades CSVs to `data/btg/`, which the Trades tab
+reads via the same API as IBKR. Re-running is idempotent — each run overwrites
+the previous output.
+
 ---
 
 ## Architecture

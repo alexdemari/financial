@@ -55,16 +55,15 @@ def _read_ibkr_trades() -> list[dict]:
 
 
 def _read_btg_trades(path: Path, broker: str) -> list[dict]:
-    """Read canonical BTG trades, ignoring absent or unrealized records."""
+    """Read canonical BTG trades. BTG movimentação rows are always settled
+    trades; unlike IBKR, BTG never reports a per-trade pnl_realized, so no
+    realized/unrealized filter applies here."""
     if not path.exists():
         return []
     history = pd.read_csv(path)
-    if "pnl_realized" not in history.columns:
+    if "date" not in history.columns:
         return []
-    realized_trades = history[history["pnl_realized"].notna()]
-    return [
-        asdict(_btg_row_to_trade(row, broker)) for _, row in realized_trades.iterrows()
-    ]
+    return [asdict(_btg_row_to_trade(row, broker)) for _, row in history.iterrows()]
 
 
 def read_monthly_summary(trades: list[dict]) -> list[dict]:
