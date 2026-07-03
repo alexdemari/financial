@@ -22,7 +22,8 @@ into a single modular monolith.
 | IBKR trade history: auto-derive `options_tracker.csv` | `ibkr_trades` | `just ibkr-trades-daily` |
 | Open options exit monitor (DTE, signals) | `market_scanner.exit_monitor` | `just positions` |
 | Brazilian IRPF annual report (USD → BRL via PTAX) | `irpf_report` | `just irpf` |
-| Read-only local dashboard | `web` | `just web` |
+| Parse BTG extrato XLSX into canonical CSVs | `btg_parser` | `just btg-parse` |
+| Read-only local dashboard (Patrimônio, Trades, Scanner, ...) | `web` | `just web` |
 
 ---
 
@@ -34,8 +35,10 @@ Install frontend dependencies once with `cd frontend && npm install`. Then run
 
 Dashboard reads existing report files only. It does not run portfolio or scanner
 jobs and shows source timestamps or setup commands when data is missing. The
-Trades tab merges realized IBKR and BTG operations without converting currencies;
-filters run locally in the browser.
+default tab is Patrimônio — consolidated IBKR + BTG wealth in BRL, converted via
+the cached BCB PTAX rate, with allocation vs. targets from
+`config/patrimonio_targets.yaml`. The Trades tab merges realized IBKR and BTG
+operations without converting currencies; filters run locally in the browser.
 
 To populate BTG data, place monthly extrato XLSX files (filename containing
 `_opcoes` or `_geral`) in `data/btg/uploads/` and run `just btg-parse`. It
@@ -59,6 +62,8 @@ dividend_tracker        → dividend yield ceiling decisions (BUY / OVERPRICED)
 ibkr_positions          → live portfolio state, risk metrics, HTML/CSV/MD report
 ibkr_trades             → trade history store, options_tracker.csv auto-generation
 irpf_report             → annual IRPF report with BCB PTAX conversion
+btg_parser              → BTG extrato XLSX → canonical BTG CSVs
+web                     → read-only dashboard (FastAPI + React), reads all of the above
 ```
 
 All modules are synchronous, read-only with respect to IBKR, and require no
@@ -350,7 +355,7 @@ each trade date (with local disk cache).
 
 **No monthly DARF** for foreign investments — only annual IRPF declaration.
 
-PTAX is fetched from the BCB Olinda API and cached in `data/ibkr/ptax_cache/`.
+PTAX is fetched from the BCB Olinda API and cached in `data/cache/ptax/`.
 Falls back up to 3 prior business days for weekends and holidays.
 
 ```bash
@@ -360,6 +365,51 @@ just irpf year=2025
 
 Output: `reports/irpf/irpf_2025.md` — per-trade detail, monthly summary,
 asset-type breakdown (STK / OPT / ETF), and annual totals in USD and BRL.
+
+---
+
+### `btg_parser`
+
+Parses BTG-Opções and BTG-Geral monthly extrato XLSX exports (openpyxl,
+`read_only=True`, section detection by header string) into canonical
+positions/trades/renda-fixa/proventos/conta-corrente CSVs under `data/btg/`.
+Feeds the dashboard's Trades and Patrimônio tabs — never called at request
+time, only via `just btg-parse`.
+
+Account is detected from the filename (`_opcoes` / `_geral`); files that
+can't be classified are skipped (not written) with a warning, so the rest of
+the batch still processes.
+
+```bash
+# Place XLSX exports in data/btg/uploads/, named e.g.
+# extrato_opcoes_jun2026.xlsx, extrato_geral_jun2026.xlsx
+just btg-parse
+```
+
+Re-running is idempotent — each run overwrites the previous CSV outputs.
+
+---
+
+### `web`
+
+Read-only local dashboard (FastAPI backend + Vite/React frontend). Reads
+files already written by the other modules — never runs a job, never
+mutates data, never calls out except for the Patrimônio tab's PTAX lookup
+(cache-first, see `irpf_report`).
+
+**Tabs:** Patrimônio (consolidated BR + USD wealth, default tab) · Dashboard ·
+Portfolio · History · Scanner · Dividends · Trades (merged realized IBKR +
+BTG operations, client-side filters).
+
+Each tab's data comes from one `web.readers.*` module and is exposed through
+a matching `web.routers.*` FastAPI router (`/api/account`, `/api/trades`,
+`/api/patrimonio`, etc.). A missing source file surfaces as a "no data — run:
+..." hint in the UI instead of an error.
+
+```bash
+just web        # build frontend, serve at http://localhost:8000
+just web-dev    # backend + Vite hot reload at http://localhost:5173
+```
 
 ---
 
@@ -379,8 +429,15 @@ asset-type breakdown (STK / OPT / ETF), and annual totals in USD and BRL.
 | `reports/irpf/irpf_YYYY.md` | Annual IRPF BRL report |
 | `data/ibkr/trades_history.csv` | Canonical trade history (gitignored) |
 | `data/ibkr/history.jsonl` | Daily account snapshots (gitignored) |
-| `data/ibkr/ptax_cache/` | BCB PTAX rate cache (gitignored) |
+| `data/cache/ptax/` | BCB PTAX rate cache (gitignored) |
 | `options_tracker.csv` | Open options log — auto-derived by ibkr_trades (gitignored) |
+| `data/btg/btg_{opcoes,geral}_positions.csv` | Canonical BTG positions per account (gitignored) |
+| `data/btg/btg_{opcoes,geral}_trades.csv` | Canonical BTG trades per account (gitignored) |
+| `data/btg/positions_all.csv`, `trades_all.csv` | Merged BTG positions/trades across accounts (gitignored) |
+| `data/btg/renda_fixa_all.csv` | Merged BTG CDB positions (gitignored) |
+| `data/btg/proventos_futuros_all.csv` | Merged BTG pending income (Valores em Trânsito) (gitignored) |
+| `data/btg/conta_corrente_all.csv` | Merged BTG cash account movements (gitignored) |
+| `config/patrimonio_targets.yaml` | Allocation targets for the Patrimônio tab |
 
 ---
 
@@ -411,19 +468,37 @@ src/
 │   ├── roll_detector.py    Same-day roll detection
 │   ├── strategy_tagger.py  Infer covered_call / csp / roll etc.
 │   └── tracker_builder.py  Derive options_tracker.csv from net open legs
-└── irpf_report/            Annual IRPF BRL report with BCB PTAX conversion
+├── irpf_report/            Annual IRPF BRL report with BCB PTAX conversion
+├── btg_parser/             BTG extrato XLSX parser
+│   ├── sheet_parser.py     Header-based section detection, per-sheet parsing
+│   ├── account_detect.py   BTG-Opções / BTG-Geral detection from filename
+│   ├── writer.py           Per-account canonical CSV output
+│   └── merger.py           Merge accounts into *_all.csv
+└── web/                    Read-only dashboard (FastAPI backend)
+    ├── server.py           FastAPI app, router registration
+    ├── readers/             One reader per data source (ibkr_csv, trades_reader,
+    │                        patrimonio_reader, history_jsonl, macro, scanner, ...)
+    └── routers/             One FastAPI router per tab (account, trades,
+                             patrimonio, history, scanner, dividends, macro)
+
+frontend/                   Vite + React dashboard UI
+├── src/components/          One component per dashboard tab/panel
+└── src/hooks/useApi.js      Polling fetch hook for /api/* endpoints
 
 config/
 ├── dividend_portfolio.yaml BR + US dividend assets with min_dy and ceiling_method
+└── patrimonio_targets.yaml Allocation targets for the Patrimônio tab
 
 data/
 ├── stocks/1D/              Local OHLC CSVs per symbol
-├── ibkr/                   Trade history, Flex exports, PTAX cache (gitignored)
+├── ibkr/                   Trade history, Flex exports (gitignored)
+├── btg/                    Canonical BTG positions/trades/renda-fixa (gitignored)
+├── cache/ptax/             BCB PTAX rate cache (gitignored)
 └── dividends/              Dividend data cache (24h TTL)
 
 docs/
 ├── architecture/           Per-module architecture docs
-├── ai/tasks/               Agent task files (T01–T11)
+├── ai/tasks/               Agent task files (T01–T15)
 ├── ai/skills/              Reusable agent skill definitions
 ├── ai/prompts/             Session bootstrap and workflow prompts
 └── runbooks/               Operational runbooks
@@ -473,5 +548,5 @@ just check                          # format + lint + type-check + test
 | IRPF report | `docs/architecture/irpf-report.md` |
 | Daily report runbook | `docs/runbooks/daily-market-report.md` |
 | Local setup | `docs/runbooks/local-setup.md` |
-| Agent tasks (T01–T11) | `docs/ai/tasks/` |
+| Agent tasks (T01–T15) | `docs/ai/tasks/` |
 | Flex Query setup guide | `docs/ai/tasks/GUIDE-flex-query-setup.md` |
