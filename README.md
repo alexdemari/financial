@@ -33,7 +33,9 @@ Install frontend dependencies once with `cd frontend && npm install`. Then run
 `just web-dev` and open <http://localhost:5173>.
 
 Dashboard reads existing report files only. It does not run portfolio or scanner
-jobs and shows source timestamps or setup commands when data is missing.
+jobs and shows source timestamps or setup commands when data is missing. The
+Trades tab merges realized IBKR and BTG operations without converting currencies;
+filters run locally in the browser.
 
 ---
 

@@ -1,6 +1,6 @@
 # Task T13: Dashboard — Aba "Trades Realizados" (IBKR + BTG unificados)
 
-**Status:** Planned
+**Status:** Complete
 **Skill:** add-feature
 **Scope:** `src/web/readers/trades_reader.py` (new), `src/web/routers/trades.py` (new), `frontend/src/components/TradesTable.jsx` (new)
 **Effort:** S

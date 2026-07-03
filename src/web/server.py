@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from web.readers.common import PROJECT_ROOT, file_mtime
 from web.readers.ibkr_csv import latest_ibkr_csv
-from web.routers import account, dividends, history, macro, scanner
+from web.routers import account, dividends, history, macro, scanner, trades
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -22,7 +22,7 @@ if os.environ.get("WEB_DEV_CORS") == "1":
         allow_methods=["GET"],
         allow_headers=["*"],
     )
-for api_router in (account, history, scanner, dividends, macro):
+for api_router in (account, history, scanner, dividends, macro, trades):
     app.include_router(api_router.router)
 
 

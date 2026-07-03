@@ -8,9 +8,10 @@ import OptionsTable from "./components/OptionsTable";
 import { Panel } from "./components/Panel";
 import RiskAlerts from "./components/RiskAlerts";
 import ScannerTable from "./components/ScannerTable";
+import TradesTable from "./components/TradesTable";
 import { useApi } from "./hooks/useApi";
 
-const tabs = ["Dashboard", "Portfolio", "History", "Scanner", "Dividends"];
+const tabs = ["Dashboard", "Portfolio", "History", "Scanner", "Dividends", "Trades"];
 export default function App() {
   const [tab, setTab] = useState("Dashboard");
   const account = useApi("/api/account").data;
@@ -21,6 +22,7 @@ export default function App() {
   const scanner = useApi("/api/scanner").data;
   const scannerReport = useApi("/api/report/scanner").data;
   const dividendReport = useApi("/api/report/dividends").data;
+  const trades = useApi("/api/trades").data;
   return <main><header className="top"><div><p>LOCAL · READ ONLY</p><h1>Financial Dashboard</h1></div>
     <nav>{tabs.map((name) => <button className={tab === name ? "active" : ""} onClick={() => setTab(name)} key={name}>{name}</button>)}</nav></header>
     {tab === "Dashboard" && <><AccountCards account={account} /><Panel title="Macro"><MacroStrip macro={macro} /></Panel>
@@ -31,5 +33,6 @@ export default function App() {
     {tab === "History" && <HistoryChart entries={history} />}
     {tab === "Scanner" && <MarkdownView report={scannerReport} command="daily" title="Scanner Report" />}
     {tab === "Dividends" && <MarkdownView report={dividendReport} command="dividends-local" title="Dividend Report" />}
+    {tab === "Trades" && <TradesTable data={trades} />}
   </main>;
 }

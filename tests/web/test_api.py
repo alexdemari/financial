@@ -4,7 +4,7 @@ from web import server
 from web.readers import history_jsonl
 from web.readers.history_jsonl import AccountSnapshot
 from web.readers.ibkr_csv import Position
-from web.routers import account, history
+from web.routers import account, history, trades
 
 
 def test_account_endpoint_returns_hint_without_data(tmp_path, monkeypatch):
@@ -43,6 +43,24 @@ def test_history_forwards_days_parameter(monkeypatch):
     response = TestClient(server.app).get("/api/history?days=17")
     assert response.status_code == 200
     assert received == [17]
+
+
+def test_trades_endpoint_returns_rows_summary_and_sources(monkeypatch):
+    trade_rows = [{"date": "2026-06-01", "currency": "USD", "pnl_realized": 25}]
+    monkeypatch.setattr(trades, "read_all_trades", lambda: trade_rows)
+    monkeypatch.setattr(
+        trades, "read_monthly_summary", lambda rows: [{"trade_count": len(rows)}]
+    )
+    monkeypatch.setattr(trades, "read_trade_sources", lambda: {"ibkr": None})
+
+    response = TestClient(server.app).get("/api/trades")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "trades": trade_rows,
+        "monthly_summary": [{"trade_count": 1}],
+        "sources": {"ibkr": None},
+    }
 
 
 def test_risk_reports_concentration_and_cash_shortfall(monkeypatch):

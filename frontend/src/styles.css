@@ -167,9 +167,54 @@ code { color: #60a5fa; }
 }
 .markdown a { color: #60a5fa; }
 
+.trade-filters {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.trade-filters label {
+  color: #64748b;
+  display: grid;
+  font-size: 11px;
+  font-weight: 600;
+  gap: 4px;
+  text-transform: uppercase;
+}
+.trade-filters select {
+  background: #0f1117;
+  border: 1px solid #2d3139;
+  border-radius: 6px;
+  color: #cbd5e1;
+  min-width: 130px;
+  padding: 7px 10px;
+}
+.trade-summaries {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+.trade-summary {
+  background: #0f1117;
+  border: 1px solid #2d3139;
+  border-radius: 6px;
+  padding: 14px;
+}
+.trade-summary > span { color: #64748b; float: right; }
+.trade-summary dl { margin: 10px 0 0; }
+.trade-summary dl div { display: flex; justify-content: space-between; }
+.trade-summary dt { color: #64748b; }
+.trade-summary dd { margin: 0; }
+.source-updates { color: #64748b; font-size: 11px; margin: 12px 0 0; }
+.mobile-option-details { display: none; }
+
 @media (max-width: 900px) {
   .top { align-items: start; flex-direction: column; gap: 14px; }
   .cards { grid-template-columns: repeat(2, 1fr); }
   .grid { grid-template-columns: 1fr; }
   .macro { grid-template-columns: repeat(2, 1fr); }
+  .option-detail { display: none; }
+  .mobile-option-details { display: table-cell; }
+  .mobile-option-details summary { color: #60a5fa; cursor: pointer; }
+  .mobile-option-details details div { white-space: nowrap; }
 }
