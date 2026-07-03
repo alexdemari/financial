@@ -159,6 +159,54 @@ def test_monthly_summary_groups_by_month_and_currency():
     ]
 
 
+def test_monthly_summary_excludes_trades_with_unknown_pnl():
+    trades = [
+        {"date": "2026-06-01", "currency": "BRL", "pnl_realized": 100},
+        {"date": "2026-06-02", "currency": "BRL", "pnl_realized": None},
+    ]
+
+    summaries = trades_reader.read_monthly_summary(trades)
+
+    assert summaries == [
+        {
+            "month": "2026-06",
+            "currency": "BRL",
+            "gross_gains": 100.0,
+            "gross_losses": 0.0,
+            "net_pnl": 100.0,
+            "trade_count": 1,
+        },
+    ]
+
+
+def test_btg_trade_without_pnl_realized_column_is_returned_with_null_pnl(
+    tmp_path, monkeypatch
+):
+    _set_paths(monkeypatch, tmp_path)
+    _write_csv(
+        trades_reader.BTG_GERAL,
+        [
+            {
+                "date": "2026-06-12",
+                "symbol": "TAEE11",
+                "asset_type": "ACAO",
+                "direction": "BUY",
+                "quantity": 251,
+                "price": 39.77,
+                "proceeds": 9982.27,
+                "commission": 3.0,
+                "currency": "BRL",
+            }
+        ],
+    )
+
+    trades = trades_reader.read_all_trades()
+
+    assert len(trades) == 1
+    assert trades[0]["pnl_realized"] is None
+    assert trades_reader.read_monthly_summary(trades) == []
+
+
 def test_merged_trades_sorted_by_date_descending(tmp_path, monkeypatch):
     _set_paths(monkeypatch, tmp_path)
     _write_csv(trades_reader.IBKR_HISTORY, [_ibkr_trade(date="2026-06-01")])

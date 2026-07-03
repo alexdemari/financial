@@ -89,7 +89,9 @@ export default function TradesTable({ data }) {
           <td><span className={`asset-badge badge-${trade.asset_type.toLowerCase()}`}>{trade.asset_type}</span></td>
           <td>{trade.direction}</td><td>{trade.quantity}</td><td>{money(trade.price, trade.currency)}</td>
           <td>{money(trade.proceeds, trade.currency)}</td>
-          <td className={trade.pnl_realized >= 0 ? "pos" : "neg"}>{money(trade.pnl_realized, trade.currency)}</td>
+          <td className={trade.pnl_realized == null ? "" : trade.pnl_realized >= 0 ? "pos" : "neg"}>
+            {trade.pnl_realized == null ? "—" : money(trade.pnl_realized, trade.currency)}
+          </td>
           <td className="option-detail">{trade.strike ?? "—"}</td><td className="option-detail">{trade.expiration ?? "—"}</td>
           <td className="option-detail">{trade.strategy ?? "—"}</td>
           <td className="mobile-option-details">{trade.asset_type === "OPT" ? <details>

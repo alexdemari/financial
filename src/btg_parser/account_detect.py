@@ -9,15 +9,22 @@ KNOWN_ALIASES = {
 }
 
 
+class UnknownAccountError(ValueError):
+    """Raised when a filename doesn't match a known BTG account alias."""
+
+
 def detect_account(filepath: Path) -> str:
-    """Detect account alias from filename keywords, defaulting to BTG-Unknown."""
+    """Detect account alias from filename keywords.
+
+    Raises UnknownAccountError if no keyword matches — writer/merger only
+    know how to route BTG-Opções and BTG-Geral, so a file that can't be
+    classified must not proceed to produce output the dashboard never reads.
+    """
     stem = filepath.stem.lower()
     for keyword, alias in KNOWN_ALIASES.items():
         if keyword in stem:
             return alias
-    print(
-        f"⚠ Cannot detect account for '{filepath.name}'.\n"
-        f"  Rename to include '_opcoes' or '_geral' in the filename.\n"
-        f"  Defaulting to 'BTG-Unknown'."
+    raise UnknownAccountError(
+        f"Cannot detect account for '{filepath.name}'. "
+        f"Rename to include '_opcoes' or '_geral' in the filename."
     )
-    return "BTG-Unknown"

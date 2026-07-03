@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from btg_parser.account_detect import detect_account
+from btg_parser.account_detect import UnknownAccountError, detect_account
 from btg_parser.merger import write_merged_outputs
 from btg_parser.sheet_parser import WorkbookData, parse_workbook
 from btg_parser.writer import write_account_outputs
@@ -27,13 +27,21 @@ def run(input_dir: Path, output_dir: Path) -> None:
 
     by_account: dict[str, list[WorkbookData]] = {}
     for filepath in xlsx_files:
-        account = detect_account(filepath)
+        try:
+            account = detect_account(filepath)
+        except UnknownAccountError as error:
+            print(f"Skipping {filepath.name}: {error}")
+            continue
         data = parse_workbook(filepath, account)
         by_account.setdefault(account, []).append(data)
         print(
             f"Parsed {filepath.name} ({account}): "
             f"{len(data.positions)} positions, {len(data.trades)} trades"
         )
+
+    if not by_account:
+        print("No files could be classified into a known BTG account. Nothing written.")
+        return
 
     all_workbooks: list[WorkbookData] = []
     for account, workbooks in by_account.items():

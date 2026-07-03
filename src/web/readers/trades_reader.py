@@ -24,7 +24,7 @@ class TradeRow:
     price: float
     proceeds: float
     commission: float
-    pnl_realized: float
+    pnl_realized: float | None
     currency: str
     strategy: str | None
     option_type: str | None
@@ -67,9 +67,16 @@ def _read_btg_trades(path: Path, broker: str) -> list[dict]:
 
 
 def read_monthly_summary(trades: list[dict]) -> list[dict]:
-    """Aggregate gains and losses by calendar month and currency."""
+    """Aggregate gains and losses by calendar month and currency.
+
+    Trades with unknown pnl_realized (e.g. BTG movimentações, which never
+    report per-trade P&L) are excluded — counting them as zero-P&L would
+    misrepresent unknown outcomes as break-even and inflate trade_count.
+    """
     summaries: dict[tuple[str, str], dict] = {}
     for trade in trades:
+        if trade["pnl_realized"] is None:
+            continue
         month = str(trade["date"])[:7]
         currency = str(trade["currency"])
         summary = summaries.setdefault(
@@ -133,7 +140,7 @@ def _ibkr_row_to_trade(row: pd.Series) -> TradeRow:
         price=_float(row.get("price")),
         proceeds=_float(row.get("proceeds")),
         commission=_float(row.get("commission")),
-        pnl_realized=_float(row.get("pnl_realized")),
+        pnl_realized=_optional_float(row.get("pnl_realized")),
         currency=_text(row.get("currency")) or "USD",
         strategy=_text(row.get("strategy")),
         option_type=_text(row.get("option_type")),
@@ -155,7 +162,7 @@ def _btg_row_to_trade(row: pd.Series, broker: str) -> TradeRow:
         price=_float(row.get("price")),
         proceeds=_float(row.get("proceeds")),
         commission=_float(row.get("commission")),
-        pnl_realized=_float(row.get("pnl_realized")),
+        pnl_realized=_optional_float(row.get("pnl_realized")),
         currency=_text(row.get("currency")) or "BRL",
         strategy=_text(row.get("strategy")),
         option_type=_text(row.get("option_type")),
