@@ -72,6 +72,131 @@ def test_fetch_retries_on_recoverable_error(
     assert request_count == 4
 
 
+def test_fetch_retries_on_send_request_recoverable_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    responses = iter(
+        [
+            _error_response("1001", "try again shortly"),
+            _SEND_SUCCESS,
+            _STATEMENT,
+        ]
+    )
+    request_count = 0
+
+    def fake_get(_: str) -> bytes:
+        nonlocal request_count
+        request_count += 1
+        return next(responses)
+
+    monkeypatch.setattr(flex_fetcher, "_get", fake_get)
+    output_path = tmp_path / "flex_latest.xml"
+
+    result = flex_fetcher.fetch_flex_query(output_path)
+
+    assert result == output_path
+    assert output_path.read_bytes() == _STATEMENT
+    assert request_count == 3
+
+
+def test_fetch_uses_existing_file_after_send_request_recoverable_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output_path = tmp_path / "flex_latest.xml"
+    output_path.write_bytes(b"<existing />")
+    monkeypatch.setattr(
+        flex_fetcher, "_get", lambda _: _error_response("1001", "try again shortly")
+    )
+
+    result = flex_fetcher.fetch_flex_query(output_path, max_retries=1)
+
+    assert result is None
+    assert output_path.read_bytes() == b"<existing />"
+    captured = capsys.readouterr().out
+    assert "temporarily unavailable" in captured
+    assert "Using existing" in captured
+
+
+def test_fetch_raises_after_send_request_recoverable_error_without_existing_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        flex_fetcher, "_get", lambda _: _error_response("1001", "try again shortly")
+    )
+
+    with pytest.raises(RuntimeError, match="No existing .* found to reuse"):
+        flex_fetcher.fetch_flex_query(tmp_path / "flex_latest.xml", max_retries=1)
+
+
+def test_fetch_retries_on_statement_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    responses = iter([_SEND_SUCCESS, TimeoutError("timed out"), _STATEMENT])
+    request_count = 0
+
+    def fake_get(_: str) -> bytes:
+        nonlocal request_count
+        request_count += 1
+        response = next(responses)
+        if isinstance(response, BaseException):
+            raise response
+        return response
+
+    monkeypatch.setattr(flex_fetcher, "_get", fake_get)
+    output_path = tmp_path / "flex_latest.xml"
+
+    result = flex_fetcher.fetch_flex_query(output_path)
+
+    assert result == output_path
+    assert output_path.read_bytes() == _STATEMENT
+    assert request_count == 3
+
+
+def test_fetch_uses_existing_file_after_repeated_statement_timeout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output_path = tmp_path / "flex_latest.xml"
+    output_path.write_bytes(b"<existing />")
+    responses = iter([_SEND_SUCCESS, TimeoutError("timed out")])
+
+    def fake_get(_: str) -> bytes:
+        response = next(responses)
+        if isinstance(response, BaseException):
+            raise response
+        return response
+
+    monkeypatch.setattr(flex_fetcher, "_get", fake_get)
+
+    result = flex_fetcher.fetch_flex_query(output_path, max_retries=1)
+
+    assert result is None
+    assert output_path.read_bytes() == b"<existing />"
+    captured = capsys.readouterr().out
+    assert "Using existing" in captured
+    assert str(output_path) in captured
+
+
+def test_fetch_raises_after_repeated_statement_timeout_without_existing_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    responses = iter([_SEND_SUCCESS, TimeoutError("timed out")])
+
+    def fake_get(_: str) -> bytes:
+        response = next(responses)
+        if isinstance(response, BaseException):
+            raise response
+        return response
+
+    monkeypatch.setattr(flex_fetcher, "_get", fake_get)
+
+    with pytest.raises(RuntimeError, match="No existing .* found to reuse"):
+        flex_fetcher.fetch_flex_query(tmp_path / "flex_latest.xml", max_retries=1)
+
+
 def test_fetch_returns_none_on_data_not_ready(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -95,6 +220,19 @@ def test_fetch_raises_on_token_expiry(
     )
 
     with pytest.raises(RuntimeError, match="Flex token expired"):
+        flex_fetcher.fetch_flex_query(tmp_path / "flex_latest.xml")
+
+
+def test_fetch_raises_actionable_error_on_configuration_lockout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        flex_fetcher,
+        "_get",
+        lambda _: _error_response("1025", "Too many failed attempts"),
+    )
+
+    with pytest.raises(RuntimeError, match="Review IBKR_FLEX_TOKEN"):
         flex_fetcher.fetch_flex_query(tmp_path / "flex_latest.xml")
 
 

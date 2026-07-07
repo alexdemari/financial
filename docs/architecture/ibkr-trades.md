@@ -134,6 +134,10 @@ append.
 
 - `pnl_realized` is not populated by the incremental API sync (`reqExecutions`
   does not return P&L). Populated by Flex XML only.
+- If IBKR Flex Web Service times out or returns a temporary generation error
+  during the daily fetch, `ibkr-flex-fetch` retries and then reuses an existing
+  `data/ibkr/flex_latest.xml` when available. If no existing XML is present,
+  the command fails rather than silently backfilling from missing data.
 - `open_close` from `reqExecutions` may be absent in older API responses;
   the tracker builder infers open/closed state from net quantity, which is
   more robust than trusting `openCloseIndicator` from the API.
