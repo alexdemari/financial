@@ -58,6 +58,7 @@ market_scanner          → Scanner V3 decisions, rankings, daily report
   macro_calendar        → upcoming US macro events
   exit_monitor          → EXIT / WATCH / HOLD for open options positions
   options_filter        → live options liquidity (yfinance)
+  options_screener      → ranked CSP/CC contract candidates (yfinance, opt-in)
 dividend_tracker        → dividend yield ceiling decisions (BUY / OVERPRICED)
 ibkr_positions          → live portfolio state, risk metrics, HTML/CSV/MD report
 ibkr_trades             → trade history store, options_tracker.csv auto-generation
@@ -215,7 +216,15 @@ The daily report includes:
 5. Top N — DUAL (both signals fresh)
 6. SMC High Conviction watchlist (`profit_factor > 5`, awaiting trigger)
 7. Viable options (optional `--options-filter`, live liquidity data)
-8. Bucket summary + stats
+8. Candidatos para Opções (optional `--options-screener`, ranked CSP/CC contracts
+   with IVR, delta, spread, and monthly return on collateral; DTE 30-45 by
+   default via `--dte-min`/`--dte-max`)
+9. Bucket summary + stats
+
+```bash
+just daily options_filter=true                  # enables --options-screener section
+just daily-options                               # same, dedicated recipe
+```
 
 **Macro context** (injected into report header and LLM prompt):
 
@@ -453,6 +462,7 @@ src/
 │   ├── macro_calendar.py   Upcoming US macro events
 │   ├── exit_monitor.py     Open positions EXIT / WATCH / HOLD
 │   ├── options_filter.py   Live options liquidity (yfinance)
+│   ├── options_screener.py Ranked CSP/CC contract candidates (yfinance, opt-in)
 │   └── llm/                LLM explainer + portfolio context injector
 ├── dividend_tracker/       Dividend yield ceiling decisions + IBKR enrichment
 ├── ibkr_positions/         Live IBKR portfolio report (read-only)
@@ -498,7 +508,7 @@ data/
 
 docs/
 ├── architecture/           Per-module architecture docs
-├── ai/tasks/               Agent task files (T01–T15)
+├── ai/tasks/               Agent task files (T01–T17)
 ├── ai/skills/              Reusable agent skill definitions
 ├── ai/prompts/             Session bootstrap and workflow prompts
 └── runbooks/               Operational runbooks
@@ -548,5 +558,5 @@ just check                          # format + lint + type-check + test
 | IRPF report | `docs/architecture/irpf-report.md` |
 | Daily report runbook | `docs/runbooks/daily-market-report.md` |
 | Local setup | `docs/runbooks/local-setup.md` |
-| Agent tasks (T01–T15) | `docs/ai/tasks/` |
+| Agent tasks (T01–T17) | `docs/ai/tasks/` |
 | Flex Query setup guide | `docs/ai/tasks/GUIDE-flex-query-setup.md` |

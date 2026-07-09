@@ -602,6 +602,7 @@ def render_daily_report(
     options_screener_result: "tuple[list, list[dict[str, str]]] | None" = None,
     dte_min: int = 30,
     dte_max: int = 45,
+    precomputed_top_dfs_by_strategy: "list[tuple[str, pd.DataFrame]] | None" = None,
 ) -> str:
     if generated_at is None:
         generated_at = datetime.now(UTC)
@@ -693,6 +694,11 @@ def render_daily_report(
     else:
         strategies_to_render = [strategy]
 
+    precomputed_lookup = (
+        dict(precomputed_top_dfs_by_strategy)
+        if precomputed_top_dfs_by_strategy is not None
+        else None
+    )
     top_dfs_by_strategy: list[tuple[str, pd.DataFrame]] = []
     for strat in strategies_to_render:
         # Use SMC-specific recommendations for SMC and DUAL sections when available
@@ -702,16 +708,20 @@ def render_daily_report(
             and strat in (RankingStrategy.smc, RankingStrategy.dual)
             else recommendations_df
         )
-        selection = build_candidate_selection(
-            fresh_df, strat_recs, top, max_days, strat
-        )
-        top_dfs_by_strategy.append((strat.value, selection.top_df))
+        if precomputed_lookup is not None and strat.value in precomputed_lookup:
+            top_df = precomputed_lookup[strat.value]
+        else:
+            selection = build_candidate_selection(
+                fresh_df, strat_recs, top, max_days, strat
+            )
+            top_df = selection.top_df
+        top_dfs_by_strategy.append((strat.value, top_df))
         recs_note = " _(recs SMC)_" if strat_recs is smc_recommendations_df else ""
         header = f"## {next_section}. Top {top} — {strat.value.upper()}{recs_note}"
         lines += [
             header,
             "",
-            _top_table(selection.top_df),
+            _top_table(top_df),
             "",
         ]
         next_section += 1
@@ -1083,6 +1093,7 @@ def write_daily_report(
         macro_snapshot = fetch_macro()
 
     options_screener_result: tuple[list, list[dict[str, str]]] | None = None
+    top_dfs_by_strategy: list[tuple[str, pd.DataFrame]] | None = None
     if options_screener:
         fresh_df = filter_fresh_signals(scan_df, max_days, strategy)
         strategies_to_screen = (
@@ -1147,6 +1158,7 @@ def write_daily_report(
         options_screener_result=options_screener_result,
         dte_min=dte_min,
         dte_max=dte_max,
+        precomputed_top_dfs_by_strategy=top_dfs_by_strategy,
     )
 
     from market_scanner.html_report import write_daily_html

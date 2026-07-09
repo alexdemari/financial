@@ -365,9 +365,9 @@ daily universe="data/scanner_universe_filtered.csv" \
       dte_max="45" \
       no_macro="":
     uv run python -m stock_data_manager.main \
-      -f {{ if universe == "options_filter=true" { "data/scanner_universe_filtered.csv" } else { universe } }} -d {{data_dir}}
+      -f {{universe}} -d {{data_dir}}
     uv run python -m market_scanner.scan \
-      --universe-file {{ if universe == "options_filter=true" { "data/scanner_universe_filtered.csv" } else { universe } }} \
+      --universe-file {{universe}} \
       --data-dir {{data_dir}} \
       --ranking-mode recent-event \
       --output reports/market_scanner/scan_daily.csv \
@@ -383,7 +383,7 @@ daily universe="data/scanner_universe_filtered.csv" \
       --smc-min-pf {{smc_min_pf}} \
       --output reports/market_scanner/daily_report.md \
       --output-candidates reports/market_scanner/daily_candidates.csv \
-      {{ if options_filter == "true" { "--options-screener --dte-min " + dte_min + " --dte-max " + dte_max + " --output-options-candidates reports/market_scanner/options_candidates_$(date +%Y-%m-%d).csv" } else { if universe == "options_filter=true" { "--options-screener --dte-min " + dte_min + " --dte-max " + dte_max + " --output-options-candidates reports/market_scanner/options_candidates_$(date +%Y-%m-%d).csv" } else { "" } } }} \
+      {{ if options_filter == "true" { "--options-screener --dte-min " + dte_min + " --dte-max " + dte_max + " --output-options-candidates reports/market_scanner/options_candidates_$(date +%Y-%m-%d).csv" } else { "" } }} \
       --archive-dir reports/market_scanner/daily \
       {{ if no_macro != "" { "--no-macro" } else { "" } }}
     @echo "✓ Daily report: reports/market_scanner/daily_report.md"
@@ -401,9 +401,9 @@ daily-options universe="data/scanner_universe_filtered.csv" \
               dte_max="45" \
               no_macro="":
     uv run python -m stock_data_manager.main \
-      -f {{ if universe == "options_filter=true" { "data/scanner_universe_filtered.csv" } else { universe } }} -d {{data_dir}}
+      -f {{universe}} -d {{data_dir}}
     uv run python -m market_scanner.scan \
-      --universe-file {{ if universe == "options_filter=true" { "data/scanner_universe_filtered.csv" } else { universe } }} \
+      --universe-file {{universe}} \
       --data-dir {{data_dir}} \
       --ranking-mode recent-event \
       --output reports/market_scanner/scan_daily.csv \
