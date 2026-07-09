@@ -45,7 +45,7 @@ def _base_row(**kwargs) -> dict:
         asset_type="OPT",
         option_type="PUT",
         strike=140.0,
-        expiration="2026-07-17",
+        expiration="2099-07-17",
         quantity=-1.0,
         price=2.86,
         proceeds=286.0,
@@ -150,3 +150,144 @@ def test_tracker_builder_open_direction_short(tmp_path: Path):
     row = lines[1].split(";")
     dir_idx = header.index("open_direction")
     assert row[dir_idx] == "V"
+
+
+def test_tracker_builder_ignores_duplicate_api_close_for_closed_position(
+    tmp_path: Path,
+):
+    history = tmp_path / "trades_history.csv"
+    tracker = tmp_path / "options_tracker.csv"
+    _write_history(
+        history,
+        [
+            _base_row(
+                trade_id="FLEX-OPEN",
+                date="2026-06-01",
+                datetime="2026-06-01T15:12:38",
+                symbol="FSLY  260717P00015000",
+                underlying="FSLY",
+                option_type="PUT",
+                strike=15.0,
+                expiration="2099-07-17",
+                quantity=-5.0,
+                price=0.70,
+                proceeds=350.0,
+                open_close="O",
+                source="flex",
+            ),
+            _base_row(
+                trade_id="FLEX-CLOSE",
+                date="2026-07-01",
+                datetime="2026-07-01T09:54:18",
+                symbol="FSLY  260717P00015000",
+                underlying="FSLY",
+                option_type="PUT",
+                strike=15.0,
+                expiration="2099-07-17",
+                quantity=5.0,
+                price=0.20,
+                proceeds=-100.0,
+                open_close="C",
+                source="flex",
+                strategy=None,
+            ),
+            _base_row(
+                trade_id="API-CLOSE",
+                date="2026-07-01",
+                datetime="2026-07-01T13:54:18+00:00",
+                symbol="FSLY  260717P00015000",
+                underlying="FSLY",
+                option_type="P",
+                strike=15.0,
+                expiration="2099-07-17",
+                quantity=5.0,
+                price=0.20,
+                proceeds=100.0,
+                open_close=None,
+                source="api",
+                strategy=None,
+            ),
+        ],
+    )
+
+    count = build_options_tracker(history, tracker)
+
+    assert count == 0
+    result = pd.read_csv(tracker, sep=";")
+    assert result.empty
+
+
+def test_tracker_builder_deduplicates_api_and_flex_open_rows(tmp_path: Path):
+    history = tmp_path / "trades_history.csv"
+    tracker = tmp_path / "options_tracker.csv"
+    _write_history(
+        history,
+        [
+            _base_row(
+                trade_id="FLEX-OPEN",
+                date="2026-07-06",
+                datetime="2026-07-06T14:13:45",
+                symbol="AAPL  260717C00325000",
+                underlying="AAPL",
+                option_type="CALL",
+                strike=325.0,
+                expiration="2099-07-17",
+                quantity=-1.0,
+                price=1.50,
+                proceeds=150.0,
+                open_close="O",
+                source="flex",
+                strategy="covered_call",
+            ),
+            _base_row(
+                trade_id="API-OPEN",
+                date="2026-07-06",
+                datetime="2026-07-06T18:13:45+00:00",
+                symbol="AAPL  260717C00325000",
+                underlying="AAPL",
+                option_type="C",
+                strike=325.0,
+                expiration="2099-07-17",
+                quantity=-1.0,
+                price=1.50,
+                proceeds=-150.0,
+                open_close=None,
+                source="api",
+                strategy=None,
+            ),
+        ],
+    )
+
+    count = build_options_tracker(history, tracker)
+
+    assert count == 1
+    result = pd.read_csv(tracker, sep=";")
+    assert result["underlying"].tolist() == ["AAPL"]
+    assert result["option_type"].tolist() == ["CALL"]
+    assert result["quantity"].tolist() == [1]
+    assert result["entry_date"].tolist() == ["2026-07-06"]
+    assert result["trade_id"].tolist() == ["FLEX-OPEN"]
+    assert result["premium_received"].tolist() == [150.0]
+
+
+def test_tracker_builder_excludes_expired_contracts(tmp_path: Path):
+    history = tmp_path / "trades_history.csv"
+    tracker = tmp_path / "options_tracker.csv"
+    _write_history(
+        history,
+        [
+            _base_row(
+                trade_id="EXPIRED-OPEN",
+                date="2020-01-10",
+                datetime="2020-01-10T09:30:00",
+                expiration="2020-01-17",
+                quantity=-1.0,
+            )
+        ],
+    )
+
+    count = build_options_tracker(history, tracker)
+
+    assert count == 0
+    result = pd.read_csv(tracker, sep=";")
+    assert result.empty

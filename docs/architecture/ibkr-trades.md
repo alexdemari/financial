@@ -92,7 +92,9 @@ src/ibkr_trades/
 `tracker_builder.py` computes net open quantity per contract by summing
 `quantity` across all trades for that contract key
 (`underlying`, `option_type`, `strike`, `expiration`).
-Contracts with `|net_qty| > 0.001` are written as open legs.
+Unexpired contracts with `|net_qty| > 0.001` are written as open legs.
+Expired contracts are excluded even if historical assignment/exercise flows
+leave a non-zero option net quantity.
 
 Output uses the existing semicolon-delimited schema consumed by
 `market_scanner.portfolio.load_open_positions`. Three additive columns

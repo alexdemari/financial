@@ -9,6 +9,17 @@ from ibkr_trades.models import TradeRecord
 _OPT_TYPES = {"OPT", "STK", "ETF"}
 
 
+def _map_option_right(right: str | None) -> str | None:
+    if not right:
+        return None
+    right_upper = right.upper()
+    if right_upper == "C":
+        return "CALL"
+    if right_upper == "P":
+        return "PUT"
+    return right_upper
+
+
 def _format_expiry(s: str | None) -> str | None:
     if not s:
         return None
@@ -71,7 +82,9 @@ def fetch_recent_trades(
                 symbol=contract.localSymbol,
                 underlying=contract.symbol,
                 asset_type=contract.secType,
-                option_type=contract.right if contract.secType == "OPT" else None,
+                option_type=_map_option_right(contract.right)
+                if contract.secType == "OPT"
+                else None,
                 strike=contract.strike if contract.secType == "OPT" else None,
                 expiration=_format_expiry(contract.lastTradeDateOrContractMonth),
                 quantity=quantity,
