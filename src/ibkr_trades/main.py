@@ -16,6 +16,7 @@ from pathlib import Path
 import pandas as pd
 
 from ibkr_trades.flex_parser import parse_flex_xml
+from ibkr_trades.option_types import normalize_option_type
 from ibkr_trades.roll_detector import detect_and_tag_rolls
 from ibkr_trades.store import HISTORY_PATH, append_trades, last_sync_date
 from ibkr_trades.strategy_tagger import tag_strategies
@@ -30,8 +31,13 @@ def _tag_history(path: Path) -> None:
 
     Only fills null roll_id and strategy fields; other columns are untouched.
     This is the sole permitted mutation of stored history rows.
+
+    Also normalizes option_type to CALL/PUT on every run so legacy rows
+    persisted before normalize_option_type existed (raw "C"/"P") self-heal
+    instead of permanently failing roll/strategy matching.
     """
     df = pd.read_csv(path, dtype={"trade_id": str, "roll_id": str, "strategy": str})
+    df["option_type"] = df["option_type"].map(normalize_option_type).fillna("")
     df = detect_and_tag_rolls(df)
     df = tag_strategies(df)
     df.to_csv(path, index=False)

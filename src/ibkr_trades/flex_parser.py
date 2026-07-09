@@ -5,6 +5,7 @@ from datetime import date
 from pathlib import Path
 
 from ibkr_trades.models import TradeRecord
+from ibkr_trades.option_types import normalize_option_type
 
 _ASSET_TYPES = {"OPT", "STK", "ETF"}
 
@@ -24,12 +25,6 @@ def _float_or_none(s: str | None) -> float | None:
         return float(s)
     except ValueError:
         return None
-
-
-def _map_put_call(s: str | None) -> str | None:
-    if not s:
-        return None
-    return "PUT" if s.upper() == "P" else "CALL"
 
 
 def _format_expiry(s: str | None) -> str | None:
@@ -65,7 +60,7 @@ def parse_flex_xml(path: Path) -> list[TradeRecord]:
                 symbol=trade.get("symbol", ""),
                 underlying=trade.get("underlyingSymbol", "") or trade.get("symbol", ""),
                 asset_type=asset_cat,
-                option_type=_map_put_call(trade.get("putCall")),
+                option_type=normalize_option_type(trade.get("putCall")),
                 strike=_float_or_none(trade.get("strike")),
                 expiration=_format_expiry(trade.get("expiry")),
                 quantity=float(trade.get("quantity", 0)),

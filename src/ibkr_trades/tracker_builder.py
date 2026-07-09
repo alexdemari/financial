@@ -7,6 +7,7 @@ from typing import Any
 
 import pandas as pd
 
+from ibkr_trades.option_types import normalize_option_type
 from market_scanner.options_tracker_schema import OPTIONS_TRACKER_COLUMNS
 
 # Additive columns appended after the canonical 26 — exit_monitor ignores them
@@ -60,15 +61,6 @@ def _to_float(value: Any, default: float = 0.0) -> float:
     return float(value)
 
 
-def _normalize_option_type(value: Any) -> str:
-    value_str = _clean_str(value).upper()
-    if value_str == "C":
-        return "CALL"
-    if value_str == "P":
-        return "PUT"
-    return value_str
-
-
 def _valid_trade_id_mask(series: pd.Series) -> pd.Series:
     trade_ids = series.astype("string").str.strip()
     return trade_ids.notna() & ~trade_ids.str.lower().isin(["", "nan", "none", "<na>"])
@@ -83,7 +75,7 @@ def _prepare_options_history(df: pd.DataFrame) -> pd.DataFrame:
     if opts.empty:
         return opts
 
-    opts["option_type"] = opts["option_type"].map(_normalize_option_type)
+    opts["option_type"] = opts["option_type"].map(normalize_option_type).fillna("")
     expiration_dates = pd.to_datetime(opts["expiration"], errors="coerce").dt.date
     opts = opts[expiration_dates.notna() & (expiration_dates >= date.today())].copy()
     if opts.empty:

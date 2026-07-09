@@ -5,19 +5,9 @@ from datetime import date, datetime, timedelta
 from ib_insync import IB, ExecutionFilter
 
 from ibkr_trades.models import TradeRecord
+from ibkr_trades.option_types import normalize_option_type
 
 _OPT_TYPES = {"OPT", "STK", "ETF"}
-
-
-def _map_option_right(right: str | None) -> str | None:
-    if not right:
-        return None
-    right_upper = right.upper()
-    if right_upper == "C":
-        return "CALL"
-    if right_upper == "P":
-        return "PUT"
-    return right_upper
 
 
 def _format_expiry(s: str | None) -> str | None:
@@ -82,7 +72,7 @@ def fetch_recent_trades(
                 symbol=contract.localSymbol,
                 underlying=contract.symbol,
                 asset_type=contract.secType,
-                option_type=_map_option_right(contract.right)
+                option_type=normalize_option_type(contract.right)
                 if contract.secType == "OPT"
                 else None,
                 strike=contract.strike if contract.secType == "OPT" else None,
