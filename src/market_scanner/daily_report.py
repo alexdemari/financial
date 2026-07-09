@@ -35,6 +35,22 @@ _OPTIONS_DISPLAY_COLUMNS = [
     "verdict",
 ]
 
+_OPTIONS_SCREENER_DISPLAY_COLUMNS = [
+    "rank",
+    "symbol",
+    "strategy",
+    "option_type",
+    "strike",
+    "expiration",
+    "dte",
+    "delta",
+    "ivr_approx",
+    "premium",
+    "monthly_return_pct",
+    "spread_pct",
+    "setup",
+]
+
 _PERCENT_COLUMNS = {"expectancy", "avg_mae"}
 
 _FRESH_DISPLAY_COLUMNS = [
@@ -545,6 +561,27 @@ def build_options_section(
     return filter_tradeable(options_df)
 
 
+def build_options_screener_inputs(
+    top_dfs_by_strategy: list[tuple[str, pd.DataFrame]],
+    top: int,
+) -> list[dict]:
+    """Collect unique top scanner rows for the contract-level options screener."""
+    rows: list[dict] = []
+    seen: set[str] = set()
+    for _strategy_name, df in top_dfs_by_strategy:
+        if df.empty:
+            continue
+        for row in df.to_dict(orient="records"):
+            symbol = row.get("symbol")
+            if not symbol or symbol in seen:
+                continue
+            seen.add(symbol)
+            rows.append(row)
+            if len(rows) >= top:
+                return rows
+    return rows
+
+
 def render_daily_report(
     scan_df: pd.DataFrame,
     recommendations_df: pd.DataFrame | None = None,
@@ -561,6 +598,10 @@ def render_daily_report(
     macro_events: bool = True,
     macro_days_ahead: int = 14,
     macro_snapshot: "MacroSnapshot | None" = None,
+    options_screener: bool = False,
+    options_screener_result: "tuple[list, list[dict[str, str]]] | None" = None,
+    dte_min: int = 30,
+    dte_max: int = 45,
 ) -> str:
     if generated_at is None:
         generated_at = datetime.now(UTC)
@@ -714,6 +755,34 @@ def render_daily_report(
         lines += [""]
         next_section += 1
 
+    if options_screener:
+        if options_screener_result is None:
+            from market_scanner.options_screener import screen_options_candidates
+
+            screener_rows = build_options_screener_inputs(
+                top_dfs_by_strategy_smc_first, top
+            )
+            options_screener_result = screen_options_candidates(
+                screener_rows,
+                top_n=top,
+                dte_min=dte_min,
+                dte_max=dte_max,
+                portfolio_path=portfolio_path,
+            )
+        options_candidates, options_exclusions = options_screener_result
+        lines += [
+            f"## {next_section}. Candidatos para Opções ({dte_min}-{dte_max} DTE)",
+            "",
+            "_IVR aproximado — baseado em IV atual vs range de HV 52 semanas. Não substitui IVR real._",
+            "",
+            _options_screener_table(options_candidates),
+            "",
+        ]
+        exclusion_lines = _options_screener_exclusions(options_exclusions)
+        if exclusion_lines:
+            lines += exclusion_lines + [""]
+        next_section += 1
+
     bucket_section = next_section
     stats_section = next_section + 1
 
@@ -798,6 +867,57 @@ def _options_table(options_df: pd.DataFrame) -> str:
         )
     display = display.fillna("—")
     return tabulate(display, headers="keys", tablefmt="github", showindex=False)
+
+
+def _options_screener_table(candidates: list) -> str:
+    if not candidates:
+        return "_Nenhum candidato encontrado com os filtros atuais._"
+
+    rows = []
+    for rank, candidate in enumerate(candidates, start=1):
+        setup = f"{candidate.market_state} / {candidate.adjusted_alignment}"
+        rows.append(
+            {
+                "rank": rank,
+                "symbol": candidate.symbol,
+                "strategy": candidate.strategy,
+                "option_type": candidate.option_type,
+                "strike": candidate.strike,
+                "expiration": candidate.expiration,
+                "dte": candidate.dte,
+                "delta": candidate.delta,
+                "ivr_approx": candidate.ivr_approx,
+                "premium": candidate.premium,
+                "monthly_return_pct": candidate.monthly_return_pct,
+                "spread_pct": candidate.spread_pct,
+                "setup": setup,
+            }
+        )
+
+    display = pd.DataFrame(rows)
+    display = display.loc[:, _OPTIONS_SCREENER_DISPLAY_COLUMNS].copy()
+    display["strike"] = display["strike"].map(lambda v: f"${float(v):.2f}")
+    display["delta"] = display["delta"].map(lambda v: f"{float(v):.2f}")
+    display["ivr_approx"] = display["ivr_approx"].map(
+        lambda v: f"{float(v):.0f}" if pd.notna(v) else "—"
+    )
+    display["premium"] = display["premium"].map(lambda v: f"${float(v):.2f}")
+    display["monthly_return_pct"] = display["monthly_return_pct"].map(
+        lambda v: f"{float(v):.2f}%/mês"
+    )
+    display["spread_pct"] = display["spread_pct"].map(lambda v: f"{float(v):.1f}%")
+    return tabulate(display, headers="keys", tablefmt="github", showindex=False)
+
+
+def _options_screener_exclusions(exclusions: list[dict[str, str]]) -> list[str]:
+    if not exclusions:
+        return []
+    lines = ["**Excluídos:**"]
+    for exclusion in exclusions:
+        symbol = exclusion.get("symbol", "—")
+        reason = exclusion.get("reason", "sem motivo informado")
+        lines.append(f"- {symbol} — {reason}")
+    return lines
 
 
 def _fresh_table(fresh_df: pd.DataFrame) -> str:
@@ -931,6 +1051,10 @@ def write_daily_report(
     macro_events: bool = True,
     macro_days_ahead: int = 14,
     macro: bool = True,
+    options_screener: bool = False,
+    dte_min: int = 30,
+    dte_max: int = 45,
+    options_candidates_output: str | Path | None = None,
     llm_explain: bool = False,
     llm_provider: str = DEFAULT_LLM_PROVIDER,
     llm_model: str | None = None,
@@ -958,6 +1082,53 @@ def write_daily_report(
 
         macro_snapshot = fetch_macro()
 
+    options_screener_result: tuple[list, list[dict[str, str]]] | None = None
+    if options_screener:
+        fresh_df = filter_fresh_signals(scan_df, max_days, strategy)
+        strategies_to_screen = (
+            [RankingStrategy.lux, RankingStrategy.smc, RankingStrategy.dual]
+            if strategy is None
+            else [strategy]
+        )
+        top_dfs_by_strategy: list[tuple[str, pd.DataFrame]] = []
+        for strat in strategies_to_screen:
+            strat_recs = (
+                smc_recommendations_df
+                if smc_recommendations_df is not None
+                and strat in (RankingStrategy.smc, RankingStrategy.dual)
+                else recommendations_df
+            )
+            selection = build_candidate_selection(
+                fresh_df, strat_recs, top, max_days, strat
+            )
+            top_dfs_by_strategy.append((strat.value, selection.top_df))
+        smc_first_order = {
+            RankingStrategy.smc.value: 0,
+            RankingStrategy.dual.value: 1,
+            RankingStrategy.lux.value: 2,
+        }
+        top_dfs_by_strategy_smc_first = sorted(
+            top_dfs_by_strategy,
+            key=lambda item: smc_first_order.get(item[0], 99),
+        )
+        screener_rows = build_options_screener_inputs(
+            top_dfs_by_strategy_smc_first, top
+        )
+        from market_scanner.options_screener import (
+            screen_options_candidates,
+            write_candidates_csv,
+        )
+
+        options_screener_result = screen_options_candidates(
+            screener_rows,
+            top_n=top,
+            dte_min=dte_min,
+            dte_max=dte_max,
+            portfolio_path=portfolio_path,
+        )
+        if options_candidates_output is not None:
+            write_candidates_csv(options_screener_result[0], options_candidates_output)
+
     report = render_daily_report(
         scan_df,
         recommendations_df,
@@ -972,6 +1143,10 @@ def write_daily_report(
         macro_events=macro_events,
         macro_days_ahead=macro_days_ahead,
         macro_snapshot=macro_snapshot,
+        options_screener=options_screener,
+        options_screener_result=options_screener_result,
+        dte_min=dte_min,
+        dte_max=dte_max,
     )
 
     from market_scanner.html_report import write_daily_html
@@ -1134,6 +1309,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="Add 'Opções Viáveis' section with live options liquidity from yfinance (default: off)",
     )
     parser.add_argument(
+        "--options-screener",
+        action="store_true",
+        default=False,
+        help="Add ranked CSP/CC options candidates from yfinance (default: off)",
+    )
+    parser.add_argument(
+        "--dte-min",
+        type=int,
+        default=30,
+        help="Minimum DTE for --options-screener contracts (default: 30)",
+    )
+    parser.add_argument(
+        "--dte-max",
+        type=int,
+        default=45,
+        help="Maximum DTE for --options-screener contracts (default: 45)",
+    )
+    parser.add_argument(
+        "--output-options-candidates",
+        default=None,
+        help="Path for --options-screener candidates CSV (default: dated file under reports/market_scanner)",
+    )
+    parser.add_argument(
         "--portfolio-path",
         default=None,
         help="Path to options_tracker.csv for open positions section (optional)",
@@ -1224,6 +1422,19 @@ def main(argv: list[str] | None = None) -> int:
         macro_events=args.macro_events,
         macro_days_ahead=args.macro_days,
         macro=args.macro,
+        options_screener=args.options_screener,
+        dte_min=args.dte_min,
+        dte_max=args.dte_max,
+        options_candidates_output=(
+            args.output_options_candidates
+            if args.output_options_candidates is not None
+            else (
+                f"reports/market_scanner/options_candidates_"
+                f"{datetime.now().strftime('%Y-%m-%d')}.csv"
+                if args.options_screener
+                else None
+            )
+        ),
         llm_explain=args.llm_explain,
         llm_provider=args.llm_provider,
         llm_model=args.llm_model,

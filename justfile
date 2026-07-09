@@ -270,6 +270,7 @@ daily-report scan="reports/market_scanner/scan_daily.csv" \
              max_days="2" top="20" strategy="all" \
              smc_watchlist_days="10" smc_min_pf="5.0" \
              options_filter="false" \
+             dte_min="30" dte_max="45" \
              portfolio_path="" \
              output="reports/market_scanner/daily_report.md":
     uv run python -m market_scanner.daily_report \
@@ -281,7 +282,7 @@ daily-report scan="reports/market_scanner/scan_daily.csv" \
       --strategy {{strategy}} \
       --smc-watchlist-days {{smc_watchlist_days}} \
       --smc-min-pf {{smc_min_pf}} \
-      {{ if options_filter == "true" { "--options-filter" } else { "" } }} \
+      {{ if options_filter == "true" { "--options-screener --dte-min " + dte_min + " --dte-max " + dte_max } else { "" } }} \
       {{ if portfolio_path != "" { "--portfolio-path " + portfolio_path } else { "" } }} \
       --output {{output}}
 
@@ -359,11 +360,14 @@ daily universe="data/scanner_universe_filtered.csv" \
       smc_watchlist_days="10" \
       smc_min_pf="5.0" \
       portfolio="options_tracker.csv" \
+      options_filter="false" \
+      dte_min="30" \
+      dte_max="45" \
       no_macro="":
     uv run python -m stock_data_manager.main \
-      -f {{universe}} -d {{data_dir}}
+      -f {{ if universe == "options_filter=true" { "data/scanner_universe_filtered.csv" } else { universe } }} -d {{data_dir}}
     uv run python -m market_scanner.scan \
-      --universe-file {{universe}} \
+      --universe-file {{ if universe == "options_filter=true" { "data/scanner_universe_filtered.csv" } else { universe } }} \
       --data-dir {{data_dir}} \
       --ranking-mode recent-event \
       --output reports/market_scanner/scan_daily.csv \
@@ -379,9 +383,49 @@ daily universe="data/scanner_universe_filtered.csv" \
       --smc-min-pf {{smc_min_pf}} \
       --output reports/market_scanner/daily_report.md \
       --output-candidates reports/market_scanner/daily_candidates.csv \
+      {{ if options_filter == "true" { "--options-screener --dte-min " + dte_min + " --dte-max " + dte_max + " --output-options-candidates reports/market_scanner/options_candidates_$(date +%Y-%m-%d).csv" } else { if universe == "options_filter=true" { "--options-screener --dte-min " + dte_min + " --dte-max " + dte_max + " --output-options-candidates reports/market_scanner/options_candidates_$(date +%Y-%m-%d).csv" } else { "" } } }} \
       --archive-dir reports/market_scanner/daily \
       {{ if no_macro != "" { "--no-macro" } else { "" } }}
     @echo "✓ Daily report: reports/market_scanner/daily_report.md"
+
+# Daily flow with the contract-level options screener enabled.
+daily-options universe="data/scanner_universe_filtered.csv" \
+              data_dir="data/stocks/1D" \
+              max_days="2" \
+              top="20" \
+              workers="8" \
+              smc_watchlist_days="10" \
+              smc_min_pf="5.0" \
+              portfolio="options_tracker.csv" \
+              dte_min="30" \
+              dte_max="45" \
+              no_macro="":
+    uv run python -m stock_data_manager.main \
+      -f {{ if universe == "options_filter=true" { "data/scanner_universe_filtered.csv" } else { universe } }} -d {{data_dir}}
+    uv run python -m market_scanner.scan \
+      --universe-file {{ if universe == "options_filter=true" { "data/scanner_universe_filtered.csv" } else { universe } }} \
+      --data-dir {{data_dir}} \
+      --ranking-mode recent-event \
+      --output reports/market_scanner/scan_daily.csv \
+      --workers {{workers}}
+    uv run python -m market_scanner.daily_report \
+      --scan reports/market_scanner/scan_daily.csv \
+      --recommendations reports/market_scanner/execution_recommended_rules.csv \
+      $([ -f reports/market_scanner/execution_recommended_rules_smc.csv ] && echo "--recommendations-smc reports/market_scanner/execution_recommended_rules_smc.csv" || true) \
+      $([ -f {{portfolio}} ] && echo "--portfolio-path {{portfolio}}" || true) \
+      --max-days {{max_days}} \
+      --top {{top}} \
+      --smc-watchlist-days {{smc_watchlist_days}} \
+      --smc-min-pf {{smc_min_pf}} \
+      --options-screener \
+      --dte-min {{dte_min}} \
+      --dte-max {{dte_max}} \
+      --output reports/market_scanner/daily_report.md \
+      --output-candidates reports/market_scanner/daily_candidates.csv \
+      --output-options-candidates reports/market_scanner/options_candidates_$(date +%Y-%m-%d).csv \
+      --archive-dir reports/market_scanner/daily \
+      {{ if no_macro != "" { "--no-macro" } else { "" } }}
+    @echo "✓ Relatório com candidatos de opções: reports/market_scanner/daily_report.md"
 
 # Regenera execution_recommended_rules.csv (rodar semanalmente ou após mudanças)
 # exit_rule: all | alignment_break | opposite_signal | bucket_downgrade | bars_5 | bars_10 | bars_20 | late_state

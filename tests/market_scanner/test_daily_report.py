@@ -1,5 +1,6 @@
 import pandas as pd
 
+from market_scanner.options_screener import OptionsCandidate
 from market_scanner.daily_report import (
     RankingStrategy,
     _run_llm_explanation,
@@ -224,6 +225,70 @@ def test_render_markdown_contains_required_sections() -> None:
     assert "DUAL" in md
     assert "Sumário por Bucket" in md
     assert "Stats" in md
+
+
+def test_render_default_does_not_include_options_screener() -> None:
+    scan_df = pd.DataFrame([_make_scan_row("NVDA", lux_days=1)])
+
+    md = render_daily_report(scan_df, None, max_days=2, top=20)
+
+    assert "Candidatos para Opções" not in md
+
+
+def test_render_options_screener_section_with_candidates() -> None:
+    scan_df = pd.DataFrame([_make_scan_row("NVDA", lux_days=1)])
+    candidate = OptionsCandidate(
+        symbol="NVDA",
+        strategy="CSP",
+        expiration="2026-08-14",
+        dte=36,
+        strike=100.0,
+        option_type="PUT",
+        delta=0.24,
+        iv_pct=35.0,
+        ivr_approx=70.0,
+        bid=2.8,
+        ask=3.0,
+        mid=2.9,
+        spread_pct=6.9,
+        premium=2.9,
+        collateral=10_000.0,
+        monthly_return_pct=2.42,
+        market_state="pullback",
+        adjusted_alignment="bullish_aligned",
+        earnings_date=None,
+        score=0.7,
+    )
+
+    md = render_daily_report(
+        scan_df,
+        None,
+        max_days=2,
+        top=20,
+        options_screener=True,
+        options_screener_result=([candidate], []),
+    )
+
+    assert "Candidatos para Opções (30-45 DTE)" in md
+    assert "IVR aproximado" in md
+    assert "NVDA" in md
+    assert "2.42%/mês" in md
+
+
+def test_render_options_screener_empty_state() -> None:
+    scan_df = pd.DataFrame([_make_scan_row("NVDA", lux_days=1)])
+
+    md = render_daily_report(
+        scan_df,
+        None,
+        max_days=2,
+        top=20,
+        options_screener=True,
+        options_screener_result=([], [{"symbol": "NVDA", "reason": "IVR 18 < 30"}]),
+    )
+
+    assert "Nenhum candidato encontrado com os filtros atuais." in md
+    assert "NVDA — IVR 18 < 30" in md
 
 
 def test_render_stats_counts_qualified_before_top_cap() -> None:
