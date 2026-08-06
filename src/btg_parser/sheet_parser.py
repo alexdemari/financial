@@ -30,6 +30,7 @@ ASSET_TYPE_ACOES = "ACAO"
 ASSET_TYPE_OPCOES = "OPT"
 ASSET_TYPE_BDR = "BDR"
 ASSET_TYPE_ALUGUEL = "ALUGUEL"
+ASSET_TYPE_PREVIDENCIA = "PREVIDENCIA"
 
 
 def _find_section(rows: list[tuple], header_text: str) -> int | None:
@@ -38,6 +39,23 @@ def _find_section(rows: list[tuple], header_text: str) -> int | None:
         if any(isinstance(cell, str) and header_text in cell for cell in row):
             return i
     return None
+
+
+def _find_all_sections(rows: list[tuple], header_prefix: str) -> list[int]:
+    """Scan rows for every cell starting with header_prefix. Returns row indices.
+
+    Previdência sheets can list several plan/fund sub-sections (e.g.
+    "Posição > 2597233/VGBL"), each needing its own header row and data
+    block, unlike the single-section Ações/Opções/BDR sheets.
+    """
+    return [
+        i
+        for i, row in enumerate(rows)
+        if any(
+            isinstance(cell, str) and cell.strip().startswith(header_prefix)
+            for cell in row
+        )
+    ]
 
 
 def _normalize(text: str) -> str:
@@ -250,6 +268,48 @@ def parse_aluguel_positions(
     return positions
 
 
+def parse_previdencia_positions(
+    rows: list[tuple], account: str, source_file: str, period_end: str | None
+) -> list[BTGPosition]:
+    """Parse fund holdings from one or more "Posição > <plan>/<produto>" sections."""
+    positions = []
+    for section in _find_all_sections(rows, "Posição > "):
+        header_map = _header_map(rows, section + 1)
+        section_label = next(
+            (
+                cell.strip()
+                for cell in rows[section]
+                if isinstance(cell, str) and cell.strip().startswith("Posição > ")
+            ),
+            "",
+        )
+        plano = section_label.removeprefix("Posição > ")
+        for row in _read_table_rows(rows, section + 2):
+            positions.append(
+                BTGPosition(
+                    account=account,
+                    codigo=plano or "",
+                    nome=_text(_cell(row, header_map, "Fundo")) or "",
+                    asset_type=ASSET_TYPE_PREVIDENCIA,
+                    quantidade=_float(_cell(row, header_map, "Quantidade de Cotas"))
+                    or 0.0,
+                    preco_fechamento=_float(_cell(row, header_map, "Cotação Atual R$")),
+                    preco_medio=None,
+                    saldo_bruto=_float(_cell(row, header_map, "Saldo Bruto R$")),
+                    currency="BRL",
+                    tipo_opcao=None,
+                    preco_exercicio=None,
+                    data_exercicio=None,
+                    posicao=None,
+                    taxa_ano_pct=None,
+                    valor_repasse=None,
+                    source_file=source_file,
+                    period_end=period_end,
+                )
+            )
+    return positions
+
+
 def parse_acoes_movimentacoes(
     rows: list[tuple], account: str, source_file: str
 ) -> list[BTGTrade]:
@@ -344,27 +404,31 @@ def parse_opcoes_movimentacoes(
 def parse_cdb_positions(
     rows: list[tuple], account: str, source_file: str, period_end: str | None
 ) -> list[BTGFixedIncome]:
-    section = _find_section(rows, "Posição > CDB")
-    if section is None:
-        return []
-    header_map = _header_map(rows, section + 1)
+    """Parse every "Posição > <instrument>" section in the Renda Fixa sheet.
+
+    The sheet lists CDB, Tesouro Direto (LTN, NTN-B1, NTNB-P, ...) and other
+    instrument types as separate "Posição > X" sections, not just CDB —
+    reading only the first section silently dropped the rest.
+    """
     entries = []
-    for row in _read_table_rows(rows, section + 2):
-        entries.append(
-            BTGFixedIncome(
-                account=account,
-                emissor=_text(_cell(row, header_map, "Emissor")) or "",
-                ativo=_text(_cell(row, header_map, "Ativo")) or "",
-                emissao=_date_text(_cell(row, header_map, "Emissão")),
-                vencimento=_date_text(_cell(row, header_map, "Vencimento")),
-                quantidade=_float(_cell(row, header_map, "Quantidade")),
-                preco=_float(_cell(row, header_map, "Preço R$")),
-                saldo_bruto=_float(_cell(row, header_map, "Saldo Bruto R$")),
-                saldo_liquido=_float(_cell(row, header_map, "Saldo Líquido R$")),
-                currency="BRL",
-                source_file=source_file,
+    for section in _find_all_sections(rows, "Posição > "):
+        header_map = _header_map(rows, section + 1)
+        for row in _read_table_rows(rows, section + 2):
+            entries.append(
+                BTGFixedIncome(
+                    account=account,
+                    emissor=_text(_cell(row, header_map, "Emissor")) or "",
+                    ativo=_text(_cell(row, header_map, "Ativo")) or "",
+                    emissao=_date_text(_cell(row, header_map, "Emissão")),
+                    vencimento=_date_text(_cell(row, header_map, "Vencimento")),
+                    quantidade=_float(_cell(row, header_map, "Quantidade")),
+                    preco=_float(_cell(row, header_map, "Preço R$")),
+                    saldo_bruto=_float(_cell(row, header_map, "Saldo Bruto R$")),
+                    saldo_liquido=_float(_cell(row, header_map, "Saldo Líquido R$")),
+                    currency="BRL",
+                    source_file=source_file,
+                )
             )
-        )
     return entries
 
 
@@ -438,6 +502,7 @@ class WorkbookData:
     fixed_income: list[BTGFixedIncome]
     proventos: list[BTGProvento]
     conta_corrente: list[BTGContaCorrenteMovimento]
+    period_end: str | None = None
 
 
 def parse_workbook(path: Path, account: str) -> WorkbookData:
@@ -470,6 +535,13 @@ def parse_workbook(path: Path, account: str) -> WorkbookData:
         rf_rows = list(workbook["Renda Fixa"].iter_rows(values_only=True))
         fixed_income += parse_cdb_positions(rf_rows, account, source_file, period_end)
 
+    for sheet_name in ("Previdência Externa", "Previdência Individual"):
+        if sheet_name in workbook.sheetnames:
+            prev_rows = list(workbook[sheet_name].iter_rows(values_only=True))
+            positions += parse_previdencia_positions(
+                prev_rows, account, source_file, period_end
+            )
+
     if "Valores em Trânsito" in workbook.sheetnames:
         vt_rows = list(workbook["Valores em Trânsito"].iter_rows(values_only=True))
         proventos += parse_proventos_futuros(vt_rows, account, source_file)
@@ -485,4 +557,5 @@ def parse_workbook(path: Path, account: str) -> WorkbookData:
         fixed_income=fixed_income,
         proventos=proventos,
         conta_corrente=conta_corrente,
+        period_end=period_end,
     )

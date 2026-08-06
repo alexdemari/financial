@@ -107,3 +107,72 @@ def renda_variavel_rows() -> list[list]:
         ],
         ["Total de Compras", "", "", "", "", "", "", "", 0, ""],
     ]
+
+
+def renda_fixa_rows() -> list[list]:
+    """Two "Posição > X" sub-sections, mirroring CDB + Tesouro Direto blocks."""
+    header = [
+        "Emissor",
+        "Ativo",
+        "Emissão",
+        "Vencimento",
+        "Quantidade",
+        "Preço R$",
+        "Saldo Bruto R$",
+        "Saldo Líquido R$",
+    ]
+    return [
+        ["Posições"],
+        ["Posição > CDB"],
+        header,
+        [
+            "BANCO BTG PACTUAL S A",
+            "CDB-CDBC25EUWI3",
+            "2025-12-30",
+            "2027-12-30",
+            30602,
+            0.01082,
+            331.12,
+            326.1,
+        ],
+        ["Total", "", "", "", "", "", 331.12, 326.1],
+        [None],
+        ["Posição > TESOURO DIRETO - LTN"],
+        header,
+        [
+            "BACEN-BANCO CENTRAL DO BRASIL - RJ",
+            "LTN",
+            "2024-01-05",
+            "2028-01-01",
+            2,
+            830.81,
+            1661.62,
+            1631.41,
+        ],
+        ["Total", "", "", "", "", "", 1661.62, 1631.41],
+    ]
+
+
+def previdencia_rows() -> list[list]:
+    header = [
+        "Fundo",
+        "Data Referência",
+        "Quantidade de Cotas",
+        "Cotação Atual R$",
+        "Saldo Bruto R$",
+    ]
+    return [
+        ["Posições"],
+        ["Plano > 2597233/VGBL"],
+        ["N° Cert.", "Produto"],
+        [2597233, "VGBL"],
+        ["Posição > 2597233/VGBL"],
+        header,
+        [
+            "EMPIRICUS FOF SUPERPREVIDÊNCIA ICATU FIM",
+            "2026-06-30",
+            75787.92,
+            1.57745,
+            119551.68,
+        ],
+    ]

@@ -1,6 +1,6 @@
 # Task T12: Local Web Dashboard — Phase 1 (Read-Only)
 
-**Status:** Planned
+**Status:** Completed
 **Skill:** add-feature
 **Scope:** `src/web/` (new module), `frontend/` (new), `justfile`
 **Effort:** L

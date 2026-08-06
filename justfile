@@ -609,15 +609,6 @@ ibkr-reconcile output-dir="reports/output" host="" port="7496":
         --tracker options_tracker.csv \
         --output  {{output-dir}}/reconciliation_$(date +%Y-%m-%d).md
 
-ibkr-option-chain symbol expiration max_strikes="10" option-type="BOTH" strike-step="5":
-    uv run python -m src.ibkr.main \
-      --symbol {{symbol}} \
-      --expiration {{expiration}} \
-      --max-strikes {{max_strikes}} \
-      --option-type {{option-type}} \
-      --strike-step {{strike-step}}
-
-
 # ── IRPF ─────────────────────────────────────────────────────────────────────
 
 # Generate BRL IRPF report, preferring canonical history over the legacy export

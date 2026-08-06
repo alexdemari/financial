@@ -10,10 +10,19 @@ from btg_parser.writer import write_account_outputs
 
 
 def _combine(workbooks: list[WorkbookData]) -> WorkbookData:
+    """Combine workbooks for one account.
+
+    Positions and fixed_income are point-in-time snapshots, not history:
+    taking them from every uploaded statement would keep stocks/CDBs/Tesouro
+    Direto that were already sold or matured by a later statement. Only the
+    latest statement's snapshot is kept; trades/proventos/conta_corrente are
+    movement history and are safe to concatenate across statements.
+    """
+    latest = max(workbooks, key=lambda wb: wb.period_end or "")
     return WorkbookData(
-        positions=[p for wb in workbooks for p in wb.positions],
+        positions=latest.positions,
         trades=[t for wb in workbooks for t in wb.trades],
-        fixed_income=[f for wb in workbooks for f in wb.fixed_income],
+        fixed_income=latest.fixed_income,
         proventos=[p for wb in workbooks for p in wb.proventos],
         conta_corrente=[c for wb in workbooks for c in wb.conta_corrente],
     )
