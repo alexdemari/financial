@@ -2,6 +2,7 @@ import { useState } from "react";
 import AccountCards from "./components/AccountCards";
 import AttentionBanner from "./components/AttentionBanner";
 import AllocationChart from "./components/AllocationChart";
+import DividendDecisionTable from "./components/DividendDecisionTable";
 import HistoryChart from "./components/HistoryChart";
 import MacroStrip from "./components/MacroStrip";
 import MarkdownView from "./components/MarkdownView";
@@ -74,7 +75,7 @@ export default function App() {
       <tbody>{positions?.map((p) => <tr key={p.symbol}><td><strong>{p.symbol}</strong></td><td><span className={`asset-badge badge-${p.asset_type.toLowerCase()}`}>{p.asset_type}</span></td><td>{p.quantity}</td><td>${p.market_value.toFixed(2)}</td><td className={p.unrealized_pnl >= 0 ? "pos" : "neg"}>${p.unrealized_pnl.toFixed(2)}</td><td>{(p.weight * 100).toFixed(1)}%</td></tr>)}</tbody></table></Panel></div>}
     {tab === "History" && <HistoryChart entries={history} />}
     {tab === "Scanner" && <ScannerCandidatesTable scanner={scanner} scannerReport={scannerReport} />}
-    {tab === "Dividends" && <MarkdownView report={dividendReport} command="dividends-local" title="Dividend Report" />}
+    {tab === "Dividends" && <><DividendDecisionTable dividendReport={dividendReport} /><MarkdownView report={dividendReport} command="dividends-local" title="Dividend Report" /></>}
     {tab === "Trades" && <TradesTable data={trades} />}
   </main>;
 }
