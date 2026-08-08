@@ -1,3 +1,26 @@
+const cellStyle = {
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  padding: "8px 16px",
+  borderRight: "1px solid #2d3139",
+};
+const lastCellStyle = { ...cellStyle, borderRight: "none" };
+const labelStyle = { fontSize: "11px", color: "#64748b", marginBottom: "4px" };
+const bannerStyle = {
+  display: "flex",
+  flexDirection: "row",
+  alignItems: "stretch",
+  background: "#151820",
+  color: "#e2e8f0",
+  fontSize: "13px",
+  width: "100%",
+  borderBottom: "1px solid #2d3139",
+};
+const green = { fontWeight: 600, color: "#34d399" };
+const amber = { fontWeight: 600, color: "#fcd34d" };
+const muted = { color: "#64748b" };
+
 export default function AttentionBanner({ risk, scanner, positions, recentHistory }) {
   // --- Cell 1: DTE alert ---
   const exitOptCount =
@@ -41,12 +64,11 @@ export default function AttentionBanner({ risk, scanner, positions, recentHistor
     if (prev.nlv != null && last.nlv != null && prev.nlv !== 0) {
       const pct = ((last.nlv - prev.nlv) / prev.nlv) * 100;
       const sign = pct >= 0 ? "+" : "";
-      const colorClass = pct >= 0 ? "text-green-400" : "text-red-400";
       const arrow = pct >= 0 ? "↑" : "↓";
       nlvCell = (
-        <div className="flex flex-col items-center px-4 py-2 border-r border-slate-600">
-          <span className="text-xs text-slate-400 mb-1">NLV vs ontem</span>
-          <span className={`font-semibold ${colorClass}`}>
+        <div style={cellStyle}>
+          <span style={labelStyle}>NLV vs ontem</span>
+          <span style={pct >= 0 ? green : { fontWeight: 600, color: "#f87171" }}>
             {arrow} {sign}{pct.toFixed(1)}%
           </span>
         </div>
@@ -58,25 +80,25 @@ export default function AttentionBanner({ risk, scanner, positions, recentHistor
   const riskAlertCount = risk?.alerts?.length ?? null;
 
   return (
-    <div className="flex flex-row items-stretch bg-slate-800 text-white text-sm w-full border-b border-slate-700">
+    <div style={bannerStyle}>
       {/* Cell 1: DTE */}
-      <div className="flex flex-col items-center px-4 py-2 border-r border-slate-600">
-        <span className="text-xs text-slate-400 mb-1">Opções DTE críticas</span>
+      <div style={cellStyle}>
+        <span style={labelStyle}>Opções DTE críticas</span>
         {positions === null ? (
-          <span className="text-slate-500">carregando...</span>
+          <span style={muted}>carregando...</span>
         ) : exitOptCount > 0 ? (
-          <span className="font-semibold text-amber-400">
+          <span style={amber}>
             ⚠ {exitOptCount} {exitOptCount === 1 ? "opção" : "opções"} DTE≤7 (EXIT)
           </span>
         ) : (
-          <span className="font-semibold text-green-400">✓ Nenhuma opção crítica</span>
+          <span style={green}>✓ Nenhuma opção crítica</span>
         )}
       </div>
 
       {/* Cell 2: Scanner freshness */}
-      <div className="flex flex-col items-center px-4 py-2 border-r border-slate-600">
-        <span className="text-xs text-slate-400 mb-1">Scanner</span>
-        <span className={`font-semibold ${scannerAmber ? "text-amber-400" : "text-green-400"}`}>
+      <div style={cellStyle}>
+        <span style={labelStyle}>Scanner</span>
+        <span style={scannerAmber ? amber : green}>
           {scannerAmber && scanner !== null && scanner !== undefined ? `⚠ ${scannerLabel}` : scannerLabel}
         </span>
       </div>
@@ -85,14 +107,14 @@ export default function AttentionBanner({ risk, scanner, positions, recentHistor
       {nlvCell}
 
       {/* Cell 4: Risk alerts */}
-      <div className="flex flex-col items-center px-4 py-2">
-        <span className="text-xs text-slate-400 mb-1">Alertas de risco</span>
+      <div style={lastCellStyle}>
+        <span style={labelStyle}>Alertas de risco</span>
         {riskAlertCount === null ? (
-          <span className="text-slate-500">carregando...</span>
+          <span style={muted}>carregando...</span>
         ) : riskAlertCount === 0 ? (
-          <span className="font-semibold text-green-400">— Nenhum alerta</span>
+          <span style={green}>— Nenhum alerta</span>
         ) : (
-          <span className="font-semibold text-amber-400">⚠ {riskAlertCount} alertas de risco</span>
+          <span style={amber}>⚠ {riskAlertCount} alertas de risco</span>
         )}
       </div>
     </div>
