@@ -1,5 +1,6 @@
 import { useState } from "react";
 import AccountCards from "./components/AccountCards";
+import AttentionBanner from "./components/AttentionBanner";
 import AllocationChart from "./components/AllocationChart";
 import HistoryChart from "./components/HistoryChart";
 import MacroStrip from "./components/MacroStrip";
@@ -25,8 +26,10 @@ export default function App() {
   const scannerReport = useApi("/api/report/scanner").data;
   const dividendReport = useApi("/api/report/dividends").data;
   const trades = useApi("/api/trades").data;
-  return <main><header className="top"><div><p>LOCAL · READ ONLY</p><h1>Financial Dashboard</h1></div>
-    <nav>{tabs.map((name) => <button className={tab === name ? "active" : ""} onClick={() => setTab(name)} key={name}>{name}</button>)}</nav></header>
+  const recentHistory = useApi("/api/history?days=2").data;
+  return <main><header className="top"><div><p>LOCAL · READ ONLY</p><h1>Financial Dashboard</h1></div></header>
+    <AttentionBanner risk={risk} scanner={scanner} positions={positions} recentHistory={recentHistory} />
+    <nav>{tabs.map((name) => <button className={tab === name ? "active" : ""} onClick={() => setTab(name)} key={name}>{name}</button>)}</nav>
     {tab === "Patrimônio" && <PatrimonioView data={patrimonio} />}
     {tab === "Dashboard" && <><AccountCards account={account} /><Panel title="Macro"><MacroStrip macro={macro} /></Panel>
       <div className="grid"><OptionsTable positions={positions} updated={account?.last_updated} /><RiskAlerts risk={risk} /></div><ScannerTable scanner={scanner} /></>}
