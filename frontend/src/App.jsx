@@ -8,6 +8,7 @@ import OptionsTable from "./components/OptionsTable";
 import PatrimonioView from "./components/PatrimonioView";
 import { Panel } from "./components/Panel";
 import RiskAlerts from "./components/RiskAlerts";
+import ScannerCandidatesTable from "./components/ScannerCandidatesTable";
 import ScannerTable from "./components/ScannerTable";
 import TradesTable from "./components/TradesTable";
 import { useApi } from "./hooks/useApi";
@@ -34,7 +35,7 @@ export default function App() {
       <table><thead><tr><th>Symbol</th><th>Type</th><th>Qty</th><th>Market Value</th><th>P&L</th><th>Weight</th></tr></thead>
       <tbody>{positions?.map((p) => <tr key={p.symbol}><td><strong>{p.symbol}</strong></td><td><span className={`asset-badge badge-${p.asset_type.toLowerCase()}`}>{p.asset_type}</span></td><td>{p.quantity}</td><td>${p.market_value.toFixed(2)}</td><td className={p.unrealized_pnl >= 0 ? "pos" : "neg"}>${p.unrealized_pnl.toFixed(2)}</td><td>{(p.weight * 100).toFixed(1)}%</td></tr>)}</tbody></table></Panel></div>}
     {tab === "History" && <HistoryChart entries={history} />}
-    {tab === "Scanner" && <MarkdownView report={scannerReport} command="daily" title="Scanner Report" />}
+    {tab === "Scanner" && <ScannerCandidatesTable scanner={scanner} scannerReport={scannerReport} />}
     {tab === "Dividends" && <MarkdownView report={dividendReport} command="dividends-local" title="Dividend Report" />}
     {tab === "Trades" && <TradesTable data={trades} />}
   </main>;
