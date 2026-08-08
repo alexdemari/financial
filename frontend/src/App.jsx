@@ -13,6 +13,12 @@ import TradesTable from "./components/TradesTable";
 import { useApi } from "./hooks/useApi";
 
 const tabs = ["Patrimônio", "Dashboard", "Portfolio", "History", "Scanner", "Dividends", "Trades"];
+
+function isStale(isoString) {
+  if (!isoString) return false;
+  return (new Date() - new Date(isoString)) > 25 * 60 * 60 * 1000;
+}
+
 export default function App() {
   const [tab, setTab] = useState("Patrimônio");
   const patrimonio = useApi("/api/patrimonio").data;
@@ -25,8 +31,37 @@ export default function App() {
   const scannerReport = useApi("/api/report/scanner").data;
   const dividendReport = useApi("/api/report/dividends").data;
   const trades = useApi("/api/trades").data;
+
+  function tabDotColor(name) {
+    if (name === "Scanner" && isStale(scanner?.last_updated)) return "amber";
+    if (name === "Dividends" && isStale(dividendReport?.last_updated)) return "amber";
+    if (name === "Patrimônio" && Object.values(patrimonio?.allocation ?? {}).some((a) => a.severity === "outside")) return "red";
+    return null;
+  }
+
   return <main><header className="top"><div><p>LOCAL · READ ONLY</p><h1>Financial Dashboard</h1></div>
-    <nav>{tabs.map((name) => <button className={tab === name ? "active" : ""} onClick={() => setTab(name)} key={name}>{name}</button>)}</nav></header>
+    <nav>{tabs.map((name) => {
+      const dotColor = tabDotColor(name);
+      return (
+        <button className={tab === name ? "active" : ""} onClick={() => setTab(name)} key={name}>
+          <span style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
+            {name}
+            {dotColor && (
+              <span style={{
+                position: "absolute",
+                top: "-4px",
+                right: "-10px",
+                width: "8px",
+                height: "8px",
+                borderRadius: "50%",
+                backgroundColor: dotColor === "amber" ? "#f59e0b" : "#ef4444",
+                flexShrink: 0,
+              }} />
+            )}
+          </span>
+        </button>
+      );
+    })}</nav></header>
     {tab === "Patrimônio" && <PatrimonioView data={patrimonio} />}
     {tab === "Dashboard" && <><AccountCards account={account} /><Panel title="Macro"><MacroStrip macro={macro} /></Panel>
       <div className="grid"><OptionsTable positions={positions} updated={account?.last_updated} /><RiskAlerts risk={risk} /></div><ScannerTable scanner={scanner} /></>}
