@@ -10,6 +10,13 @@ import pandas as pd
 import yaml
 
 from irpf_report.ptax import CACHE_DIR, get_ptax
+from web.readers.cash_reader import (
+    CashAccount,
+    cash_accounts_are_stale,
+    read_btg_cash_accounts,
+    read_cash_accounts,
+    total_cash_brl,
+)
 from web.readers.common import PROJECT_ROOT
 from web.readers.history_jsonl import read_account_snapshot
 from web.readers.ibkr_csv import read_positions
@@ -31,7 +38,11 @@ ASSET_CLASS_ORDER = (
     "etf_usd",
     "opcoes_usd",
     "caixa",
+    "renda_fixa_liquidez",
+    "reserva",
 )
+
+CASH_SUMMARY_CLASSES = ("caixa", "renda_fixa_liquidez", "reserva")
 
 
 def read_patrimonio(reference_date: date | None = None) -> dict[str, Any]:
@@ -39,44 +50,80 @@ def read_patrimonio(reference_date: date | None = None) -> dict[str, Any]:
     today = reference_date or date.today()
     ptax_rate, ptax_date = _resolve_ptax(today)
     targets = _read_targets()
+    cash_accounts = read_cash_accounts() + read_btg_cash_accounts(BTG_CASH)
+    cash_total_brl = total_cash_brl(cash_accounts)
 
     ibkr = _read_ibkr_account(ptax_rate)
     btg_opcoes = _read_btg_account(BTG_OPCOES_POS, "BTG-Opções")
     btg_geral = _read_btg_account(BTG_GERAL_POS, "BTG-Geral")
     fixed_income = _read_fixed_income()
-    cash = _read_btg_cash()
     proventos = _read_proventos()
 
-    for account_key, account_name in (
-        ("btg_opcoes", "BTG-Opções"),
-        ("btg_geral", "BTG-Geral"),
+    for account, account_name in (
+        (btg_opcoes, "BTG-Opções"),
+        (btg_geral, "BTG-Geral"),
     ):
-        account = btg_opcoes if account_key == "btg_opcoes" else btg_geral
         account["renda_fixa_brl"] = fixed_income["totals_by_account"].get(
             account_name, 0.0
         )
-        account["cash_brl"] = cash["totals_by_account"].get(account_name, 0.0)
-        account["total_brl"] += account["renda_fixa_brl"] + account["cash_brl"]
-        if account["status"] == "no_data" and (
-            account["renda_fixa_brl"] or account["cash_brl"]
-        ):
+        account["total_brl"] += account["renda_fixa_brl"]
+        if account["status"] == "no_data" and account["renda_fixa_brl"]:
             account["status"] = "ok"
             account["hint"] = None
 
-    total_brl = ibkr["nlv_brl"] + btg_opcoes["total_brl"] + btg_geral["total_brl"]
+    total_brl = (
+        ibkr["nlv_brl"]
+        + btg_opcoes["total_brl"]
+        + btg_geral["total_brl"]
+        + cash_total_brl
+    )
     allocation_values = _allocation_values(
-        ibkr, btg_opcoes, btg_geral, fixed_income, cash, ptax_rate
+        ibkr, btg_opcoes, btg_geral, fixed_income, cash_accounts, ptax_rate
     )
     allocation = _compare_to_targets(allocation_values, total_brl, targets)
+    cash_summary_target = targets["cash_total"]
+    cash_summary_brl = sum(
+        allocation_values[asset_class] for asset_class in CASH_SUMMARY_CLASSES
+    )
+    cash_summary_pct = cash_summary_brl / total_brl * 100 if total_brl else 0.0
     currency_mix = _currency_mix(
         ibkr["nlv_brl"],
-        btg_opcoes["total_brl"] + btg_geral["total_brl"],
+        btg_opcoes["total_brl"] + btg_geral["total_brl"] + cash_total_brl,
         total_brl,
         targets,
     )
 
     return {
         "total_brl": total_brl,
+        "cash_accounts": [
+            {
+                "id": account.id,
+                "name": account.name,
+                "category": account.category,
+                "balance_brl": account.balance,
+                "as_of": account.as_of,
+            }
+            for account in cash_accounts
+        ],
+        "cash_total_brl": cash_total_brl,
+        "cash_stale": cash_accounts_are_stale(cash_accounts, today),
+        "cash_summary": {
+            "label": cash_summary_target["label"],
+            "value_brl": cash_summary_brl,
+            "pct_of_total": cash_summary_pct,
+            "target_min": cash_summary_target["target_min"],
+            "target_max": cash_summary_target["target_max"],
+            "status": _target_status(
+                cash_summary_pct,
+                cash_summary_target["target_min"],
+                cash_summary_target["target_max"],
+            ),
+            "severity": _target_severity(
+                cash_summary_pct,
+                cash_summary_target["target_min"],
+                cash_summary_target["target_max"],
+            ),
+        },
         "complete": not (
             ibkr["status"] == "ptax_unavailable"
             or ibkr["status"] == "no_data"
@@ -183,25 +230,6 @@ def _read_fixed_income() -> dict[str, Any]:
     }
 
 
-def _read_btg_cash() -> dict[str, Any]:
-    rows = _read_csv(BTG_CASH)
-    latest_by_account: dict[str, dict[str, Any]] = {}
-    for row in rows:
-        account = _text(row.get("account"))
-        if not account:
-            continue
-        current = latest_by_account.get(account)
-        if current is None or _text(row.get("date")) >= _text(current.get("date")):
-            latest_by_account[account] = row
-    return {
-        "rows": list(latest_by_account.values()),
-        "totals_by_account": {
-            account: _number(row.get("saldo"))
-            for account, row in latest_by_account.items()
-        },
-    }
-
-
 def _read_proventos() -> dict[str, Any]:
     rows = _read_csv(BTG_PROVENTOS)
     normalized = [
@@ -224,7 +252,7 @@ def _allocation_values(
     btg_opcoes: dict[str, Any],
     btg_geral: dict[str, Any],
     fixed_income: dict[str, Any],
-    cash: dict[str, Any],
+    cash_accounts: list[CashAccount],
     ptax_rate: float | None,
 ) -> dict[str, float]:
     values = dict.fromkeys(ASSET_CLASS_ORDER, 0.0)
@@ -238,6 +266,8 @@ def _allocation_values(
             values[asset_class] += value_brl
             ibkr_position_total_brl += value_brl
     values["caixa"] += ibkr["nlv_brl"] - ibkr_position_total_brl
+    for asset_class, value_brl in _cash_totals_by_category(cash_accounts).items():
+        values[asset_class] += value_brl
 
     btg_mapping = {
         "ACAO": "acoes_br",
@@ -251,8 +281,15 @@ def _allocation_values(
             if asset_class:
                 values[asset_class] += _number(position.get("saldo_bruto"))
     values["renda_fixa_br"] = fixed_income["total_brl"]
-    values["caixa"] += sum(cash["totals_by_account"].values())
     return values
+
+
+def _cash_totals_by_category(accounts: list[CashAccount]) -> dict[str, float]:
+    totals = {asset_class: 0.0 for asset_class in CASH_SUMMARY_CLASSES}
+    for account in accounts:
+        category = account.category if account.category in totals else "caixa"
+        totals[category] += account.balance
+    return totals
 
 
 def _compare_to_targets(

@@ -209,12 +209,13 @@ code { color: #60a5fa; }
 .source-updates { color: #64748b; font-size: 11px; margin: 12px 0 0; }
 .mobile-option-details { display: none; }
 
-.patrimonio-cards { grid-template-columns: repeat(4, 1fr); }
+.patrimonio-cards { grid-template-columns: repeat(5, 1fr); }
 .patrimonio-allocation { display: grid; grid-template-columns: minmax(300px, 1fr) minmax(480px, 1.5fr); gap: 20px; }
 .patrimonio-allocation .panel { margin-bottom: 0; }
 .target-within { color: #34d399; font-weight: 700; }
 .target-near { color: #f59e0b; font-weight: 700; }
 .target-outside { color: #f87171; font-weight: 700; }
+.cash-warning { color: #fca5a5; }
 .data-warning {
   background: #3b1414;
   border: 1px solid #7f1d1d;

@@ -67,3 +67,4 @@ options_tracker.csv
 data/ibkr/history.jsonl
 data/ibkr/trades_history.csv
 data/ibkr/options_tracker_manual_backup_*.csv
+config/cash_accounts.yaml

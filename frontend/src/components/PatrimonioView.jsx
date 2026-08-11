@@ -32,7 +32,15 @@ function AccountSection({ title, account, columns }) {
 export default function PatrimonioView({ data }) {
   if (!data) return <div className="empty">Carregando patrimônio…</div>;
   const allocation = Object.entries(data.allocation || {}).map(([key, value]) => ({ key, ...value }));
+  const cashAccounts = data.cash_accounts || [];
+  const cashTotalBrl = data.cash_total_brl || 0;
+  const cashSummary = data.cash_summary || {};
   const chartData = allocation.filter((item) => item.value_brl > 0);
+  const cashLatestAsOf = cashAccounts.reduce((latest, account) => {
+    if (!account.as_of) return latest;
+    if (!latest || account.as_of > latest) return account.as_of;
+    return latest;
+  }, "");
   const ibkrColumns = [
     { key: "symbol", label: "Ativo" },
     { key: "asset_type", label: "Tipo" },
@@ -63,6 +71,12 @@ export default function PatrimonioView({ data }) {
         <small>{data.accounts.btg_opcoes.status === "no_data" ? data.accounts.btg_opcoes.hint : "BRL"}</small></div>
       <div className="card"><span>BTG-Geral</span><strong>{money.format(data.accounts.btg_geral.total_brl)}</strong>
         <small>{data.accounts.btg_geral.status === "no_data" ? data.accounts.btg_geral.hint : "BRL"}</small></div>
+      <div className="card"><span>Caixa BRL</span><strong>{money.format(cashTotalBrl)}</strong>
+        <small className={data.cash_stale ? "cash-warning" : ""}>
+          {data.cash_stale
+            ? "⚠ Caixa desatualizado — edite config/cash_accounts.yaml"
+            : `Atualizado em ${cashLatestAsOf || "—"}`}
+        </small></div>
     </div>
 
     <div className="patrimonio-allocation">
@@ -77,7 +91,14 @@ export default function PatrimonioView({ data }) {
         <div className="table-wrap"><table><thead><tr><th>Classe</th><th>Valor</th><th>Atual</th><th>Meta</th><th>Status</th></tr></thead>
           <tbody>{allocation.map((item) => <tr key={item.key}><td>{item.label}</td><td>{money.format(item.value_brl)}</td>
             <td>{item.pct_of_total.toFixed(1)}%</td><td>{item.target_min}–{item.target_max}%</td>
-            <td className={`target-${item.severity}`}>{statusIcon[item.status]}</td></tr>)}</tbody></table></div>
+            <td className={`target-${item.severity}`}>{statusIcon[item.status]}</td></tr>)}
+          <tr>
+            <td>{cashSummary.label || "Caixa total"}</td>
+            <td>{money.format(cashSummary.value_brl || 0)}</td>
+            <td>{(cashSummary.pct_of_total || 0).toFixed(1)}%</td>
+            <td>≤ {(cashSummary.target_max || 0)}%</td>
+            <td className={`target-${cashSummary.severity || "outside"}`}>{statusIcon[cashSummary.status] || "⚠"}</td>
+          </tr></tbody></table></div>
       </Panel>
     </div>
 

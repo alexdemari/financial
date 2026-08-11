@@ -4,6 +4,7 @@ from datetime import date
 import pandas as pd
 import pytest
 
+from web.readers import cash_reader
 from web.readers import patrimonio_reader
 from web.readers.history_jsonl import AccountSnapshot
 from web.readers.ibkr_csv import Position
@@ -19,6 +20,7 @@ def _configure_paths(monkeypatch, tmp_path):
     monkeypatch.setattr(patrimonio_reader, "BTG_CASH", tmp_path / "cash.csv")
     monkeypatch.setattr(patrimonio_reader, "PTAX_CACHE_DIR", tmp_path / "ptax")
     monkeypatch.setattr(patrimonio_reader, "get_ptax", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(cash_reader, "CONFIG_PATH", tmp_path / "cash_accounts.yaml")
 
 
 def _snapshot(nlv=100.0, cash=20.0):
@@ -206,3 +208,70 @@ def test_empty_btg_output_does_not_crash(monkeypatch, tmp_path):
     result = patrimonio_reader.read_patrimonio()
 
     assert result["accounts"]["btg_opcoes"]["total_brl"] == 0
+
+
+def test_cash_accounts_are_included_in_patrimonio_total(monkeypatch, tmp_path):
+    _configure_paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        patrimonio_reader, "_resolve_ptax", lambda _today: (5.0, "2026-08-11")
+    )
+    monkeypatch.setattr(patrimonio_reader, "read_account_snapshot", lambda: None)
+    monkeypatch.setattr(patrimonio_reader, "read_positions", lambda: [])
+    (tmp_path / "cash.csv").write_text(
+        """
+account,date,descricao,movimentacao,saldo,currency,source_file
+BTG-Geral,2026-08-09,Saldo,200.00,200.00,BRL,btg.xlsx
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "cash_accounts.yaml").write_text(
+        """
+accounts:
+  - id: neon_cc
+    name: Neon
+    institution: Neon
+    currency: BRL
+    category: caixa
+    balance: 1250.00
+    as_of: "2026-08-01"
+  - id: btg_liquidez
+    name: BTG Liquidez
+    institution: BTG
+    currency: BRL
+    category: renda_fixa_liquidez
+    balance: 3750.00
+    as_of: "2026-08-01"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    result = patrimonio_reader.read_patrimonio(date(2026, 8, 11))
+
+    assert result["cash_total_brl"] == pytest.approx(5200)
+    assert result["cash_stale"] is True
+    assert result["cash_accounts"] == [
+        {
+            "id": "neon_cc",
+            "name": "Neon",
+            "category": "caixa",
+            "balance_brl": 1250.0,
+            "as_of": "2026-08-01",
+        },
+        {
+            "id": "btg_liquidez",
+            "name": "BTG Liquidez",
+            "category": "renda_fixa_liquidez",
+            "balance_brl": 3750.0,
+            "as_of": "2026-08-01",
+        },
+        {
+            "id": "btg_geral_cash",
+            "name": "BTG — BTG-Geral",
+            "category": "caixa",
+            "balance_brl": 200.0,
+            "as_of": "2026-08-09",
+        },
+    ]
+    assert result["cash_summary"]["target_max"] == 20
+    assert result["cash_summary"]["value_brl"] == pytest.approx(5200)
+    assert result["total_brl"] == pytest.approx(5200)

@@ -52,3 +52,18 @@ asset_classes:
     target_max: 15
     label: "Caixa (BR + USD)"
     color: "#94a3b8"
+  renda_fixa_liquidez:
+    target_min: 0
+    target_max: 10
+    label: "Liquidez diária"
+    color: "#3b82f6"
+  reserva:
+    target_min: 0
+    target_max: 10
+    label: "Reserva"
+    color: "#15803d"
+
+cash_total:
+  target_min: 0
+  target_max: 20
+  label: "Caixa total"

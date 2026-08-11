@@ -94,6 +94,10 @@ web-dev:
     cd frontend
     npm run dev
 
+# Mostra saldo atual de caixa (lê config/cash_accounts.yaml)
+cash-summary:
+    PYTHONPATH=src uv run python -c "from web.readers.cash_reader import read_cash_accounts, total_cash_brl; accounts = read_cash_accounts(); [print(f'{account.name}: R$ {account.balance:,.2f} (em {account.as_of})') for account in accounts]; print(f'Total: R$ {total_cash_brl(accounts):,.2f}')"
+
 
 # Full local quality check before committing
 check: format lint-fix type-check test
