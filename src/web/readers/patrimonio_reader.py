@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import asdict
 from datetime import date
 from pathlib import Path
@@ -9,7 +8,7 @@ from typing import Any
 import pandas as pd
 import yaml
 
-from irpf_report.ptax import CACHE_DIR, get_ptax
+from irpf_report.ptax import CACHE_DIR, get_ptax, load_latest_cached_ptax
 from web.readers.cash_reader import (
     CashAccount,
     cash_accounts_are_stale,
@@ -18,6 +17,7 @@ from web.readers.cash_reader import (
     total_cash_brl,
 )
 from web.readers.common import PROJECT_ROOT
+from web.readers.crypto_reader import read_crypto_snapshot
 from web.readers.history_jsonl import read_account_snapshot
 from web.readers.ibkr_csv import read_positions
 
@@ -40,6 +40,7 @@ ASSET_CLASS_ORDER = (
     "caixa",
     "renda_fixa_liquidez",
     "reserva",
+    "cripto",
 )
 
 CASH_SUMMARY_CLASSES = ("caixa", "renda_fixa_liquidez", "reserva")
@@ -52,6 +53,8 @@ def read_patrimonio(reference_date: date | None = None) -> dict[str, Any]:
     targets = _read_targets()
     cash_accounts = read_cash_accounts() + read_btg_cash_accounts(BTG_CASH)
     cash_total_brl = total_cash_brl(cash_accounts)
+    crypto = read_crypto_snapshot()
+    crypto_total_brl = crypto.total_brl if crypto else 0.0
 
     ibkr = _read_ibkr_account(ptax_rate)
     btg_opcoes = _read_btg_account(BTG_OPCOES_POS, "BTG-Opções")
@@ -76,9 +79,16 @@ def read_patrimonio(reference_date: date | None = None) -> dict[str, Any]:
         + btg_opcoes["total_brl"]
         + btg_geral["total_brl"]
         + cash_total_brl
+        + crypto_total_brl
     )
     allocation_values = _allocation_values(
-        ibkr, btg_opcoes, btg_geral, fixed_income, cash_accounts, ptax_rate
+        ibkr,
+        btg_opcoes,
+        btg_geral,
+        fixed_income,
+        cash_accounts,
+        crypto_total_brl,
+        ptax_rate,
     )
     allocation = _compare_to_targets(allocation_values, total_brl, targets)
     cash_summary_target = targets["cash_total"]
@@ -87,7 +97,7 @@ def read_patrimonio(reference_date: date | None = None) -> dict[str, Any]:
     )
     cash_summary_pct = cash_summary_brl / total_brl * 100 if total_brl else 0.0
     currency_mix = _currency_mix(
-        ibkr["nlv_brl"],
+        ibkr["nlv_brl"] + crypto_total_brl,
         btg_opcoes["total_brl"] + btg_geral["total_brl"] + cash_total_brl,
         total_brl,
         targets,
@@ -107,6 +117,7 @@ def read_patrimonio(reference_date: date | None = None) -> dict[str, Any]:
         ],
         "cash_total_brl": cash_total_brl,
         "cash_stale": cash_accounts_are_stale(cash_accounts, today),
+        "crypto": _serialize_crypto(crypto),
         "cash_summary": {
             "label": cash_summary_target["label"],
             "value_brl": cash_summary_brl,
@@ -147,27 +158,14 @@ def read_patrimonio(reference_date: date | None = None) -> dict[str, Any]:
 
 
 def _resolve_ptax(reference_date: date) -> tuple[float | None, str | None]:
-    cached = _latest_cached_ptax()
+    cached = load_latest_cached_ptax(PTAX_CACHE_DIR)
     if cached is not None:
         return cached
     rate = get_ptax(reference_date, cache_dir=PTAX_CACHE_DIR)
     if rate is None:
         return None, None
-    cached = _latest_cached_ptax()
+    cached = load_latest_cached_ptax(PTAX_CACHE_DIR)
     return cached if cached is not None else (rate, reference_date.isoformat())
-
-
-def _latest_cached_ptax() -> tuple[float, str] | None:
-    if not PTAX_CACHE_DIR.exists():
-        return None
-    for cache_path in sorted(PTAX_CACHE_DIR.glob("*.json"), reverse=True):
-        try:
-            rate = float(json.loads(cache_path.read_text())["cotacaoVenda"])
-            date.fromisoformat(cache_path.stem)
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
-            continue
-        return rate, cache_path.stem
-    return None
 
 
 def _read_targets() -> dict[str, Any]:
@@ -253,6 +251,7 @@ def _allocation_values(
     btg_geral: dict[str, Any],
     fixed_income: dict[str, Any],
     cash_accounts: list[CashAccount],
+    crypto_total_brl: float,
     ptax_rate: float | None,
 ) -> dict[str, float]:
     values = dict.fromkeys(ASSET_CLASS_ORDER, 0.0)
@@ -281,6 +280,7 @@ def _allocation_values(
             if asset_class:
                 values[asset_class] += _number(position.get("saldo_bruto"))
     values["renda_fixa_br"] = fixed_income["total_brl"]
+    values["cripto"] = crypto_total_brl
     return values
 
 
@@ -297,8 +297,20 @@ def _compare_to_targets(
 ) -> dict[str, dict[str, Any]]:
     result: dict[str, dict[str, Any]] = {}
     for asset_class in ASSET_CLASS_ORDER:
-        config = targets["asset_classes"][asset_class]
+        config = targets["asset_classes"].get(asset_class)
         percentage = values[asset_class] / total_brl * 100 if total_brl else 0.0
+        if config is None:
+            result[asset_class] = {
+                "label": "Cripto",
+                "color": "#f59e0b",
+                "value_brl": values[asset_class],
+                "pct_of_total": percentage,
+                "target_min": None,
+                "target_max": None,
+                "status": "undefined",
+                "severity": "undefined",
+            }
+            continue
         result[asset_class] = {
             "label": config["label"],
             "color": config["color"],
@@ -314,6 +326,32 @@ def _compare_to_targets(
             ),
         }
     return result
+
+
+def _serialize_crypto(snapshot: Any) -> dict[str, Any]:
+    if snapshot is None:
+        return {
+            "positions": [],
+            "total_usdt": 0.0,
+            "total_brl": 0.0,
+            "fetched_at": None,
+            "stale": True,
+        }
+    return {
+        "positions": [
+            {
+                "asset": position.asset,
+                "quantity": position.quantity,
+                "value_usdt": position.value_usdt,
+                "value_brl": position.value_brl,
+            }
+            for position in snapshot.positions
+        ],
+        "total_usdt": snapshot.total_usdt,
+        "total_brl": snapshot.total_brl,
+        "fetched_at": snapshot.fetched_at,
+        "stale": snapshot.stale,
+    }
 
 
 def _currency_mix(

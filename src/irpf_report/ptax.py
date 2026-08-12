@@ -30,6 +30,20 @@ def get_ptax(
     return None
 
 
+def load_latest_cached_ptax(cache_dir: Path = CACHE_DIR) -> tuple[float, str] | None:
+    """Return the newest valid cached PTAX rate and its ISO date."""
+    if not cache_dir.exists():
+        return None
+    for cache_path in sorted(cache_dir.glob("*.json"), reverse=True):
+        try:
+            rate = float(json.loads(cache_path.read_text())["cotacaoVenda"])
+            date.fromisoformat(cache_path.stem)
+        except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+            continue
+        return rate, cache_path.stem
+    return None
+
+
 def _bcb_date_fmt(d: date) -> str:
     return d.strftime("%m-%d-%Y")
 

@@ -35,6 +35,7 @@ export default function PatrimonioView({ data }) {
   const cashAccounts = data.cash_accounts || [];
   const cashTotalBrl = data.cash_total_brl || 0;
   const cashSummary = data.cash_summary || {};
+  const crypto = data.crypto || { positions: [], total_brl: 0, stale: true };
   const chartData = allocation.filter((item) => item.value_brl > 0);
   const cashLatestAsOf = cashAccounts.reduce((latest, account) => {
     if (!account.as_of) return latest;
@@ -77,6 +78,10 @@ export default function PatrimonioView({ data }) {
             ? "⚠ Caixa desatualizado — edite config/cash_accounts.yaml"
             : `Atualizado em ${cashLatestAsOf || "—"}`}
         </small></div>
+      <div className="card"><span>Cripto</span><strong>{money.format(crypto.total_brl || 0)}</strong>
+        <small className={crypto.stale ? "cash-warning" : ""}>
+          {crypto.stale ? "⚠ Cripto desatualizado — rode: just crypto-snapshot" : `Atualizado em ${crypto.fetched_at || "—"}`}
+        </small></div>
     </div>
 
     <div className="patrimonio-allocation">
@@ -90,8 +95,8 @@ export default function PatrimonioView({ data }) {
       <Panel title="Alocação vs metas">
         <div className="table-wrap"><table><thead><tr><th>Classe</th><th>Valor</th><th>Atual</th><th>Meta</th><th>Status</th></tr></thead>
           <tbody>{allocation.map((item) => <tr key={item.key}><td>{item.label}</td><td>{money.format(item.value_brl)}</td>
-            <td>{item.pct_of_total.toFixed(1)}%</td><td>{item.target_min}–{item.target_max}%</td>
-            <td className={`target-${item.severity}`}>{statusIcon[item.status]}</td></tr>)}
+            <td>{item.pct_of_total.toFixed(1)}%</td><td>{item.target_min == null ? "sem target definido" : `${item.target_min}–${item.target_max}%`}</td>
+            <td className={`target-${item.severity}`}>{item.status === "undefined" ? "—" : statusIcon[item.status]}</td></tr>)}
           <tr>
             <td>{cashSummary.label || "Caixa total"}</td>
             <td>{money.format(cashSummary.value_brl || 0)}</td>
@@ -118,6 +123,14 @@ export default function PatrimonioView({ data }) {
       <details className="account-details"><summary>Renda Fixa <span>{money.format(data.renda_fixa.total_brl)}</span></summary>
         <MissingData account={data.renda_fixa} />
         {data.renda_fixa.status !== "no_data" && <PositionTable rows={data.renda_fixa.positions} columns={fixedIncomeColumns} />}
+      </details>
+      <details className="account-details"><summary>Cripto <span>{money.format(crypto.total_brl || 0)}</span></summary>
+        <PositionTable rows={crypto.positions} columns={[
+          { key: "asset", label: "Ativo" },
+          { key: "quantity", label: "Quantidade" },
+          { key: "value_usdt", label: "Valor USD", format: (value) => usd.format(value || 0) },
+          { key: "value_brl", label: "Valor BRL", format: (value) => money.format(value || 0) },
+        ]} />
       </details>
     </Panel>
   </section>;

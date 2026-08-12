@@ -5,7 +5,7 @@ from datetime import date
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from irpf_report.ptax import get_ptax
+from irpf_report.ptax import get_ptax, load_latest_cached_ptax
 
 
 def _write_cache(tmp_path: Path, d: date, rate: float) -> None:
@@ -64,3 +64,10 @@ def test_ptax_returns_none_when_api_unreachable(tmp_path: Path) -> None:
         result = get_ptax(target, max_lookback=0, cache_dir=tmp_path)
 
     assert result is None
+
+
+def test_load_latest_cached_ptax_skips_invalid_entries(tmp_path: Path) -> None:
+    _write_cache(tmp_path, date(2025, 5, 1), 5.1)
+    (tmp_path / "2025-05-02.json").write_text("invalid")
+
+    assert load_latest_cached_ptax(tmp_path) == (5.1, "2025-05-01")

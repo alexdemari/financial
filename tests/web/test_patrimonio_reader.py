@@ -8,6 +8,7 @@ from web.readers import cash_reader
 from web.readers import patrimonio_reader
 from web.readers.history_jsonl import AccountSnapshot
 from web.readers.ibkr_csv import Position
+from crypto_tracker.snapshot import CryptoPosition, CryptoSnapshot
 
 
 def _configure_paths(monkeypatch, tmp_path):
@@ -275,3 +276,28 @@ accounts:
     assert result["cash_summary"]["target_max"] == 20
     assert result["cash_summary"]["value_brl"] == pytest.approx(5200)
     assert result["total_brl"] == pytest.approx(5200)
+
+
+def test_crypto_snapshot_is_included_in_total_and_allocation(monkeypatch, tmp_path):
+    _configure_paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(patrimonio_reader, "read_account_snapshot", lambda: None)
+    monkeypatch.setattr(patrimonio_reader, "read_positions", lambda: [])
+    monkeypatch.setattr(
+        patrimonio_reader,
+        "read_crypto_snapshot",
+        lambda: CryptoSnapshot(
+            positions=[CryptoPosition("BTC", 0.1, 10_000, 1_000, 5_000)],
+            total_usdt=1_000,
+            total_brl=5_000,
+            ptax_used=5.0,
+            fetched_at="2020-01-01T00:00:00+00:00",
+        ),
+    )
+
+    result = patrimonio_reader.read_patrimonio(date(2026, 8, 11))
+
+    assert result["total_brl"] == pytest.approx(5_000)
+    assert result["crypto"]["total_brl"] == 5_000
+    assert result["crypto"]["stale"] is True
+    assert result["allocation"]["cripto"]["pct_of_total"] == pytest.approx(100)
+    assert result["allocation"]["cripto"]["target_min"] is None

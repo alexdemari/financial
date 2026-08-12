@@ -98,6 +98,14 @@ web-dev:
 cash-summary:
     PYTHONPATH=src uv run python -c "from web.readers.cash_reader import read_cash_accounts, total_cash_brl; accounts = read_cash_accounts(); [print(f'{account.name}: R$ {account.balance:,.2f} (em {account.as_of})') for account in accounts]; print(f'Total: R$ {total_cash_brl(accounts):,.2f}')"
 
+# Busca saldos Spot da Binance e salva snapshot local (sem trading)
+crypto-snapshot:
+    PYTHONPATH=src uv run python -m crypto_tracker.snapshot
+
+# Mostra o último snapshot da Binance sem chamar a API
+crypto-summary:
+    PYTHONPATH=src uv run python -c "from crypto_tracker.snapshot import load_last_snapshot; snapshot = load_last_snapshot(); print('Nenhum snapshot. Rode: just crypto-snapshot') if not snapshot else ([print(f'{position.asset}: {position.quantity:.6f} = USD {position.value_usdt:,.2f} / BRL {position.value_brl:,.2f}') for position in snapshot.positions], print(f'Total: USD {snapshot.total_usdt:,.2f} / BRL {snapshot.total_brl:,.2f}'), print(f'Snapshot de: {snapshot.fetched_at}'))"
+
 
 # Full local quality check before committing
 check: format lint-fix type-check test
