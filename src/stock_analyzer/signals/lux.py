@@ -4,7 +4,7 @@ from typing import Optional
 import pandas as pd
 
 from stock_analyzer.enums import Signal
-from stock_analyzer.signals.base import AnalyzerSignalResult
+from stock_analyzer.signals.base import AnalyzerSignalResult, latest_historical_row
 from trading_indicators import LuxConfig, LuxSignalsOverlays
 from trading_indicators.utils.types import Trend
 
@@ -37,10 +37,15 @@ class LuxSignalGenerator:
         self, symbol: str, df: pd.DataFrame
     ) -> Optional[LuxSignalResult]:
         historical = self.generate_historical_signals(symbol, df)
-        if historical.empty:
-            return None
+        return self.generate_current_signal_from_historical(symbol, historical)
 
-        latest = historical.dropna(subset=["supertrend"]).iloc[-1]
+    def generate_current_signal_from_historical(
+        self, symbol: str, historical: pd.DataFrame
+    ) -> Optional[LuxSignalResult]:
+        """Extract the current signal without recomputing indicator history."""
+        latest = latest_historical_row(historical, dropna_column="supertrend")
+        if latest is None:
+            return None
         return LuxSignalResult(
             symbol=symbol,
             date=latest["date"],

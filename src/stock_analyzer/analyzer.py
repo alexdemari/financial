@@ -75,6 +75,14 @@ class StockDataAnalyzer:
         """
         return self.signal_generator.generate_historical_signals(symbol, df)
 
+    def generate_signal_from_historical(
+        self, symbol: str, historical: pd.DataFrame
+    ) -> Any:
+        """Extract the current signal from previously generated history."""
+        return self.signal_generator.generate_current_signal_from_historical(
+            symbol, historical
+        )
+
     @staticmethod
     def retrieve_data(
         symbol: str, data_dir: str | Path, interval: str = "1d"

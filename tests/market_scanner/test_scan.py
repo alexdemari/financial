@@ -208,6 +208,9 @@ def test_scan_universe_generates_csv_and_sorts_top_results(
                 rsi=50.0,
             )
 
+        def generate_signal_from_historical(self, symbol, historical):
+            return self.generate_signal(symbol, pd.DataFrame(index=range(200)))
+
         def generate_historical_signals(self, symbol, df):
             assert len(df) == 200
             if self.signal_model == "lux":
@@ -356,6 +359,9 @@ def test_scan_universe_recent_event_mode_uses_watch_events_for_ranking(
                 range_position_pct=50.0,
                 rsi=50.0,
             )
+
+        def generate_signal_from_historical(self, symbol, historical):
+            return self.generate_signal(symbol, pd.DataFrame(index=range(200)))
 
         def generate_historical_signals(self, symbol, df):
             if self.signal_model == "lux":
@@ -524,6 +530,9 @@ def test_smc_active_event_prefers_latest_reversal_over_older_confluence(
                 rsi=50.0,
             )
 
+        def generate_signal_from_historical(self, symbol, historical):
+            return self.generate_signal(symbol, pd.DataFrame(index=range(200)))
+
         def generate_historical_signals(self, symbol, df):
             if self.signal_model == "lux":
                 return pd.DataFrame(
@@ -620,6 +629,9 @@ def test_recent_event_prefers_most_recent_matching_context_over_older_higher_pri
                 range_position_pct=50.0,
                 rsi=50.0,
             )
+
+        def generate_signal_from_historical(self, symbol, historical):
+            return self.generate_signal(symbol, pd.DataFrame(index=range(200)))
 
         def generate_historical_signals(self, symbol, df):
             if self.signal_model == "lux":
@@ -764,6 +776,9 @@ def test_recent_event_mode_falls_back_to_no_trade_without_active_directional_eve
                 range_position_pct=50.0,
                 rsi=50.0,
             )
+
+        def generate_signal_from_historical(self, symbol, historical):
+            return self.generate_signal(symbol, pd.DataFrame(index=range(200)))
 
         def generate_historical_signals(self, symbol, df):
             if self.signal_model == "lux":

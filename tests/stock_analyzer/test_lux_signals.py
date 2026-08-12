@@ -64,6 +64,21 @@ def test_lux_signal_generator_returns_current_signal():
     assert result.options_hint in {"CALL", "PUT", "NO_TRADE"}
 
 
+def test_lux_current_signal_from_history_does_not_recompute(monkeypatch):
+    generator = LuxSignalGenerator()
+    historical = generator.generate_historical_signals("AAPL", make_ohlc())
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("historical signals were recomputed")
+
+    monkeypatch.setattr(generator, "generate_historical_signals", fail_if_called)
+
+    result = generator.generate_current_signal_from_historical("AAPL", historical)
+
+    assert result is not None
+    assert result.symbol == "AAPL"
+
+
 def test_stock_data_analyzer_can_select_lux_model():
     analyzer = StockDataAnalyzer(signal_model="lux")
 

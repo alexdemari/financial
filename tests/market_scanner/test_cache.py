@@ -21,6 +21,9 @@ class CountingAnalyzer:
     def generate_signal(self, symbol, df):
         return {"signal": "bullish"}
 
+    def generate_signal_from_historical(self, symbol, historical):
+        return {"signal": historical.iloc[0, 0]}
+
 
 def _write_fake_csv(path):
     path.write_text("date,close\n2024-01-01,100\n")
@@ -125,7 +128,7 @@ def test_corrupt_cache_falls_back_silently(tmp_path):
     # Pre-populate with garbage bytes at the expected cache path
     from market_scanner.cache import _cache_key
 
-    key = _cache_key("AAPL", csv_path)
+    key = _cache_key("AAPL", csv_path, df)
     pkl_dir = cache_dir / "lux"
     pkl_dir.mkdir(parents=True, exist_ok=True)
     corrupt_path = pkl_dir / f"{key}.pkl"
@@ -212,3 +215,21 @@ def test_cached_analyzer_wraps_both_methods(tmp_path):
     result2 = cached.generate_historical_signals("AAPL", df)
     assert inner.calls == 1
     pd.testing.assert_frame_equal(result1, result2)
+
+
+def test_cached_analyzer_extracts_signal_from_cached_history(tmp_path):
+    csv_path = tmp_path / "AAPL.csv"
+    _write_fake_csv(csv_path)
+    inner = CountingAnalyzer()
+    cached = CachedAnalyzer(
+        inner,
+        csv_path=csv_path,
+        cache_dir=tmp_path / "cache",
+        model_name="lux",
+    )
+
+    historical = cached.generate_historical_signals("AAPL", _make_df())
+    signal = cached.generate_signal_from_historical("AAPL", historical)
+
+    assert signal == {"signal": 1}
+    assert inner.calls == 1

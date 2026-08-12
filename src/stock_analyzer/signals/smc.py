@@ -4,7 +4,7 @@ from typing import Optional
 import pandas as pd
 
 from stock_analyzer.enums import Signal
-from stock_analyzer.signals.base import AnalyzerSignalResult
+from stock_analyzer.signals.base import AnalyzerSignalResult, latest_historical_row
 from trading_indicators import SMCConfig, SmartMoneyConfluence
 
 
@@ -40,10 +40,15 @@ class SMCSignalGenerator:
         self, symbol: str, df: pd.DataFrame
     ) -> Optional[SMCSignalResult]:
         historical = self.generate_historical_signals(symbol, df)
-        if historical.empty:
-            return None
+        return self.generate_current_signal_from_historical(symbol, historical)
 
-        latest = historical.iloc[-1]
+    def generate_current_signal_from_historical(
+        self, symbol: str, historical: pd.DataFrame
+    ) -> Optional[SMCSignalResult]:
+        """Extract the current signal without recomputing indicator history."""
+        latest = latest_historical_row(historical)
+        if latest is None:
+            return None
         return SMCSignalResult(
             symbol=symbol,
             date=latest["date"],

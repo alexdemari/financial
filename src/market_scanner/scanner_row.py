@@ -43,10 +43,10 @@ def build_scanner_row(
     lux_analyzer = lux_analyzer or StockDataAnalyzer(signal_model="lux")
     smc_analyzer = smc_analyzer or StockDataAnalyzer(signal_model="smc")
 
-    lux_signal = lux_analyzer.generate_signal(symbol, df_slice)
-    smc_signal = smc_analyzer.generate_signal(symbol, df_slice)
     lux_historical = lux_analyzer.generate_historical_signals(symbol, df_slice)
     smc_historical = smc_analyzer.generate_historical_signals(symbol, df_slice)
+    lux_signal = _current_signal_from_historical(lux_analyzer, symbol, lux_historical)
+    smc_signal = _current_signal_from_historical(smc_analyzer, symbol, smc_historical)
 
     if lux_signal is None or smc_signal is None:
         raise ValueError(f"Signal generation failed for {symbol}")
@@ -63,6 +63,14 @@ def build_scanner_row(
         avg_dollar_volume_20=avg_dollar_volume_20,
         market_cap=market_cap,
     )
+
+
+def _current_signal_from_historical(
+    analyzer,
+    symbol: str,
+    historical: pd.DataFrame,
+):
+    return analyzer.generate_signal_from_historical(symbol, historical)
 
 
 def build_scanner_row_from_history(

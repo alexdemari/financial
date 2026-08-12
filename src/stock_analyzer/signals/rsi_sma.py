@@ -170,6 +170,25 @@ class SignalGenerator:
             ]
         ].rename(columns={"Close": "close"})
 
+    def generate_current_signal_from_historical(
+        self, symbol: str, historical: pd.DataFrame
+    ) -> Optional[SignalResult]:
+        """Extract the current RSI/SMA signal from generated history."""
+        if historical.empty:
+            return None
+
+        latest = historical.iloc[-1]
+        return SignalResult(
+            symbol=symbol,
+            date=latest["date"],
+            close_price=latest["close"],
+            rsi_value=latest["rsi"],
+            sma_value=latest["sma"],
+            rsi_signal=Signal(int(latest["rsi_signal"])),
+            sma_signal=Signal(int(latest["sma_signal"])),
+            combined_signal=Signal(int(latest["combined_signal"])),
+        )
+
     def interpret(self, signal: SignalResult) -> str:
         combined = self._signal_label(signal.combined_signal)
         rsi_signal = self._signal_label(signal.rsi_signal)

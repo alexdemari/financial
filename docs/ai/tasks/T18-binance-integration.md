@@ -1,6 +1,8 @@
 Implementar T18: Binance Read-Only Tracker para incluir cripto (~2% patrimônio)
 no consolidado patrimonial.
 
+**Status:** Completed (2026-08-12)
+
 ## Contexto
 Patrimônio consolidado (T15) já cobre IBKR + BTG + Caixa (T19).
 Falta a fatia de cripto (Binance Spot). A integração é read-only via REST API

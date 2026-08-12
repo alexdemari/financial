@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import pickle
 from pathlib import Path
@@ -17,7 +18,11 @@ def get_or_compute_historical(
     model_name: str,
 ) -> pd.DataFrame:
     cache_path = _resolve_cache_path(
-        cache_dir=cache_dir, model_name=model_name, symbol=symbol, csv_path=csv_path
+        cache_dir=cache_dir,
+        model_name=model_name,
+        symbol=symbol,
+        csv_path=csv_path,
+        df=df,
     )
     if cache_path is not None:
         result = _try_load(cache_path)
@@ -33,7 +38,7 @@ def get_or_compute_historical(
 
 
 class CachedAnalyzer:
-    """Wraps a StockDataAnalyzer, caching generate_historical_signals only."""
+    """Wraps a StockDataAnalyzer and reuses cached historical signals."""
 
     def __init__(self, analyzer, *, csv_path: Path, cache_dir: Path, model_name: str):
         self._analyzer = analyzer
@@ -43,6 +48,9 @@ class CachedAnalyzer:
 
     def generate_signal(self, symbol, df):
         return self._analyzer.generate_signal(symbol, df)
+
+    def generate_signal_from_historical(self, symbol, historical):
+        return self._analyzer.generate_signal_from_historical(symbol, historical)
 
     def generate_historical_signals(self, symbol, df):
         return get_or_compute_historical(
@@ -61,19 +69,25 @@ def _resolve_cache_path(
     model_name: str,
     symbol: str,
     csv_path: Path | None,
+    df: pd.DataFrame,
 ) -> Path | None:
     if cache_dir is None or csv_path is None:
         return None
     try:
-        key = _cache_key(symbol, csv_path)
+        key = _cache_key(symbol, csv_path, df)
         return cache_dir / model_name / f"{key}.pkl"
     except Exception:
         return None
 
 
-def _cache_key(symbol: str, csv_path: Path) -> str:
+def _cache_key(symbol: str, csv_path: Path, df: pd.DataFrame | None = None) -> str:
     mtime_ns = csv_path.stat().st_mtime_ns
-    return f"{symbol}_{mtime_ns:016x}"
+    if df is None:
+        return f"{symbol}_{mtime_ns:016x}"
+    frame_hash = hashlib.sha256(
+        pd.util.hash_pandas_object(df, index=True).values.tobytes()
+    ).hexdigest()[:16]
+    return f"{symbol}_{mtime_ns:016x}_{len(df)}_{frame_hash}"
 
 
 def _try_load(cache_path: Path) -> pd.DataFrame | None:

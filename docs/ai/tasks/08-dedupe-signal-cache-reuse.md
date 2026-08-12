@@ -1,6 +1,6 @@
 # Task: Eliminar recomputação duplicada de sinal em `generate_signal`
 
-**Status:** Not started
+**Status:** Completed (2026-08-12)
 **Scope:** `src/stock_analyzer/signals/lux.py`, `src/stock_analyzer/signals/smc.py`, `src/stock_analyzer/analyzer.py`, `src/market_scanner/scanner_row.py`, `src/market_scanner/cache.py`
 **Effort:** S
 **Depende de:** Task 04 (cache disco) — já implementada, esta task fecha o gap deixado por ela

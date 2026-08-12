@@ -80,6 +80,21 @@ def test_smc_signal_generator_returns_current_signal():
     assert isinstance(result.swing_low_marker, bool)
 
 
+def test_smc_current_signal_from_history_does_not_recompute(monkeypatch):
+    generator = SMCSignalGenerator()
+    historical = generator.generate_historical_signals("AAPL", make_ohlc())
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("historical signals were recomputed")
+
+    monkeypatch.setattr(generator, "generate_historical_signals", fail_if_called)
+
+    result = generator.generate_current_signal_from_historical("AAPL", historical)
+
+    assert result is not None
+    assert result.symbol == "AAPL"
+
+
 def test_smc_signal_generator_uses_historical_rsi_series():
     generator = SMCSignalGenerator()
 

@@ -1,5 +1,7 @@
 Implementar T19: Módulo de Caixa e Liquidez BRL para fechar o patrimônio consolidado.
 
+**Status:** Completed (2026-08-12)
+
 ## Contexto
 O dashboard já consolida IBKR (USD) + BTG-Opções + BTG-Geral via T15.
 Falta o caixa em BRL: conta corrente Neon, BTG pós-fixado/CDB liquidez diária,
