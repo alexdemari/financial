@@ -46,7 +46,7 @@ class CryptoSnapshot:
 
 
 def fetch_and_save(ptax: float) -> CryptoSnapshot:
-    """Fetch Binance Spot balances and persist a BRL-valued snapshot."""
+    """Fetch Binance Spot and Simple Earn balances into a BRL snapshot."""
     api_key = os.getenv("BINANCE_API_KEY", "").strip()
     api_secret = os.getenv("BINANCE_API_SECRET", "").strip()
     if not api_key or not api_secret:
@@ -57,7 +57,9 @@ def fetch_and_save(ptax: float) -> CryptoSnapshot:
 
     try:
         client = BinanceReadOnlyClient(api_key, api_secret)
-        balances = client.get_spot_balances()
+        balances = _merge_balances(
+            client.get_spot_balances(), client.get_earn_balances()
+        )
         assets = [str(balance["asset"]) for balance in balances]
         symbols = [f"{asset}USDT" for asset in assets if asset != "USDT"]
         prices = client.get_prices(symbols)
@@ -92,6 +94,27 @@ def fetch_and_save(ptax: float) -> CryptoSnapshot:
     )
     _save_snapshot(snapshot)
     return snapshot
+
+
+def _merge_balances(
+    spot_balances: list[dict], earn_balances: list[dict]
+) -> list[dict[str, float | str]]:
+    merged: dict[str, float] = {}
+    for balance in spot_balances:
+        asset = str(balance.get("asset", ""))
+        merged[asset] = (
+            merged.get(asset, 0.0)
+            + float(balance.get("free", 0.0))
+            + float(balance.get("locked", 0.0))
+        )
+    for balance in earn_balances:
+        asset = str(balance.get("asset", ""))
+        merged[asset] = merged.get(asset, 0.0) + float(balance.get("amount", 0.0))
+    return [
+        {"asset": asset, "free": amount, "locked": 0.0}
+        for asset, amount in merged.items()
+        if asset and amount > 0.01
+    ]
 
 
 def load_last_snapshot() -> CryptoSnapshot | None:

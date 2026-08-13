@@ -22,7 +22,7 @@ class BinanceAPIError(RuntimeError):
 
 
 class BinanceReadOnlyClient:
-    """Minimal Binance Spot client using only the Python standard library."""
+    """Minimal Binance Spot and Simple Earn client using the standard library."""
 
     def __init__(self, api_key: str, api_secret: str) -> None:
         self.api_key = api_key
@@ -51,6 +51,24 @@ class BinanceReadOnlyClient:
                 )
         return result
 
+    def get_earn_balances(self) -> list[dict[str, Any]]:
+        """Return current Flexible and Locked Simple Earn balances."""
+        balances: dict[str, float] = {}
+        for endpoint in (
+            "/sapi/v1/simple-earn/flexible/position",
+            "/sapi/v1/simple-earn/locked/position",
+        ):
+            for position in self._get_all_earn_positions(endpoint):
+                asset = str(position.get("asset", "")).strip()
+                amount = _number(position.get("totalAmount", position.get("amount", 0)))
+                if asset and amount > 0:
+                    balances[asset] = balances.get(asset, 0.0) + amount
+        return [
+            {"asset": asset, "amount": amount}
+            for asset, amount in balances.items()
+            if amount > 0.01
+        ]
+
     def get_prices(self, symbols: list[str]) -> dict[str, float]:
         """Return current USDT prices for the requested symbols in one call."""
         requested_symbols = list(dict.fromkeys(symbols))
@@ -75,19 +93,41 @@ class BinanceReadOnlyClient:
         return prices
 
     def _request_account(self) -> dict[str, Any]:
-        timestamp = int(time.time() * 1000)
-        query = {"timestamp": timestamp, "recvWindow": 10_000}
+        payload = self._signed_request("/api/v3/account", {})
+        if not isinstance(payload, dict):
+            raise BinanceAPIError("Invalid account response")
+        return payload
+
+    def _get_all_earn_positions(self, endpoint: str) -> list[dict[str, Any]]:
+        page = 1
+        page_size = 100
+        positions: list[dict[str, Any]] = []
+        while True:
+            payload = self._signed_request(
+                endpoint, {"current": page, "size": page_size}
+            )
+            if not isinstance(payload, dict):
+                raise BinanceAPIError("Invalid Simple Earn response")
+            rows = payload.get("rows", [])
+            if not isinstance(rows, list):
+                raise BinanceAPIError("Invalid Simple Earn positions")
+            positions.extend(row for row in rows if isinstance(row, dict))
+            total = int(payload.get("total", 0) or 0)
+            if len(rows) < page_size or (total > 0 and len(positions) >= total):
+                return positions
+            page += 1
+
+    def _signed_request(self, endpoint: str, params: dict[str, object]) -> Any:
+        query = dict(params)
+        query["timestamp"] = int(time.time() * 1000)
+        query.setdefault("recvWindow", 10_000)
         query_string = urllib.parse.urlencode(query)
-        signature = hmac.new(
+        query["signature"] = hmac.new(
             self.api_secret.encode("utf-8"),
             query_string.encode("utf-8"),
             hashlib.sha256,
         ).hexdigest()
-        query["signature"] = signature
-        payload = self._request("/api/v3/account", query, signed=True)
-        if not isinstance(payload, dict):
-            raise BinanceAPIError("Invalid account response")
-        return payload
+        return self._request(endpoint, query, signed=True)
 
     def _request(self, endpoint: str, params: dict[str, object], signed: bool) -> Any:
         query = urllib.parse.urlencode(params)

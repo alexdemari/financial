@@ -6,7 +6,7 @@ import pytest
 from crypto_tracker import snapshot
 
 
-def _mock_client(monkeypatch, balances, prices):
+def _mock_client(monkeypatch, balances, prices, earn_balances=None):
     class FakeClient:
         def __init__(self, _api_key, _api_secret):
             pass
@@ -16,6 +16,9 @@ def _mock_client(monkeypatch, balances, prices):
 
         def get_prices(self, symbols):
             return {symbol: prices[symbol] for symbol in symbols if symbol in prices}
+
+        def get_earn_balances(self):
+            return earn_balances or []
 
     monkeypatch.setattr(snapshot, "BinanceReadOnlyClient", FakeClient)
     monkeypatch.setenv("BINANCE_API_KEY", "key")
@@ -79,6 +82,21 @@ def test_total_calculated_correctly(monkeypatch, tmp_path):
 
     assert result.total_usdt == pytest.approx(6100)
     assert result.total_brl == pytest.approx(30_500)
+
+
+def test_total_includes_spot_and_earn_balances(monkeypatch, tmp_path):
+    _mock_client(
+        monkeypatch,
+        [{"asset": "BTC", "free": 0.1, "locked": 0}],
+        {"BTCUSDT": 60_000},
+        [{"asset": "BTC", "amount": 0.05}],
+    )
+    monkeypatch.setattr(snapshot, "SNAPSHOT_PATH", tmp_path / "snapshot.json")
+
+    result = snapshot.fetch_and_save(5.0)
+
+    assert result.positions[0].quantity == pytest.approx(0.15)
+    assert result.total_usdt == pytest.approx(9_000)
 
 
 def test_save_and_load_roundtrip(monkeypatch, tmp_path):

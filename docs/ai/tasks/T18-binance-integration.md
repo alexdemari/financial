@@ -1,11 +1,11 @@
 Implementar T18: Binance Read-Only Tracker para incluir cripto (~2% patrimônio)
-no consolidado patrimonial.
+no consolidado patrimonial, incluindo Spot e Simple Earn.
 
 **Status:** Completed (2026-08-12)
 
 ## Contexto
 Patrimônio consolidado (T15) já cobre IBKR + BTG + Caixa (T19).
-Falta a fatia de cripto (Binance Spot). A integração é read-only via REST API
+Falta a fatia de cripto (Binance Spot e Simple Earn). A integração é read-only via REST API
 pública da Binance — sem WebSocket, sem trading, sem chave de saque.
 
 ## Arquivos a criar/modificar
@@ -118,7 +118,7 @@ Filtrar assets com `value_usdt < 1.0` (dust) antes de salvar.
 ## Justfile
 
 ```just
-# Busca saldos Spot da Binance e salva em data/crypto/snapshot.json
+# Busca saldos Spot e Simple Earn da Binance e salva em data/crypto/snapshot.json
 crypto-snapshot:
     PYTHONPATH=src uv run python -m crypto_tracker.snapshot
 

@@ -22,6 +22,7 @@ def _configure_paths(monkeypatch, tmp_path):
     monkeypatch.setattr(patrimonio_reader, "PTAX_CACHE_DIR", tmp_path / "ptax")
     monkeypatch.setattr(patrimonio_reader, "get_ptax", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(cash_reader, "CONFIG_PATH", tmp_path / "cash_accounts.yaml")
+    monkeypatch.setattr(patrimonio_reader, "read_crypto_snapshot", lambda: None)
 
 
 def _snapshot(nlv=100.0, cash=20.0):
