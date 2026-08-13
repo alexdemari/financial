@@ -219,7 +219,7 @@ All fields must come from `market_scanner.scanner_row`. Never reimplement in oth
 
 ### Eligibility vs Decision — never mix
 
-**Eligibility** (filter before processing): CSV exists, `market_cap >= threshold`, `avg_volume_20 >= threshold` → boolean + `excluded_reason`.
+**Eligibility** (filter before processing): CSV exists, `market_cap >= threshold`, `avg_volume_20 >= threshold`, CSV last row not older than `max_stale_days` (default 7, catches silently-failed downloads e.g. delisted tickers) → boolean + `excluded_reason`.
 
 **Decision** (rank eligible symbols): `alignment` → `market_state` → `adjusted_alignment` → `action_bucket`. Must be deterministic.
 

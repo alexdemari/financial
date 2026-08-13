@@ -10,6 +10,7 @@ import pandas as pd
 from market_scanner.event_state import smc_context
 
 from market_scanner.eligibility import (
+    MAX_STALE_DAYS,
     MIN_HISTORY_ROWS,
     EligibilityResult,
     evaluate_symbol_eligibility,
@@ -44,6 +45,7 @@ class _ScanWorkerArgs:
     min_avg_volume_20: float
     min_avg_dollar_volume_20: float
     min_history_rows: int
+    max_stale_days: int = MAX_STALE_DAYS
     csv_path: Path | None = None
     cache_dir: Path | None = None
     use_cache: bool = False
@@ -61,6 +63,7 @@ def _scan_symbol_worker(args: _ScanWorkerArgs) -> dict:
             min_avg_volume_20=args.min_avg_volume_20,
             min_avg_dollar_volume_20=args.min_avg_dollar_volume_20,
             min_history_rows=args.min_history_rows,
+            max_stale_days=args.max_stale_days,
         )
         return _build_excluded_row(
             symbol, market_cap, eligibility, ranking_mode=args.ranking_mode
@@ -77,6 +80,7 @@ def _scan_symbol_worker(args: _ScanWorkerArgs) -> dict:
         min_avg_volume_20=args.min_avg_volume_20,
         min_avg_dollar_volume_20=args.min_avg_dollar_volume_20,
         min_history_rows=args.min_history_rows,
+        max_stale_days=args.max_stale_days,
     )
     if not eligibility.eligible:
         return _build_excluded_row(
@@ -130,6 +134,7 @@ def scan_universe(
     ranking_mode: str = "snapshot",
     min_history_rows: int = MIN_HISTORY_ROWS,
     min_avg_dollar_volume_20: float = 0,
+    max_stale_days: int = MAX_STALE_DAYS,
     analysis_bars: int | None = None,
     sort_by: str = "scanner",
     workers: int = 1,
@@ -152,6 +157,7 @@ def scan_universe(
                 min_avg_volume_20=min_avg_volume_20,
                 min_avg_dollar_volume_20=min_avg_dollar_volume_20,
                 min_history_rows=min_history_rows,
+                max_stale_days=max_stale_days,
                 csv_path=Path(data_dir) / f"{sd.symbol}.csv",
                 cache_dir=cache_dir,
                 use_cache=use_cache,
@@ -184,6 +190,7 @@ def scan_universe(
                     min_avg_volume_20=min_avg_volume_20,
                     min_avg_dollar_volume_20=min_avg_dollar_volume_20,
                     min_history_rows=min_history_rows,
+                    max_stale_days=max_stale_days,
                 )
                 rows.append(
                     _build_excluded_row(
@@ -209,6 +216,7 @@ def scan_universe(
                 min_avg_volume_20=min_avg_volume_20,
                 min_avg_dollar_volume_20=min_avg_dollar_volume_20,
                 min_history_rows=min_history_rows,
+                max_stale_days=max_stale_days,
             )
             if not eligibility.eligible:
                 rows.append(
@@ -435,6 +443,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Minimum average dollar volume over the last 20 sessions",
     )
     parser.add_argument(
+        "--max-stale-days",
+        type=int,
+        default=MAX_STALE_DAYS,
+        help=(
+            "Exclude symbols whose local CSV's last row is older than this many "
+            "days (catches silently-failed downloads, e.g. delisted tickers)"
+        ),
+    )
+    parser.add_argument(
         "--analysis-bars",
         type=int,
         default=None,
@@ -495,6 +512,7 @@ def main(argv: list[str] | None = None) -> int:
         output=args.output,
         ranking_mode=args.ranking_mode,
         min_avg_dollar_volume_20=args.min_avg_dollar_volume_20,
+        max_stale_days=args.max_stale_days,
         analysis_bars=args.analysis_bars,
         sort_by=args.sort_by,
         workers=args.workers,

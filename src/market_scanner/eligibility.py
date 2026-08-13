@@ -5,6 +5,7 @@ import pandas as pd
 
 
 MIN_HISTORY_ROWS = 200
+MAX_STALE_DAYS = 7
 
 
 @dataclass
@@ -35,6 +36,7 @@ def evaluate_symbol_eligibility(
     min_avg_volume_20: float,
     min_avg_dollar_volume_20: float = 0,
     min_history_rows: int = MIN_HISTORY_ROWS,
+    max_stale_days: int = MAX_STALE_DAYS,
 ) -> EligibilityResult:
     if market_cap is None or pd.isna(market_cap) or market_cap < min_market_cap:
         return EligibilityResult(
@@ -58,6 +60,16 @@ def evaluate_symbol_eligibility(
         return EligibilityResult(
             eligible=False,
             excluded_reason="insufficient_history",
+            avg_volume_20=None,
+            avg_dollar_volume_20=None,
+            close=_latest_close(df),
+        )
+
+    stale_days = _staleness_days(df)
+    if stale_days is not None and stale_days > max_stale_days:
+        return EligibilityResult(
+            eligible=False,
+            excluded_reason="stale_data",
             avg_volume_20=None,
             avg_dollar_volume_20=None,
             close=_latest_close(df),
@@ -132,6 +144,26 @@ def _detect_date_column(df: pd.DataFrame) -> str:
     if column is None:
         raise ValueError("CSV must contain a date column")
     return column
+
+
+def _staleness_days(df: pd.DataFrame) -> int | None:
+    if df.empty:
+        return None
+    if isinstance(df.index, pd.DatetimeIndex):
+        last_date = df.index[-1]
+    else:
+        date_column = _detect_column(df, ["date", "datetime"])
+        if date_column is None:
+            return None
+        last_date = pd.to_datetime(df[date_column].iloc[-1], errors="coerce")
+        if pd.isna(last_date):
+            return None
+    now = (
+        pd.Timestamp.now(tz=last_date.tzinfo)
+        if last_date.tzinfo is not None
+        else pd.Timestamp.now()
+    )
+    return (now.normalize() - last_date.normalize()).days
 
 
 def _latest_close(df: pd.DataFrame | None) -> float | None:
