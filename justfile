@@ -157,6 +157,13 @@ download-file-full file interval="1d":
 download-all-us interval="1d" base_dir=justfile_directory():
     uv run python -m stock_data_manager.main -a {{base_dir}}/data/us_symbols.json -i {{interval}}
 
+# Shrink universe file to symbols passing market_cap/dollar-volume thresholds (backs up .bak)
+filter-universe universe="data/scanner_universe_filtered.csv" min_market_cap="1000000000" min_avg_dollar_volume_20="5000000":
+    uv run python scripts/filter_universe.py \
+      --universe-file {{universe}} \
+      --min-market-cap {{min_market_cap}} \
+      --min-avg-dollar-volume-20 {{min_avg_dollar_volume_20}}
+
 
 # ── Analysis ──────────────────────────────────────────────────────────────────
 

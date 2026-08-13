@@ -187,6 +187,13 @@ just download "AAPL MSFT NVDA"
 just download-file data/scanner_universe_filtered.csv
 ```
 
+Shrink the universe file to symbols passing market_cap / dollar-volume thresholds (avoids
+downloading data for symbols eligibility.py would exclude anyway):
+
+```bash
+just filter-universe
+```
+
 ---
 
 ### `stock_analyzer`

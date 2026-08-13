@@ -118,6 +118,9 @@ docs/
 ## Daily Operational Workflow
 
 ```bash
+# 0. (occasional) Re-shrink universe file to symbols passing market_cap/$-volume thresholds
+just filter-universe
+
 # 1. Update local data
 PYTHONPATH=src uv run python -m stock_data_manager.main -s <universe>
 
