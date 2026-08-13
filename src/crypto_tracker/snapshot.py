@@ -162,7 +162,9 @@ def _resolve_ptax() -> float:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Save a Binance Spot snapshot")
+    parser = argparse.ArgumentParser(
+        description="Save a Binance Spot and Simple Earn snapshot"
+    )
     parser.add_argument("--ptax", type=float, help="USD/BRL rate for conversion")
     arguments = parser.parse_args()
     if arguments.ptax is not None:

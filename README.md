@@ -102,7 +102,26 @@ IBKR_FLEX_QUERY_ID=
 # LLM providers — required for just daily-report-llm
 ANTHROPIC_API_KEY=
 OPENAI_API_KEY=
+
+# Binance Spot + Simple Earn — read-only account access
+BINANCE_API_KEY=
+BINANCE_API_SECRET=
 ```
+
+### Binance crypto snapshots
+
+Create a Binance API key with user-data/read permissions only. Disable trading
+and withdrawals. Store the credentials in the repository-root `.env` file;
+never commit that file.
+
+```bash
+just crypto-snapshot  # fetch Spot + Flexible/Locked Simple Earn balances
+just crypto-summary   # display the last local snapshot without API access
+```
+
+The snapshot is saved to `data/crypto/snapshot.json` and is read locally by the
+dashboard. It combines Spot and Simple Earn balances per asset, prices them in
+USDT, and converts the total to BRL using PTAX.
 
 ---
 

@@ -48,17 +48,23 @@ BASE_URL = "https://api.binance.com"
 
 class BinanceReadOnlyClient:
     """
-    Cliente mínimo read-only para Binance Spot.
+    Cliente mínimo read-only para Binance Spot e Simple Earn.
     Usa apenas urllib (sem httpx/requests) para não adicionar dependências.
     Endpoints usados:
       GET /api/v3/account          → saldos Spot
       GET /api/v3/ticker/price     → preços atuais (sem autenticação)
+      GET /sapi/v1/simple-earn/flexible/position → posições Flexible Earn
+      GET /sapi/v1/simple-earn/locked/position    → posições Locked Earn
     """
 
     def __init__(self, api_key: str, api_secret: str): ...
 
     def get_spot_balances(self) -> list[dict]:
         """Retorna apenas assets com free + locked > 0.01 (filtrar dust)."""
+        ...
+
+    def get_earn_balances(self) -> list[dict]:
+        """Retorna posições agregadas de Simple Earn Flexible e Locked."""
         ...
 
     def get_prices(self, symbols: list[str]) -> dict[str, float]:
