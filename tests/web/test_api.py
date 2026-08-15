@@ -4,7 +4,21 @@ from web import server
 from web.readers import history_jsonl
 from web.readers.history_jsonl import AccountSnapshot
 from web.readers.ibkr_csv import Position
-from web.routers import account, history, patrimonio, trades
+from web.routers import account, cash_flow, history, patrimonio, trades
+
+
+def test_cash_flow_endpoint_returns_empty_sources_without_data(tmp_path, monkeypatch):
+    monkeypatch.setattr(cash_flow, "read_cash_transactions", lambda: [])
+    monkeypatch.setattr(cash_flow, "read_nav_reconciliation", lambda: [])
+    monkeypatch.setattr(cash_flow, "read_cumulative_contributed", lambda: [])
+    monkeypatch.setattr(
+        cash_flow,
+        "read_cash_flow_sources",
+        lambda: {"cash_transactions": None, "nav_changes": None},
+    )
+    response = TestClient(server.app).get("/api/cash-flow")
+    assert response.status_code == 200
+    assert response.json()["source"] == {"cash_transactions": None, "nav_changes": None}
 
 
 def test_account_endpoint_returns_hint_without_data(tmp_path, monkeypatch):

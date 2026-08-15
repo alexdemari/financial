@@ -207,6 +207,8 @@ code { color: #60a5fa; }
 .trade-summary dt { color: #64748b; }
 .trade-summary dd { margin: 0; }
 .source-updates { color: #64748b; font-size: 11px; margin: 12px 0 0; }
+.cash-flow-summary { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 16px; }
+.cash-flow-summary .card { padding: 12px; }
 .mobile-option-details { display: none; }
 
 .patrimonio-cards { grid-template-columns: repeat(5, 1fr); }

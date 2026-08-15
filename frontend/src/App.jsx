@@ -2,6 +2,7 @@ import { useState } from "react";
 import AccountCards from "./components/AccountCards";
 import AttentionBanner from "./components/AttentionBanner";
 import AllocationChart from "./components/AllocationChart";
+import CashFlowPanel from "./components/CashFlowPanel";
 import DividendDecisionTable from "./components/DividendDecisionTable";
 import HistoryChart from "./components/HistoryChart";
 import MacroStrip from "./components/MacroStrip";
@@ -35,6 +36,7 @@ export default function App() {
   const dividendReport = useApi("/api/report/dividends").data;
   const trades = useApi("/api/trades").data;
   const recentHistory = useApi("/api/history?days=2").data;
+  const cashFlow = useApi("/api/cash-flow");
 
   function tabDotColor(name) {
     if (name === "Scanner" && isStale(scanner?.last_updated)) return "amber";
@@ -73,7 +75,7 @@ export default function App() {
     {tab === "Portfolio" && <div className="grid"><AllocationChart positions={positions} /><Panel title="Positions" updated={account?.last_updated}>
       <table><thead><tr><th>Symbol</th><th>Type</th><th>Qty</th><th>Market Value</th><th>P&L</th><th>Weight</th></tr></thead>
       <tbody>{positions?.map((p) => <tr key={p.symbol}><td><strong>{p.symbol}</strong></td><td><span className={`asset-badge badge-${p.asset_type.toLowerCase()}`}>{p.asset_type}</span></td><td>{p.quantity}</td><td>${p.market_value.toFixed(2)}</td><td className={p.unrealized_pnl >= 0 ? "pos" : "neg"}>${p.unrealized_pnl.toFixed(2)}</td><td>{(p.weight * 100).toFixed(1)}%</td></tr>)}</tbody></table></Panel></div>}
-    {tab === "History" && <HistoryChart entries={history} />}
+    {tab === "History" && <><HistoryChart entries={history} cashFlow={cashFlow.data} /><CashFlowPanel cashFlow={cashFlow} /></>}
     {tab === "Scanner" && <ScannerCandidatesTable scanner={scanner} scannerReport={scannerReport} />}
     {tab === "Dividends" && <><DividendDecisionTable dividendReport={dividendReport} /><MarkdownView report={dividendReport} command="dividends-local" title="Dividend Report" /></>}
     {tab === "Trades" && <TradesTable data={trades} />}
