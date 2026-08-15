@@ -24,12 +24,26 @@ _CONFIGURATION_ERROR_CODES = {"1025"}
 def fetch_flex_query(
     output_path: Path,
     *,
+    token_env: str = "IBKR_FLEX_TOKEN",
+    query_id_env: str = "IBKR_FLEX_QUERY_ID",
     max_retries: int = 5,
     retry_wait: float = 5.0,
+    statement_wait_cap: float | None = None,
+    statement_max_total_wait: float | None = None,
 ) -> Path | None:
-    """Download the latest IBKR Flex Query XML to ``output_path``."""
-    token = _require_env("IBKR_FLEX_TOKEN")
-    query_id = _require_env("IBKR_FLEX_QUERY_ID")
+    """Download the latest IBKR Flex Query XML to ``output_path``.
+
+    ``token_env``/``query_id_env`` let callers point at a different Flex
+    Query (e.g. a Cash Transactions query) sharing the same token.
+
+    By default the GetStatement step polls ``max_retries`` times at a fixed
+    ``retry_wait`` interval (unchanged, existing behavior). Passing
+    ``statement_max_total_wait`` switches it to exponential backoff instead
+    (starting at ``retry_wait``, doubling, capped at ``statement_wait_cap``)
+    until that total wall-clock budget is exhausted.
+    """
+    token = _require_env(token_env)
+    query_id = _require_env(query_id_env)
 
     send_url = SEND_URL.format(token=token, query_id=query_id)
     for attempt in range(1, max_retries + 1):
@@ -72,6 +86,22 @@ def fetch_flex_query(
         )
 
     get_url = f"{statement_url}?t={token}&q={reference_code}&v=3"
+    if statement_max_total_wait is not None:
+        return _poll_get_statement_with_backoff(
+            get_url,
+            output_path,
+            initial_wait=retry_wait,
+            wait_cap=statement_wait_cap or retry_wait,
+            max_total_wait=statement_max_total_wait,
+        )
+    return _poll_get_statement_fixed(
+        get_url, output_path, max_retries=max_retries, retry_wait=retry_wait
+    )
+
+
+def _poll_get_statement_fixed(
+    get_url: str, output_path: Path, *, max_retries: int, retry_wait: float
+) -> Path | None:
     for attempt in range(1, max_retries + 1):
         # IBKR generates the statement asynchronously, so wait before every retrieval.
         time.sleep(retry_wait)
@@ -103,6 +133,55 @@ def fetch_flex_query(
         return _handle_error_response(error_response, output_path=output_path)
 
     raise RuntimeError("Flex GetStatement: report not ready after all retries")
+
+
+def _poll_get_statement_with_backoff(
+    get_url: str,
+    output_path: Path,
+    *,
+    initial_wait: float,
+    wait_cap: float,
+    max_total_wait: float,
+) -> Path | None:
+    elapsed = 0.0
+    wait = initial_wait
+    while True:
+        # IBKR generates the statement asynchronously, so wait before every retrieval.
+        time.sleep(wait)
+        elapsed += wait
+        try:
+            content = _get(get_url)
+        except _TRANSIENT_NETWORK_ERRORS as exc:
+            if elapsed < max_total_wait:
+                print(
+                    f"Flex Web Service timed out ({elapsed:.0f}s elapsed); retrying..."
+                )
+                wait = min(wait * 2, wait_cap)
+                continue
+            return _handle_transient_network_error(
+                exc, output_path, "downloading the Flex statement"
+            )
+
+        error_response = _parse_error_response(content)
+        if error_response is None:
+            _write_atomically(output_path, content)
+            print(f"Flex Query downloaded: {output_path} ({len(content):,} bytes)")
+            return output_path
+
+        error_code = error_response.findtext("ErrorCode", "")
+        if error_code in _RECOVERABLE_CODES and elapsed < max_total_wait:
+            print(
+                f"Flex report not ready (error {error_code}; "
+                f"{elapsed:.0f}s/{max_total_wait:.0f}s elapsed); retrying..."
+            )
+            wait = min(wait * 2, wait_cap)
+            continue
+        if error_code in _RECOVERABLE_CODES:
+            raise RuntimeError(
+                f"Flex GetStatement: report not ready after {elapsed:.0f}s "
+                f"(max wait {max_total_wait:.0f}s)"
+            )
+        return _handle_error_response(error_response, output_path=output_path)
 
 
 _TRANSIENT_NETWORK_ERRORS = (

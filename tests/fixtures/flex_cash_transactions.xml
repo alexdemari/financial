@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FlexQueryResponse queryName="Cash Transactions - Financial" type="AF">
+<FlexStatements count="1">
+<FlexStatement accountId="U0000000" fromDate="20260101" toDate="20260131" period="" whenGenerated="20260201;000000">
+<ChangeInNAV fromDate="20260101" toDate="20260131" startingValue="100000.00" realized="0" depositsWithdrawals="5000.00" dividends="67.75" commissions="0" endingValue="106063.54" twr="6.06" />
+<CashTransactions>
+<CashTransaction accountId="U0000000" dateTime="20260105" amount="5000.00" currency="USD" type="Deposits/Withdrawals" symbol="" description="CASH RECEIPTS / ELECTRONIC FUND TRANSFERS" settleDate="20260105" />
+<CashTransaction accountId="U0000000" dateTime="20260112;202000" amount="67.75" currency="USD" type="Dividends" symbol="PEP" description="PEP(US7134481081) CASH DIVIDEND USD 1.355 PER SHARE (Ordinary Dividend)" settleDate="20260112" />
+<CashTransaction accountId="U0000000" dateTime="20260131" amount="-4.21" currency="USD" type="Broker Interest Paid" symbol="" description="USD DEBIT INT FOR JAN-2026" settleDate="20260131" />
+</CashTransactions>
+</FlexStatement>
+</FlexStatements>
+</FlexQueryResponse>

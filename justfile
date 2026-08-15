@@ -550,6 +550,17 @@ ibkr-flex-fetch output="data/ibkr/flex_latest.xml":
     PYTHONPATH=src uv run python -m ibkr_trades.flex_fetcher \
         --output {{output}}
 
+# Download latest Cash Transactions / Change in NAV Flex Query XML from IBKR.
+ibkr-cash-fetch output="data/ibkr/flex_cash_latest.xml":
+    PYTHONPATH=src uv run python -m ibkr_cash.flex_fetcher \
+        --output {{output}}
+
+# Fetch + parse + upsert cash transactions and NAV changes into local CSV stores.
+# Safe to run daily via cron/CI: re-running does not duplicate rows.
+ibkr-flex-sync flex="data/ibkr/flex_cash_latest.xml":
+    just ibkr-cash-fetch {{flex}}
+    PYTHONPATH=src uv run python -m ibkr_cash.main sync --flex {{flex}}
+
 # One-time backfill from Flex Query XML export.
 # Export from IBKR: Reports → Activity → Flex Queries → All trades since inception → XML
 ibkr-backfill flex="data/ibkr/flex_export.xml":

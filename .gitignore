@@ -67,5 +67,8 @@ options_tracker.csv
 data/ibkr/history.jsonl
 data/ibkr/trades_history.csv
 data/ibkr/options_tracker_manual_backup_*.csv
+data/ibkr/cash_transactions.csv
+data/ibkr/nav_changes.csv
+data/ibkr/flex_*.xml
 config/cash_accounts.yaml
 data/crypto/
