@@ -49,8 +49,13 @@ just ibkr-positions
 just positions-live
 
 # O recipe dedicado ao screener de contratos exige o Gateway ativo para
-# buscar IV/IV Percentile real. Se o Gateway estiver indisponível, o relatório
-# continua sendo gerado usando IVR (aprox) via HV e marca IVP como indisponível:
+# buscar IV/IV Percentile real. IBKR não expõe IV Percentile via TWS API
+# (só via Client Portal Web API, que este projeto não integra) — o dado é
+# computado localmente: reqHistoricalData(whatToShow=OPTION_IMPLIED_VOLATILITY)
+# retorna a série diária de IV do underlying, e o percentil é o rank do IV
+# atual dentro dessa série (janelas 13w/26w/52w). Se o Gateway estiver
+# indisponível, o relatório continua sendo gerado usando IVR (aprox) via HV
+# e marca IVP como indisponível:
 just daily-options
 
 # Sem IB Gateway — usa último CSV local

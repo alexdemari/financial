@@ -244,7 +244,10 @@ The daily report includes:
 7. Viable options (optional `--options-filter`, live liquidity data)
 8. Candidatos para Opções (optional `--options-screener`, ranked CSP/CC contracts
    with IVR, delta, spread, and monthly return on collateral; DTE 30-45 by
-   default via `--dte-min`/`--dte-max`)
+   default via `--dte-min`/`--dte-max`). IVP (52w) and quadrant are real IBKR
+   data — IBKR doesn't expose IV Percentile over the TWS API directly, so it's
+   computed locally from `reqHistoricalData(whatToShow=OPTION_IMPLIED_VOLATILITY)`:
+   the current IV is ranked against its own 13w/26w/52w daily history.
 9. Bucket summary + stats
 
 ```bash
