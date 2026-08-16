@@ -249,7 +249,7 @@ The daily report includes:
 
 ```bash
 just daily options_filter=true                  # enables --options-screener section
-just daily-options                               # same, dedicated recipe
+just daily-options                               # same, dedicated recipe (IB Gateway required for real IVP)
 ```
 
 **Macro context** (injected into report header and LLM prompt):

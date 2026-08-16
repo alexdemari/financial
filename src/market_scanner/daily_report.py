@@ -44,7 +44,9 @@ _OPTIONS_SCREENER_DISPLAY_COLUMNS = [
     "expiration",
     "dte",
     "delta",
-    "ivr_approx",
+    "IVR (aprox)",
+    "IVP (52w)",
+    "Quadrante",
     "premium",
     "monthly_return_pct",
     "spread_pct",
@@ -896,7 +898,9 @@ def _options_screener_table(candidates: list) -> str:
                 "expiration": candidate.expiration,
                 "dte": candidate.dte,
                 "delta": candidate.delta,
-                "ivr_approx": candidate.ivr_approx,
+                "IVR (aprox)": candidate.ivr_approx,
+                "IVP (52w)": candidate.iv_percentile_52w,
+                "Quadrante": candidate.iv_quadrant,
                 "premium": candidate.premium,
                 "monthly_return_pct": candidate.monthly_return_pct,
                 "spread_pct": candidate.spread_pct,
@@ -908,8 +912,11 @@ def _options_screener_table(candidates: list) -> str:
     display = display.loc[:, _OPTIONS_SCREENER_DISPLAY_COLUMNS].copy()
     display["strike"] = display["strike"].map(lambda v: f"${float(v):.2f}")
     display["delta"] = display["delta"].map(lambda v: f"{float(v):.2f}")
-    display["ivr_approx"] = display["ivr_approx"].map(
+    display["IVR (aprox)"] = display["IVR (aprox)"].map(
         lambda v: f"{float(v):.0f}" if pd.notna(v) else "—"
+    )
+    display["IVP (52w)"] = display["IVP (52w)"].map(
+        lambda v: f"{float(v):.0f}%" if pd.notna(v) else "—"
     )
     display["premium"] = display["premium"].map(lambda v: f"${float(v):.2f}")
     display["monthly_return_pct"] = display["monthly_return_pct"].map(

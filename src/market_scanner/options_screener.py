@@ -7,8 +7,10 @@ builds contract-level CSP/CC candidates for the opt-in --options-screener flow.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
+import threading
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
@@ -29,6 +31,17 @@ except ImportError:
     _YF_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+IVR_THRESHOLD = 50.0
+IVP_THRESHOLD = 50.0
+WEIGHTS_WITH_REAL_IVP = {
+    "ivp_real": 0.30,
+    "ivr_approx": 0.20,
+    "return": 0.35,
+    "spread": 0.15,
+}
+WEIGHTS_LEGACY = {"ivr_approx": 0.40, "return": 0.40, "spread": 0.20}
+_IBKR_REQUEST_LOCK = threading.Lock()
 
 
 LAYER1_FILTERS = {
@@ -90,7 +103,14 @@ class OptionsCandidate:
     market_state: str
     adjusted_alignment: str
     earnings_date: str | None
-    score: float
+    iv_underlying_pct: float | None = None
+    iv_contract_pct: float | None = None
+    iv_percentile_13w: float | None = None
+    iv_percentile_26w: float | None = None
+    iv_percentile_52w: float | None = None
+    iv_quadrant: str = "indefinido"
+    iv_source: str = "unavailable"
+    score: float = 0.0
 
 
 def map_strategy(market_state: str, adjusted_alignment: str) -> str | None:
@@ -130,11 +150,197 @@ def compute_ivr(ticker: "yf.Ticker", current_iv: float) -> float | None:  # type
         return None
 
 
+def classify_iv_quadrant(ivr_approx: float | None, ivp_52w: float | None) -> str:
+    if ivr_approx is None or ivp_52w is None:
+        return "indefinido"
+    ivr_high = ivr_approx >= IVR_THRESHOLD
+    ivp_high = ivp_52w >= IVP_THRESHOLD
+    if ivr_high and ivp_high:
+        return "venda_confiante"
+    if ivr_high and not ivp_high:
+        return "spike_pontual"
+    if not ivr_high and ivp_high:
+        return "ambiente_comprimido"
+    return "compra_premio"
+
+
 def score_candidate(candidate: OptionsCandidate) -> float:
     ivr_score = (candidate.ivr_approx or 0.0) / 100.0
     return_score = min(candidate.monthly_return_pct / 2.0, 1.0)
     spread_score = 1.0 - min(candidate.spread_pct / 10.0, 1.0)
-    return round((ivr_score * 0.40) + (return_score * 0.40) + (spread_score * 0.20), 4)
+    if candidate.iv_percentile_52w is not None:
+        ivp_score = candidate.iv_percentile_52w / 100.0
+        weights = WEIGHTS_WITH_REAL_IVP
+        return round(
+            ivp_score * weights["ivp_real"]
+            + ivr_score * weights["ivr_approx"]
+            + return_score * weights["return"]
+            + spread_score * weights["spread"],
+            4,
+        )
+    weights = WEIGHTS_LEGACY
+    return round(
+        ivr_score * weights["ivr_approx"]
+        + return_score * weights["return"]
+        + spread_score * weights["spread"],
+        4,
+    )
+
+
+_UNSET = object()  # distinguishes "no client kwarg passed" from "client=None"
+
+IV_PERCENTILE_WINDOWS = {"13w": 65, "26w": 130, "52w": 250}  # trading days
+
+
+def _ensure_worker_event_loop() -> None:
+    """ib_insync needs a default asyncio loop; worker threads start without one."""
+    try:
+        asyncio.get_event_loop()
+    except RuntimeError:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+
+
+def fetch_ibkr_underlying_iv_history(
+    symbol: str,
+    exchange: str = "SMART",
+    client: Any = None,
+) -> list[float]:
+    """Fetch the underlying's daily option-implied-vol series; never raises.
+
+    IBKR does not expose IV Percentile directly over the TWS API — this
+    historical series is the raw input `compute_iv_percentiles` ranks the
+    current IV against. Pass an already-connected `client` to reuse one
+    connection across a symbol's contracts instead of reconnecting per call.
+    """
+    try:
+        _ensure_worker_event_loop()
+        owns_client = client is None
+        if owns_client:
+            from ibkr_positions.client import IBKRClient
+
+            client = IBKRClient()
+        with _IBKR_REQUEST_LOCK:
+            if owns_client:
+                client.connect()
+            try:
+                rows = client.get_underlying_iv_history(symbol, exchange=exchange)
+            finally:
+                if owns_client:
+                    client.disconnect()
+        return [
+            float(row["iv"]) for row in rows if isinstance(row.get("iv"), int | float)
+        ]
+    except Exception as exc:
+        logger.warning("IBKR IV history unavailable for %s: %s", symbol, exc)
+        return []
+
+
+def compute_iv_percentiles(iv_history: list[float]) -> dict[str, float | None]:
+    """Rank the most recent IV reading within trailing windows of history.
+
+    The last value in `iv_history` is "current" and is ranked (inclusive)
+    against itself plus the prior N-1 trading days for each window —
+    matching how IBKR's own IV Percentile is defined. A window returns None
+    when `iv_history` doesn't cover its full trading-day span — a 26w
+    percentile computed from 40 days of history would look precise while
+    being nearly meaningless, so it is withheld rather than approximated.
+    """
+    if not iv_history:
+        return dict.fromkeys(IV_PERCENTILE_WINDOWS, None)
+    current = iv_history[-1]
+    result: dict[str, float | None] = {}
+    for label, size in IV_PERCENTILE_WINDOWS.items():
+        if len(iv_history) < size:
+            result[label] = None
+            continue
+        window = iv_history[-size:]
+        rank = sum(1 for value in window if value <= current)
+        result[label] = round(rank / len(window) * 100.0, 1)
+    return result
+
+
+def fetch_ibkr_iv_data(
+    contract_id: int | str | dict[str, Any],
+    iv_history: list[float] | None = None,
+    exchange: str = "SMART",
+    client: Any = _UNSET,
+) -> dict[str, Any]:
+    """Fetch and validate per-contract IBKR IV; never raises to the screener.
+
+    `iv_history` (from `fetch_ibkr_underlying_iv_history`, one call per
+    symbol) drives `iv_underlying_pct`/`iv_percentile_*`. `client=None`
+    (as opposed to the omitted-kwarg default) signals the caller already
+    knows IBKR is unreachable for this symbol — skip the network attempt
+    entirely rather than retrying a doomed connection per contract.
+    """
+    empty = {
+        "iv_underlying_pct": None,
+        "iv_contract_pct": None,
+        "iv_percentile_13w": None,
+        "iv_percentile_26w": None,
+        "iv_percentile_52w": None,
+        "iv_source": "unavailable",
+    }
+    if not isinstance(contract_id, dict):
+        return empty
+    if client is None:
+        return empty
+    try:
+        _ensure_worker_event_loop()
+        owns_client = client is _UNSET
+        if owns_client:
+            from ibkr_positions.client import IBKRClient
+
+            client = IBKRClient()
+
+        expiration_ibkr = date.fromisoformat(str(contract_id["expiration"])).strftime(
+            "%Y%m%d"
+        )
+        with _IBKR_REQUEST_LOCK:
+            if owns_client:
+                client.connect()
+            try:
+                payload = client.get_option_market_data(
+                    symbol=str(contract_id["symbol"]),
+                    expiration=expiration_ibkr,
+                    strike=float(contract_id["strike"]),
+                    right=str(contract_id["right"]),
+                    exchange=exchange,
+                )
+            finally:
+                if owns_client:
+                    client.disconnect()
+
+        iv_contract_pct = _valid_metric(payload.get("implied_vol"))
+        iv_underlying_pct = round(iv_history[-1] * 100.0, 2) if iv_history else None
+        percentiles = compute_iv_percentiles(iv_history or [])
+        result = {
+            "iv_underlying_pct": iv_underlying_pct,
+            "iv_contract_pct": iv_contract_pct,
+            "iv_percentile_13w": percentiles["13w"],
+            "iv_percentile_26w": percentiles["26w"],
+            "iv_percentile_52w": percentiles["52w"],
+            "iv_source": (
+                "ibkr"
+                if iv_underlying_pct is not None or iv_contract_pct is not None
+                else "unavailable"
+            ),
+        }
+        return result
+    except Exception as exc:
+        logger.warning("IBKR IV unavailable for %s: %s", contract_id, exc)
+        return empty
+
+
+def _valid_metric(value: Any) -> float | None:
+    if isinstance(value, dict):
+        if value.get("is_valid") is False or value.get("isValid") is False:
+            return None
+        value = value.get("annual_iv", value.get("annual_pct", value.get("value")))
+    converted = _to_float(value)
+    if converted is None or converted <= 0:
+        return None
+    return round(converted * 100.0 if converted <= 3.0 else converted, 2)
 
 
 def candidate_to_dict(candidate: OptionsCandidate) -> dict[str, Any]:
@@ -298,38 +504,67 @@ def _evaluate_symbol(
     rejection_reasons: list[str] = []
     option_type = "PUT" if strategy == "CSP" else "CALL"
 
-    for expiration, dte in target_expirations:
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                chain = ticker.option_chain(expiration.isoformat())
-        except Exception as exc:
-            rejection_reasons.append(f"{expiration.isoformat()}: erro chain {exc}")
-            continue
+    # One IBKR connection reused across every contract of this symbol
+    # (each worker thread owns its connection — never shared across
+    # threads) instead of reconnecting to Gateway per contract.
+    from ibkr_positions.client import IBKRClient, IBKRConnectionError
 
-        contracts = chain.puts if option_type == "PUT" else chain.calls
-        if contracts is None or contracts.empty:
-            rejection_reasons.append(f"{expiration.isoformat()}: sem {option_type}")
-            continue
+    ibkr_client: IBKRClient | None = None
+    try:
+        candidate_client = IBKRClient()
+        with _IBKR_REQUEST_LOCK:
+            candidate_client.connect()
+        ibkr_client = candidate_client
+    except IBKRConnectionError as exc:
+        logger.warning("IBKR Gateway unavailable for %s IV data: %s", symbol, exc)
+    except Exception as exc:
+        logger.warning("IBKR client init failed for %s: %s", symbol, exc)
 
-        for contract in contracts.to_dict(orient="records"):
-            candidate = _candidate_from_contract(
-                symbol=symbol,
-                strategy=strategy,
-                option_type=option_type,
-                contract=contract,
-                expiration=expiration,
-                dte=dte,
-                stock_price=stock_price,
-                market_state=str(row.get("market_state", "")),
-                adjusted_alignment=str(row.get("adjusted_alignment", "")),
-                earnings_date=earnings_date,
-                ticker=ticker,
-            )
-            if isinstance(candidate, OptionsCandidate):
-                candidates.append(candidate)
-            else:
-                rejection_reasons.append(candidate)
+    iv_history = (
+        fetch_ibkr_underlying_iv_history(symbol, client=ibkr_client)
+        if ibkr_client is not None
+        else []
+    )
+
+    try:
+        for expiration, dte in target_expirations:
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    chain = ticker.option_chain(expiration.isoformat())
+            except Exception as exc:
+                rejection_reasons.append(f"{expiration.isoformat()}: erro chain {exc}")
+                continue
+
+            contracts = chain.puts if option_type == "PUT" else chain.calls
+            if contracts is None or contracts.empty:
+                rejection_reasons.append(f"{expiration.isoformat()}: sem {option_type}")
+                continue
+
+            for contract in contracts.to_dict(orient="records"):
+                candidate = _candidate_from_contract(
+                    symbol=symbol,
+                    strategy=strategy,
+                    option_type=option_type,
+                    contract=contract,
+                    expiration=expiration,
+                    dte=dte,
+                    stock_price=stock_price,
+                    market_state=str(row.get("market_state", "")),
+                    adjusted_alignment=str(row.get("adjusted_alignment", "")),
+                    earnings_date=earnings_date,
+                    ticker=ticker,
+                    ibkr_client=ibkr_client,
+                    iv_history=iv_history,
+                )
+                if isinstance(candidate, OptionsCandidate):
+                    candidates.append(candidate)
+                else:
+                    rejection_reasons.append(candidate)
+    finally:
+        if ibkr_client is not None:
+            with _IBKR_REQUEST_LOCK:
+                ibkr_client.disconnect()
 
     if candidates:
         return candidates, exclusions
@@ -351,6 +586,8 @@ def _candidate_from_contract(
     adjusted_alignment: str,
     earnings_date: date | None,
     ticker: "yf.Ticker",  # type: ignore[name-defined]
+    ibkr_client: Any = None,
+    iv_history: list[float] | None = None,
 ) -> OptionsCandidate | str:
     bid = _to_float(contract.get("bid"))
     ask = _to_float(contract.get("ask"))
@@ -402,6 +639,23 @@ def _candidate_from_contract(
     if ivr_approx < LAYER1_FILTERS["ivr_min"]:
         return f"IVR {ivr_approx:.0f} < 30"
 
+    iv_data = fetch_ibkr_iv_data(
+        {
+            "symbol": symbol,
+            "expiration": expiration.isoformat(),
+            "strike": strike,
+            "right": option_type,
+        },
+        iv_history=iv_history,
+        client=ibkr_client,
+    )
+    if iv_data["iv_percentile_52w"] is None:
+        logger.warning(
+            "IBKR IV percentile unavailable for %s; using ivr_approx fallback",
+            symbol,
+        )
+    iv_quadrant = classify_iv_quadrant(ivr_approx, iv_data["iv_percentile_52w"])
+
     candidate = OptionsCandidate(
         symbol=symbol,
         strategy=strategy,
@@ -422,6 +676,13 @@ def _candidate_from_contract(
         market_state=market_state,
         adjusted_alignment=adjusted_alignment,
         earnings_date=earnings_date.isoformat() if earnings_date is not None else None,
+        iv_underlying_pct=iv_data["iv_underlying_pct"],
+        iv_contract_pct=iv_data["iv_contract_pct"],
+        iv_percentile_13w=iv_data["iv_percentile_13w"],
+        iv_percentile_26w=iv_data["iv_percentile_26w"],
+        iv_percentile_52w=iv_data["iv_percentile_52w"],
+        iv_quadrant=iv_quadrant,
+        iv_source=iv_data["iv_source"],
         score=0.0,
     )
     return candidate.__class__(

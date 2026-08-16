@@ -5,10 +5,15 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pandas as pd
+import pytest
 
 import market_scanner.options_screener as screener
 from market_scanner.options_screener import (
     OptionsCandidate,
+    classify_iv_quadrant,
+    compute_iv_percentiles,
+    fetch_ibkr_iv_data,
+    fetch_ibkr_underlying_iv_history,
     map_strategy,
     score_candidate,
     screen_options_candidates,
@@ -17,6 +22,22 @@ from market_scanner.options_screener import (
 
 AS_OF_DATE = date(2026, 7, 9)
 EXPIRATION = "2026-08-14"
+
+
+@pytest.fixture(autouse=True)
+def _ibkr_gateway_unavailable(monkeypatch):
+    """Default: IBKR Gateway unreachable — `_evaluate_symbol` falls back to
+    the legacy yfinance-only IV path. Real network calls are never allowed
+    in tests (AGENTS.md); tests that want the IBKR-available path patch
+    `ibkr_positions.client.IBKRClient` themselves, overriding this."""
+    from ibkr_positions.client import IBKRConnectionError
+
+    client_cls = MagicMock()
+    client_cls.return_value.connect.side_effect = IBKRConnectionError(
+        "mock: gateway unavailable in tests"
+    )
+    monkeypatch.setattr("ibkr_positions.client.IBKRClient", client_cls)
+    return client_cls
 
 
 def _scanner_row(
@@ -157,6 +178,141 @@ def test_score_ranking_ivr_weight() -> None:
     high_return = _candidate(symbol="B", ivr_approx=40.0, monthly_return_pct=1.2)
 
     assert score_candidate(high_ivr) > score_candidate(high_return)
+
+
+def test_classify_quadrant_venda_confiante() -> None:
+    assert classify_iv_quadrant(70.0, 80.0) == "venda_confiante"
+
+
+def test_classify_quadrant_spike_pontual() -> None:
+    assert classify_iv_quadrant(75.0, 20.0) == "spike_pontual"
+
+
+def test_classify_quadrant_ambiente_comprimido() -> None:
+    assert classify_iv_quadrant(20.0, 80.0) == "ambiente_comprimido"
+
+
+def test_classify_quadrant_indefinido_when_ivp_missing() -> None:
+    assert classify_iv_quadrant(70.0, None) == "indefinido"
+
+
+def test_fetch_ibkr_iv_data_handles_invalid_flag(monkeypatch) -> None:
+    client = MagicMock()
+    client.return_value.get_option_market_data.return_value = {
+        "implied_vol": {"annual_iv": -1, "is_valid": False},
+    }
+    monkeypatch.setattr("ibkr_positions.client.IBKRClient", client)
+
+    result = fetch_ibkr_iv_data(
+        {"symbol": "AAPL", "expiration": EXPIRATION, "strike": 100, "right": "PUT"}
+    )
+
+    assert result["iv_source"] == "unavailable"
+    assert result["iv_percentile_52w"] is None
+
+
+def test_fetch_ibkr_iv_data_uses_ibkr_date_format(monkeypatch) -> None:
+    client = MagicMock()
+    client.return_value.get_option_market_data.return_value = {"implied_vol": 0.28}
+    monkeypatch.setattr("ibkr_positions.client.IBKRClient", client)
+
+    fetch_ibkr_iv_data(
+        {"symbol": "AAPL", "expiration": "2026-08-14", "strike": 100, "right": "PUT"}
+    )
+
+    call_kwargs = client.return_value.get_option_market_data.call_args.kwargs
+    assert call_kwargs["expiration"] == "20260814"
+
+
+def test_fetch_ibkr_iv_data_skips_network_when_client_is_none() -> None:
+    result = fetch_ibkr_iv_data(
+        {"symbol": "AAPL", "expiration": EXPIRATION, "strike": 100, "right": "PUT"},
+        client=None,
+    )
+
+    assert result["iv_source"] == "unavailable"
+
+
+def test_fetch_ibkr_iv_data_reuses_percentiles_from_shared_history(monkeypatch) -> None:
+    client = MagicMock()
+    client.get_option_market_data.return_value = {"implied_vol": 0.30}
+
+    result = fetch_ibkr_iv_data(
+        {"symbol": "AAPL", "expiration": EXPIRATION, "strike": 100, "right": "PUT"},
+        iv_history=[0.20] * 64 + [0.30],  # exactly 65 bars: full 13w window
+        client=client,
+    )
+
+    assert result["iv_source"] == "ibkr"
+    assert result["iv_underlying_pct"] == 30.0
+    assert result["iv_percentile_13w"] == 100.0
+    assert result["iv_percentile_26w"] is None  # < 130 bars of history here
+    client.connect.assert_not_called()  # reused shared connection, no reconnect
+    client.disconnect.assert_not_called()
+
+
+def test_compute_iv_percentiles_ranks_current_within_window() -> None:
+    history = [0.10 + 0.01 * i for i in range(65)]  # strictly increasing, current=high
+
+    percentiles = compute_iv_percentiles(history)
+
+    assert percentiles["13w"] == 100.0
+    assert percentiles["26w"] is None
+    assert percentiles["52w"] is None
+
+
+def test_compute_iv_percentiles_empty_history_returns_none() -> None:
+    assert compute_iv_percentiles([]) == {"13w": None, "26w": None, "52w": None}
+
+
+def test_fetch_ibkr_underlying_iv_history_returns_series() -> None:
+    client = MagicMock()
+    client.get_underlying_iv_history.return_value = [
+        {"date": date(2026, 7, 1), "iv": 0.20},
+        {"date": date(2026, 7, 2), "iv": 0.22},
+    ]
+
+    history = fetch_ibkr_underlying_iv_history("AAPL", client=client)
+
+    assert history == [0.20, 0.22]
+    client.connect.assert_not_called()  # shared client — caller owns lifecycle
+
+
+def test_fetch_ibkr_underlying_iv_history_never_raises_on_error() -> None:
+    client = MagicMock()
+    client.get_underlying_iv_history.side_effect = RuntimeError("boom")
+
+    assert fetch_ibkr_underlying_iv_history("AAPL", client=client) == []
+
+
+def test_score_uses_real_ivp_weights() -> None:
+    candidate = _candidate(symbol="A", ivr_approx=60.0, monthly_return_pct=1.0)
+    candidate = OptionsCandidate(**(candidate.__dict__ | {"iv_percentile_52w": 80.0}))
+
+    assert score_candidate(candidate) == 0.625
+
+
+def test_score_falls_back_to_legacy_weights_when_ivp_missing() -> None:
+    candidate = _candidate(symbol="A", ivr_approx=60.0, monthly_return_pct=1.0)
+
+    assert score_candidate(candidate) == 0.56
+
+
+def test_screen_completes_without_crash_on_ibkr_error(monkeypatch) -> None:
+    # IBKR Gateway unavailable is the default via the autouse
+    # `_ibkr_gateway_unavailable` fixture — screening must still complete,
+    # falling back to legacy yfinance-only IV/scoring for every candidate.
+    ticker = _ticker()
+    _patch_yfinance(monkeypatch, ticker)
+    monkeypatch.setattr(screener, "compute_ivr", lambda _ticker, _iv: 70.0)
+
+    candidates, exclusions = screen_options_candidates(
+        [_scanner_row()], as_of_date=AS_OF_DATE
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0].iv_source == "unavailable"
+    assert exclusions == []
 
 
 def test_existing_position_excluded(monkeypatch) -> None:

@@ -3,11 +3,19 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 
-from ib_insync import IB, PortfolioItem
+from ib_insync import IB, Option, PortfolioItem, Stock
 
 from ibkr_positions.models import AccountSummary, CashBalance, Portfolio, Position
 
 logger = logging.getLogger(__name__)
+
+# TWS generic tick IDs used by the options screener.  Keep this mapping next
+# to the transport call so field-code changes do not leak into report logic.
+OPTION_MARKET_DATA_TICKS = {
+    "historical_volatility": "104",
+    "option_implied_volatility": "106",
+    "real_time_historical_volatility": "411",
+}
 
 _GATEWAY_NOT_RUNNING = (
     "Error: IB Gateway is not running on {host}:{port}\n"
@@ -20,6 +28,16 @@ class IBKRConnectionError(RuntimeError):
 
 
 class IBKRClient:
+    """Thin wrapper over ib_insync's TWS API.
+
+    Supports both one-shot calls (connect/disconnect per call, the
+    original behavior) and a reused connection across several calls via
+    `connect()`/`disconnect()` or the context-manager form — callers that
+    need many sequential requests (e.g. the options screener fetching IV
+    for several contracts) should hold one connection open instead of
+    reconnecting to Gateway per request.
+    """
+
     def __init__(
         self,
         host: str = "127.0.0.1",
@@ -29,8 +47,11 @@ class IBKRClient:
         self._host = host
         self._port = port
         self._client_id = client_id
+        self._ib: IB | None = None
 
-    def get_portfolio(self) -> Portfolio:
+    def connect(self) -> None:
+        if self._ib is not None and self._ib.isConnected():
+            return
         ib = IB()
         try:
             ib.connect(
@@ -44,7 +65,26 @@ class IBKRClient:
             raise IBKRConnectionError(
                 _GATEWAY_NOT_RUNNING.format(host=self._host, port=self._port)
             ) from exc
+        self._ib = ib
 
+    def disconnect(self) -> None:
+        if self._ib is not None:
+            self._ib.disconnect()
+            self._ib = None
+
+    def __enter__(self) -> "IBKRClient":
+        self.connect()
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self.disconnect()
+
+    def get_portfolio(self) -> Portfolio:
+        owns_connection = self._ib is None
+        if owns_connection:
+            self.connect()
+        ib = self._ib
+        assert ib is not None
         try:
             accounts = ib.managedAccounts()
             if not accounts:
@@ -63,7 +103,106 @@ class IBKRClient:
                 positions=positions,
             )
         finally:
-            ib.disconnect()
+            if owns_connection:
+                self.disconnect()
+
+    def get_option_market_data(
+        self,
+        symbol: str,
+        expiration: str,
+        strike: float,
+        right: str,
+        exchange: str = "SMART",
+    ) -> dict[str, object]:
+        """Return a read-only option market-data snapshot for one contract.
+
+        `expiration` must be `YYYYMMDD` (ib_insync's
+        `lastTradeDateOrContractMonth` format) — an ISO `YYYY-MM-DD` string
+        fails contract qualification silently (empty result).
+
+        The raw ticker fields are intentionally returned as a mapping so
+        callers can apply their own validity rules without coupling this
+        transport layer to a report or screener model. Only fields that
+        actually exist on ib_insync's `Ticker`/`OptionComputation` are read
+        here — IBKR's IV Percentile is not exposed over the TWS API at all
+        (see `get_underlying_iv_history` for the real source of that data).
+        """
+        owns_connection = self._ib is None
+        if owns_connection:
+            self.connect()
+        ib = self._ib
+        assert ib is not None
+        try:
+            contract = Option(
+                symbol,
+                expiration,
+                float(strike),
+                right,
+                exchange,
+                currency="USD",
+            )
+            qualified = ib.qualifyContracts(contract)
+            if not qualified:
+                return {}
+            ticker = ib.reqMktData(
+                qualified[0],
+                genericTickList=",".join(OPTION_MARKET_DATA_TICKS.values()),
+                snapshot=True,
+            )
+            ib.sleep(1)
+            option_greeks = ticker.modelGreeks or ticker.bidGreeks or ticker.askGreeks
+            return {
+                "implied_vol": getattr(option_greeks, "impliedVol", None),
+                "historical_vol": getattr(ticker, "histVolatility", None),
+            }
+        finally:
+            if owns_connection:
+                self.disconnect()
+
+    def get_underlying_iv_history(
+        self,
+        symbol: str,
+        exchange: str = "SMART",
+        duration: str = "1 Y",
+    ) -> list[dict[str, object]]:
+        """Return the underlying's daily option-implied-volatility series.
+
+        IBKR computes IV Percentile server-side only through the separate
+        Client Portal Web API, which this project does not integrate with.
+        Over the TWS API (what `IBKRClient` uses), the same data is
+        available as a historical series via
+        `reqHistoricalData(whatToShow="OPTION_IMPLIED_VOLATILITY")` — one
+        bar per trading day, `close` is the underlying's implied vol as a
+        fraction (e.g. 0.2225 = 22.25%). Callers compute percentile rank
+        themselves from this series (see
+        `options_screener.compute_iv_percentiles`).
+        """
+        owns_connection = self._ib is None
+        if owns_connection:
+            self.connect()
+        ib = self._ib
+        assert ib is not None
+        try:
+            contract = Stock(symbol, exchange, "USD")
+            qualified = ib.qualifyContracts(contract)
+            if not qualified:
+                return []
+            bars = ib.reqHistoricalData(
+                qualified[0],
+                endDateTime="",
+                durationStr=duration,
+                barSizeSetting="1 day",
+                whatToShow="OPTION_IMPLIED_VOLATILITY",
+                useRTH=True,
+            )
+            return [
+                {"date": bar.date, "iv": bar.close}
+                for bar in bars
+                if bar.close is not None
+            ]
+        finally:
+            if owns_connection:
+                self.disconnect()
 
 
 def _parse_account_summary(ib: IB, account_id: str) -> AccountSummary:

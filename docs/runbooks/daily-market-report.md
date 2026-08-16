@@ -48,6 +48,11 @@ just report           # reusa scan_daily.csv existente, inclui options_tracker.c
 just ibkr-positions
 just positions-live
 
+# O recipe dedicado ao screener de contratos exige o Gateway ativo para
+# buscar IV/IV Percentile real. Se o Gateway estiver indisponível, o relatório
+# continua sendo gerado usando IVR (aprox) via HV e marca IVP como indisponível:
+just daily-options
+
 # Sem IB Gateway — usa último CSV local
 just positions
 ```

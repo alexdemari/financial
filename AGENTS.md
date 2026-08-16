@@ -193,6 +193,12 @@ CSV date column must always be parsed as `DatetimeIndex` (`index_col=0, parse_da
 
 `stock_analyzer` and `market_scanner` must operate on local data only — no `yfinance` calls.
 
+**Documented exception:** `market_scanner.options_screener` (T22) calls the live IBKR
+Gateway per contract to fetch real IV Percentile — this is a deliberate, task-approved
+deviation, not a violation to fix. It only runs behind the opt-in `--options-screener`
+flag; `just daily-options` documents the Gateway requirement. Do not revert it to
+satisfy this rule.
+
 ## Scanner Architecture
 
 Module responsibility — never cross these boundaries:

@@ -408,6 +408,7 @@ daily universe="data/scanner_universe_filtered.csv" \
     @echo "✓ Daily report: reports/market_scanner/daily_report.md"
 
 # Daily flow with the contract-level options screener enabled.
+# Requires IB Gateway active: T22 fetches real IV/IV Percentile snapshots.
 daily-options universe="data/scanner_universe_filtered.csv" \
               data_dir="data/stocks/1D" \
               max_days="2" \
