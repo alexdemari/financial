@@ -98,6 +98,10 @@ web-dev:
 cash-summary:
     PYTHONPATH=src uv run python -c "from web.readers.cash_reader import read_cash_accounts, total_cash_brl; accounts = read_cash_accounts(); [print(f'{account.name}: R$ {account.balance:,.2f} (em {account.as_of})') for account in accounts]; print(f'Total: R$ {total_cash_brl(accounts):,.2f}')"
 
+# Mostra posições e total de crédito privado (lê config/credito_privado.yaml)
+credito-privado-summary:
+    PYTHONPATH=src uv run python -c "from web.readers.credito_privado_reader import read_credito_privado, total_credito_privado_brl; items = read_credito_privado(); [print(f'{item.emissor} — {item.produto}: R$ {item.valor_atual:,.2f} ({item.status})') for item in items]; print(f'Total ativo: R$ {total_credito_privado_brl(items):,.2f}')"
+
 # Busca saldos Spot e Simple Earn da Binance e salva snapshot local (sem trading)
 crypto-snapshot:
     PYTHONPATH=src uv run python -m crypto_tracker.snapshot

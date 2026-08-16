@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from web.readers import cash_reader
+from web.readers import credito_privado_reader
 from web.readers import patrimonio_reader
 from web.readers.history_jsonl import AccountSnapshot
 from web.readers.ibkr_csv import Position
@@ -23,6 +24,9 @@ def _configure_paths(monkeypatch, tmp_path):
     monkeypatch.setattr(patrimonio_reader, "get_ptax", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(cash_reader, "CONFIG_PATH", tmp_path / "cash_accounts.yaml")
     monkeypatch.setattr(patrimonio_reader, "read_crypto_snapshot", lambda: None)
+    monkeypatch.setattr(
+        credito_privado_reader, "CONFIG_PATH", tmp_path / "credito.yaml"
+    )
 
 
 def _snapshot(nlv=100.0, cash=20.0):
@@ -302,3 +306,32 @@ def test_crypto_snapshot_is_included_in_total_and_allocation(monkeypatch, tmp_pa
     assert result["crypto"]["stale"] is True
     assert result["allocation"]["cripto"]["pct_of_total"] == pytest.approx(100)
     assert result["allocation"]["cripto"]["target_min"] is None
+
+
+def test_credito_privado_is_included_in_total_and_renda_fixa_allocation(
+    monkeypatch, tmp_path
+):
+    _configure_paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(patrimonio_reader, "read_account_snapshot", lambda: None)
+    monkeypatch.setattr(patrimonio_reader, "read_positions", lambda: [])
+    (tmp_path / "credito.yaml").write_text(
+        """
+items:
+  - id: active
+    emissor: Banco
+    produto: CDB
+    valor_atual: 12000
+    vencimento: "2027-01-01"
+  - id: expired
+    valor_atual: 3000
+    vencimento: "2026-01-01"
+""",
+        encoding="utf-8",
+    )
+
+    result = patrimonio_reader.read_patrimonio(date(2026, 8, 11))
+
+    assert result["credito_privado"]["total_brl"] == 12000
+    assert result["credito_privado"]["has_vencido_pending_cleanup"] is True
+    assert result["total_brl"] == 12000
+    assert result["allocation"]["renda_fixa_br"]["value_brl"] == 12000

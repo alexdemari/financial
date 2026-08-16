@@ -71,4 +71,5 @@ data/ibkr/cash_transactions.csv
 data/ibkr/nav_changes.csv
 data/ibkr/flex_*.xml
 config/cash_accounts.yaml
+config/credito_privado.yaml
 data/crypto/

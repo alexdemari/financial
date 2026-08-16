@@ -17,6 +17,10 @@ from web.readers.cash_reader import (
     total_cash_brl,
 )
 from web.readers.common import PROJECT_ROOT
+from web.readers.credito_privado_reader import (
+    read_credito_privado,
+    total_credito_privado_brl,
+)
 from web.readers.crypto_reader import read_crypto_snapshot
 from web.readers.history_jsonl import read_account_snapshot
 from web.readers.ibkr_csv import read_positions
@@ -53,6 +57,8 @@ def read_patrimonio(reference_date: date | None = None) -> dict[str, Any]:
     targets = _read_targets()
     cash_accounts = read_cash_accounts() + read_btg_cash_accounts(BTG_CASH)
     cash_total_brl = total_cash_brl(cash_accounts)
+    credito_privado_items = read_credito_privado(today)
+    credito_privado_total_brl = total_credito_privado_brl(credito_privado_items)
     crypto = read_crypto_snapshot()
     crypto_total_brl = crypto.total_brl if crypto else 0.0
 
@@ -79,6 +85,7 @@ def read_patrimonio(reference_date: date | None = None) -> dict[str, Any]:
         + btg_opcoes["total_brl"]
         + btg_geral["total_brl"]
         + cash_total_brl
+        + credito_privado_total_brl
         + crypto_total_brl
     )
     allocation_values = _allocation_values(
@@ -87,6 +94,7 @@ def read_patrimonio(reference_date: date | None = None) -> dict[str, Any]:
         btg_geral,
         fixed_income,
         cash_accounts,
+        credito_privado_total_brl,
         crypto_total_brl,
         ptax_rate,
     )
@@ -117,6 +125,13 @@ def read_patrimonio(reference_date: date | None = None) -> dict[str, Any]:
         ],
         "cash_total_brl": cash_total_brl,
         "cash_stale": cash_accounts_are_stale(cash_accounts, today),
+        "credito_privado": {
+            "items": [asdict(item) for item in credito_privado_items],
+            "total_brl": credito_privado_total_brl,
+            "has_vencido_pending_cleanup": any(
+                item.status == "vencido" for item in credito_privado_items
+            ),
+        },
         "crypto": _serialize_crypto(crypto),
         "cash_summary": {
             "label": cash_summary_target["label"],
@@ -251,6 +266,7 @@ def _allocation_values(
     btg_geral: dict[str, Any],
     fixed_income: dict[str, Any],
     cash_accounts: list[CashAccount],
+    credito_privado_total_brl: float,
     crypto_total_brl: float,
     ptax_rate: float | None,
 ) -> dict[str, float]:
@@ -279,7 +295,7 @@ def _allocation_values(
             asset_class = btg_mapping.get(_text(position.get("asset_type")).upper())
             if asset_class:
                 values[asset_class] += _number(position.get("saldo_bruto"))
-    values["renda_fixa_br"] = fixed_income["total_brl"]
+    values["renda_fixa_br"] = fixed_income["total_brl"] + credito_privado_total_brl
     values["cripto"] = crypto_total_brl
     return values
 

@@ -444,6 +444,14 @@ a matching `web.routers.*` FastAPI router (`/api/account`, `/api/trades`,
 `/api/patrimonio`, etc.). A missing source file surfaces as a "no data — run:
 ..." hint in the UI instead of an error.
 
+The Patrimônio tab also reads the optional, gitignored
+`config/credito_privado.yaml`. Private-credit items use the manually entered
+current value when available, otherwise the invested value as a conservative
+estimate. Active items are included in the existing `renda_fixa_br` allocation;
+expired items remain visible for cleanup but are excluded from totals. Use
+`just credito-privado-summary` to inspect the local entries without starting
+the dashboard.
+
 ```bash
 just web        # build frontend, serve at http://localhost:8000
 just web-dev    # backend + Vite hot reload at http://localhost:5173
@@ -476,6 +484,7 @@ just web-dev    # backend + Vite hot reload at http://localhost:5173
 | `data/btg/proventos_futuros_all.csv` | Merged BTG pending income (Valores em Trânsito) (gitignored) |
 | `data/btg/conta_corrente_all.csv` | Merged BTG cash account movements (gitignored) |
 | `config/patrimonio_targets.yaml` | Allocation targets for the Patrimônio tab |
+| `config/credito_privado.yaml` | Manual private-credit positions (gitignored) |
 
 ---
 
@@ -526,7 +535,8 @@ frontend/                   Vite + React dashboard UI
 
 config/
 ├── dividend_portfolio.yaml BR + US dividend assets with min_dy and ceiling_method
-└── patrimonio_targets.yaml Allocation targets for the Patrimônio tab
+├── patrimonio_targets.yaml Allocation targets for the Patrimônio tab
+└── credito_privado.yaml     Manual private-credit positions (gitignored)
 
 data/
 ├── stocks/1D/              Local OHLC CSVs per symbol

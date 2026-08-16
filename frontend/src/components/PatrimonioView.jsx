@@ -35,6 +35,7 @@ export default function PatrimonioView({ data }) {
   const cashAccounts = data.cash_accounts || [];
   const cashTotalBrl = data.cash_total_brl || 0;
   const cashSummary = data.cash_summary || {};
+  const creditoPrivado = data.credito_privado || { items: [], total_brl: 0, has_vencido_pending_cleanup: false };
   const crypto = data.crypto || { positions: [], total_brl: 0, stale: true };
   const chartData = allocation.filter((item) => item.value_brl > 0);
   const cashLatestAsOf = cashAccounts.reduce((latest, account) => {
@@ -59,6 +60,16 @@ export default function PatrimonioView({ data }) {
     { key: "ativo", label: "Ativo" },
     { key: "vencimento", label: "Vencimento" },
     { key: "saldo_liquido", label: "Saldo líquido", format: (value) => money.format(value || 0) },
+  ];
+  const creditoPrivadoColumns = [
+    { key: "emissor", label: "Emissor" },
+    { key: "produto", label: "Produto" },
+    { key: "indexador", label: "Indexador" },
+    { key: "taxa_pct", label: "Taxa" },
+    { key: "valor_investido", label: "Valor investido", format: (value) => money.format(value || 0) },
+    { key: "valor_atual", label: "Valor atual", format: (value) => money.format(value || 0) },
+    { key: "vencimento", label: "Vencimento" },
+    { key: "status", label: "Status", format: (value) => value === "vencido" ? "⚠ vencido" : "ativo" },
   ];
 
   return <section>
@@ -123,6 +134,10 @@ export default function PatrimonioView({ data }) {
       <details className="account-details"><summary>Renda Fixa <span>{money.format(data.renda_fixa.total_brl)}</span></summary>
         <MissingData account={data.renda_fixa} />
         {data.renda_fixa.status !== "no_data" && <PositionTable rows={data.renda_fixa.positions} columns={fixedIncomeColumns} />}
+      </details>
+      <details className="account-details"><summary>Crédito Privado <span>{money.format(creditoPrivado.total_brl || 0)}</span></summary>
+        {creditoPrivado.has_vencido_pending_cleanup && <div className="cash-warning">⚠ Item vencido: excluído do total — atualize o registro.</div>}
+        <PositionTable rows={creditoPrivado.items} columns={creditoPrivadoColumns} />
       </details>
       <details className="account-details"><summary>Cripto <span>{money.format(crypto.total_brl || 0)}</span></summary>
         <PositionTable rows={crypto.positions} columns={[

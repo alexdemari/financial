@@ -130,6 +130,30 @@ before the positions report, so `options_tracker.csv` is always current.
 
 See `ibkr-trades.md`.
 
+### `web` patrimônio consolidation
+
+The read-only dashboard consolidates account and manually maintained wealth
+sources through `web.readers.patrimonio_reader`. Cash accounts and private
+credit remain separate sibling readers because their schemas differ:
+
+```text
+cash_reader                -> caixa / liquidez / reserva
+credito_privado_reader    -> active private credit positions
+                                      |
+                                      v
+                              patrimonio_reader
+                                      |
+                                      +-> total_brl
+                                      +-> allocation.renda_fixa_br
+                                      +-> /api/patrimonio
+```
+
+Private credit is classified as `renda_fixa_br`, not as a new allocation
+category. Its `valor_atual` is read as entered; a missing value falls back to
+`valor_investido` and is marked as estimated. Expired entries remain in the
+API response with `status: "vencido"`, but are excluded from the consolidated
+total until the local configuration is cleaned up.
+
 ### Current Backtest
 
 Owns Scanner V3 signal validation.
