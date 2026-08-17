@@ -34,12 +34,13 @@ logger = logging.getLogger(__name__)
 
 IVR_THRESHOLD = 50.0
 IVP_THRESHOLD = 50.0
-WEIGHTS_WITH_REAL_IVP = {
-    "ivp_real": 0.30,
-    "ivr_approx": 0.20,
+WEIGHTS_FULLY_REAL = {
+    "ivr_real": 0.25,
+    "ivp_real": 0.25,
     "return": 0.35,
     "spread": 0.15,
 }
+WEIGHTS_PARTIAL_REAL = {"iv_real": 0.30, "return": 0.45, "spread": 0.25}
 WEIGHTS_LEGACY = {"ivr_approx": 0.40, "return": 0.40, "spread": 0.20}
 _IBKR_REQUEST_LOCK = threading.Lock()
 
@@ -103,6 +104,7 @@ class OptionsCandidate:
     market_state: str
     adjusted_alignment: str
     earnings_date: str | None
+    ivr_real: float | None = None
     iv_underlying_pct: float | None = None
     iv_contract_pct: float | None = None
     iv_percentile_13w: float | None = None
@@ -150,10 +152,10 @@ def compute_ivr(ticker: "yf.Ticker", current_iv: float) -> float | None:  # type
         return None
 
 
-def classify_iv_quadrant(ivr_approx: float | None, ivp_52w: float | None) -> str:
-    if ivr_approx is None or ivp_52w is None:
+def classify_iv_quadrant(ivr_real: float | None, ivp_52w: float | None) -> str:
+    if ivr_real is None or ivp_52w is None:
         return "indefinido"
-    ivr_high = ivr_approx >= IVR_THRESHOLD
+    ivr_high = ivr_real >= IVR_THRESHOLD
     ivp_high = ivp_52w >= IVP_THRESHOLD
     if ivr_high and ivp_high:
         return "venda_confiante"
@@ -165,22 +167,33 @@ def classify_iv_quadrant(ivr_approx: float | None, ivp_52w: float | None) -> str
 
 
 def score_candidate(candidate: OptionsCandidate) -> float:
-    ivr_score = (candidate.ivr_approx or 0.0) / 100.0
     return_score = min(candidate.monthly_return_pct / 2.0, 1.0)
     spread_score = 1.0 - min(candidate.spread_pct / 10.0, 1.0)
-    if candidate.iv_percentile_52w is not None:
-        ivp_score = candidate.iv_percentile_52w / 100.0
-        weights = WEIGHTS_WITH_REAL_IVP
+    has_ivr_real = candidate.ivr_real is not None
+    has_ivp_real = candidate.iv_percentile_52w is not None
+
+    if has_ivr_real and has_ivp_real:
+        weights = WEIGHTS_FULLY_REAL
         return round(
-            ivp_score * weights["ivp_real"]
-            + ivr_score * weights["ivr_approx"]
+            (candidate.ivr_real / 100.0) * weights["ivr_real"]
+            + (candidate.iv_percentile_52w / 100.0) * weights["ivp_real"]
             + return_score * weights["return"]
             + spread_score * weights["spread"],
             4,
         )
+    if has_ivp_real or has_ivr_real:
+        real_value = candidate.iv_percentile_52w if has_ivp_real else candidate.ivr_real
+        weights = WEIGHTS_PARTIAL_REAL
+        return round(
+            (real_value / 100.0) * weights["iv_real"]
+            + return_score * weights["return"]
+            + spread_score * weights["spread"],
+            4,
+        )
+
     weights = WEIGHTS_LEGACY
     return round(
-        ivr_score * weights["ivr_approx"]
+        ((candidate.ivr_approx or 0.0) / 100.0) * weights["ivr_approx"]
         + return_score * weights["return"]
         + spread_score * weights["spread"],
         4,
@@ -259,6 +272,19 @@ def compute_iv_percentiles(iv_history: list[float]) -> dict[str, float | None]:
     return result
 
 
+def compute_iv_rank(iv_history: list[float]) -> float | None:
+    """Compute real IV Rank over the complete trailing 52-week window."""
+    window_size = IV_PERCENTILE_WINDOWS["52w"]
+    if len(iv_history) < window_size:
+        return None
+    window = iv_history[-window_size:]
+    low, high = min(window), max(window)
+    if high <= low:
+        return None
+    rank = (window[-1] - low) / (high - low) * 100.0
+    return round(max(0.0, min(100.0, rank)), 1)
+
+
 def fetch_ibkr_iv_data(
     contract_id: int | str | dict[str, Any],
     iv_history: list[float] | None = None,
@@ -279,6 +305,7 @@ def fetch_ibkr_iv_data(
         "iv_percentile_13w": None,
         "iv_percentile_26w": None,
         "iv_percentile_52w": None,
+        "ivr_real": None,
         "iv_source": "unavailable",
     }
     if not isinstance(contract_id, dict):
@@ -314,12 +341,14 @@ def fetch_ibkr_iv_data(
         iv_contract_pct = _valid_metric(payload.get("implied_vol"))
         iv_underlying_pct = round(iv_history[-1] * 100.0, 2) if iv_history else None
         percentiles = compute_iv_percentiles(iv_history or [])
+        ivr_real = compute_iv_rank(iv_history or [])
         result = {
             "iv_underlying_pct": iv_underlying_pct,
             "iv_contract_pct": iv_contract_pct,
             "iv_percentile_13w": percentiles["13w"],
             "iv_percentile_26w": percentiles["26w"],
             "iv_percentile_52w": percentiles["52w"],
+            "ivr_real": ivr_real,
             "iv_source": (
                 "ibkr"
                 if iv_underlying_pct is not None or iv_contract_pct is not None
@@ -438,7 +467,9 @@ def screen_options_candidates(
 
     candidates.sort(
         key=lambda candidate: (
-            candidate.ivr_approx if candidate.ivr_approx is not None else -1.0,
+            candidate.ivr_real
+            if candidate.ivr_real is not None
+            else (candidate.ivr_approx if candidate.ivr_approx is not None else -1.0),
             candidate.score,
         ),
         reverse=True,
@@ -649,12 +680,20 @@ def _candidate_from_contract(
         iv_history=iv_history,
         client=ibkr_client,
     )
+    ivr_for_filter = (
+        iv_data["ivr_real"] if iv_data["ivr_real"] is not None else ivr_approx
+    )
+    if ivr_for_filter < LAYER1_FILTERS["ivr_min"]:
+        return f"IVR {ivr_for_filter:.0f} < 30"
     if iv_data["iv_percentile_52w"] is None:
         logger.warning(
             "IBKR IV percentile unavailable for %s; using ivr_approx fallback",
             symbol,
         )
-    iv_quadrant = classify_iv_quadrant(ivr_approx, iv_data["iv_percentile_52w"])
+    iv_quadrant = classify_iv_quadrant(
+        iv_data["ivr_real"] if iv_data["ivr_real"] is not None else ivr_approx,
+        iv_data["iv_percentile_52w"],
+    )
 
     candidate = OptionsCandidate(
         symbol=symbol,
@@ -676,13 +715,19 @@ def _candidate_from_contract(
         market_state=market_state,
         adjusted_alignment=adjusted_alignment,
         earnings_date=earnings_date.isoformat() if earnings_date is not None else None,
+        ivr_real=iv_data["ivr_real"],
         iv_underlying_pct=iv_data["iv_underlying_pct"],
         iv_contract_pct=iv_data["iv_contract_pct"],
         iv_percentile_13w=iv_data["iv_percentile_13w"],
         iv_percentile_26w=iv_data["iv_percentile_26w"],
         iv_percentile_52w=iv_data["iv_percentile_52w"],
         iv_quadrant=iv_quadrant,
-        iv_source=iv_data["iv_source"],
+        iv_source=(
+            "ibkr"
+            if iv_data["ivr_real"] is not None
+            or iv_data["iv_percentile_52w"] is not None
+            else "unavailable"
+        ),
         score=0.0,
     )
     return candidate.__class__(

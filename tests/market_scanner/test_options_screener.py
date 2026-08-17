@@ -11,6 +11,7 @@ import market_scanner.options_screener as screener
 from market_scanner.options_screener import (
     OptionsCandidate,
     classify_iv_quadrant,
+    compute_iv_rank,
     compute_iv_percentiles,
     fetch_ibkr_iv_data,
     fetch_ibkr_underlying_iv_history,
@@ -247,6 +248,7 @@ def test_fetch_ibkr_iv_data_reuses_percentiles_from_shared_history(monkeypatch) 
     assert result["iv_underlying_pct"] == 30.0
     assert result["iv_percentile_13w"] == 100.0
     assert result["iv_percentile_26w"] is None  # < 130 bars of history here
+    assert result["ivr_real"] is None  # < 250 bars of history here
     client.connect.assert_not_called()  # reused shared connection, no reconnect
     client.disconnect.assert_not_called()
 
@@ -263,6 +265,20 @@ def test_compute_iv_percentiles_ranks_current_within_window() -> None:
 
 def test_compute_iv_percentiles_empty_history_returns_none() -> None:
     assert compute_iv_percentiles([]) == {"13w": None, "26w": None, "52w": None}
+
+
+def test_compute_iv_rank_known_series() -> None:
+    history = [0.20] * 100 + [0.30] * 149 + [0.25]
+
+    assert compute_iv_rank(history) == 50.0
+
+
+def test_compute_iv_rank_requires_full_52_week_history() -> None:
+    assert compute_iv_rank([0.10] * 249) is None
+
+
+def test_compute_iv_rank_returns_none_for_constant_history() -> None:
+    assert compute_iv_rank([0.20] * 250) is None
 
 
 def test_fetch_ibkr_underlying_iv_history_returns_series() -> None:
@@ -289,7 +305,43 @@ def test_score_uses_real_ivp_weights() -> None:
     candidate = _candidate(symbol="A", ivr_approx=60.0, monthly_return_pct=1.0)
     candidate = OptionsCandidate(**(candidate.__dict__ | {"iv_percentile_52w": 80.0}))
 
-    assert score_candidate(candidate) == 0.625
+    assert score_candidate(candidate) == 0.615
+
+
+def test_score_uses_fully_real_iv_weights() -> None:
+    candidate = _candidate(symbol="A", ivr_approx=20.0, monthly_return_pct=1.0)
+    candidate = OptionsCandidate(
+        **(candidate.__dict__ | {"ivr_real": 60.0, "iv_percentile_52w": 80.0})
+    )
+
+    assert score_candidate(candidate) == 0.615
+
+
+def test_score_uses_partial_real_ivr_weights() -> None:
+    candidate = _candidate(symbol="A", ivr_approx=20.0, monthly_return_pct=1.0)
+    candidate = OptionsCandidate(**(candidate.__dict__ | {"ivr_real": 60.0}))
+
+    assert score_candidate(candidate) == 0.555
+
+
+def test_compute_iv_rank_is_primary_sorting_value() -> None:
+    low_real = _candidate(symbol="A", ivr_approx=90.0, monthly_return_pct=1.0)
+    high_real = _candidate(symbol="B", ivr_approx=90.0, monthly_return_pct=1.0)
+    low_real = OptionsCandidate(**(low_real.__dict__ | {"ivr_real": 40.0}))
+    high_real = OptionsCandidate(**(high_real.__dict__ | {"ivr_real": 80.0}))
+
+    candidates = [low_real, high_real]
+    candidates.sort(
+        key=lambda candidate: (
+            candidate.ivr_real
+            if candidate.ivr_real is not None
+            else candidate.ivr_approx or -1.0,
+            candidate.score,
+        ),
+        reverse=True,
+    )
+
+    assert [candidate.symbol for candidate in candidates] == ["B", "A"]
 
 
 def test_score_falls_back_to_legacy_weights_when_ivp_missing() -> None:
@@ -364,6 +416,7 @@ def _candidate(
     ivr_approx: float,
     monthly_return_pct: float,
     spread_pct: float = 4.0,
+    ivr_real: float | None = None,
 ) -> OptionsCandidate:
     return OptionsCandidate(
         symbol=symbol,
@@ -385,5 +438,6 @@ def _candidate(
         market_state="pullback",
         adjusted_alignment="bullish_aligned",
         earnings_date=None,
+        ivr_real=ivr_real,
         score=0.0,
     )
