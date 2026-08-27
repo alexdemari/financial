@@ -277,10 +277,11 @@ scan universe="data/scanner_universe_sample.csv" data_dir="data/stocks/1D" \
       --workers {{workers}}
 
 # Daily scan — recent-event mode, filtered universe
-scan-daily universe="data/scanner_universe_filtered.csv" data_dir="data/stocks/1D" workers="8":
+scan-daily universe="data/scanner_universe_filtered.csv" data_dir="data/stocks/1D" weekly_data_dir="data/stocks/1W" workers="8":
     uv run python -m market_scanner.scan \
       --universe-file {{universe}} \
       --data-dir {{data_dir}} \
+      --weekly-data-dir {{weekly_data_dir}} \
       --ranking-mode recent-event \
       --output reports/market_scanner/scan_daily.csv \
       --workers {{workers}}

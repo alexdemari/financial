@@ -65,6 +65,18 @@ _FRESH_DISPLAY_COLUMNS = [
     "smc_active_event",
 ]
 
+_WEEKLY_DISPLAY_COLUMNS = [
+    "symbol",
+    "weekly_date",
+    "weekly_lux_role",
+    "weekly_lux_trend",
+    "weekly_lux_strength",
+    "weekly_smc_role",
+    "weekly_smc_bias",
+    "weekly_smc_context",
+    "weekly_smc_range_position_pct",
+]
+
 _TOP_DISPLAY_COLUMNS = [
     "rank",
     "symbol",
@@ -685,6 +697,17 @@ def render_daily_report(
     ]
     next_section += 1
 
+    if "weekly_date" in scan_df.columns and scan_df["weekly_date"].notna().any():
+        lines += [
+            f"## {next_section}. Contexto Semanal (Lux / SMC)",
+            "",
+            "_Contexto de timeframe maior; não altera o bucket de decisão diário._",
+            "",
+            _weekly_table(scan_df, top),
+            "",
+        ]
+        next_section += 1
+
     # Strategy sections
     strategies_to_render: list[RankingStrategy]
     if strategy is None:
@@ -958,6 +981,20 @@ def _fresh_table(fresh_df: pd.DataFrame) -> str:
     display = display.rename(columns=col_rename)
     display = display.fillna("—")
     return tabulate(display, headers="keys", tablefmt="github", showindex=False)
+
+
+def _weekly_table(scan_df: pd.DataFrame, top: int) -> str:
+    if "eligible" in scan_df.columns:
+        scan_df = scan_df[scan_df["eligible"].eq(True)]
+    scan_df = scan_df.head(top)
+    display = scan_df.loc[
+        :, [c for c in _WEEKLY_DISPLAY_COLUMNS if c in scan_df.columns]
+    ].copy()
+    if display.empty:
+        return "_No weekly context available._"
+    return tabulate(
+        display.fillna("—"), headers="keys", tablefmt="github", showindex=False
+    )
 
 
 def _top_table(top_df: pd.DataFrame) -> str:

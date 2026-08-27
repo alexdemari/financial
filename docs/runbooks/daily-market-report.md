@@ -182,6 +182,27 @@ Inclui: detalhe por operação, resumo mensal, breakdown por tipo de ativo, tota
 
 ---
 
+## Contexto semanal Lux / SMC
+
+O scan diário pode carregar candles semanais como contexto de timeframe maior:
+
+```bash
+uv run python -m market_scanner.scan \
+  --universe-file data/scanner_universe_filtered.csv \
+  --data-dir data/stocks/1D \
+  --weekly-data-dir data/stocks/1W \
+  --ranking-mode recent-event \
+  --output reports/market_scanner/scan_daily.csv \
+  --workers 8
+```
+
+Os campos `weekly_*` aparecem no CSV, na seção “Contexto Semanal” do relatório
+e no detalhe de cada candidato no dashboard. O bucket e o alinhamento continuam
+sendo calculados pelos candles diários; o semanal serve como confirmação de
+tendência/estrutura, não como substituto da decisão diária.
+
+---
+
 ## Arquivos de referência
 
 | Arquivo | Descrição |

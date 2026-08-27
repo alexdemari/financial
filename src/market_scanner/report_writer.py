@@ -30,6 +30,14 @@ TERMINAL_COLUMNS = [
     "market_state",
     "action_bucket",
     "consistency_score",
+    "weekly_lux_role",
+    "weekly_lux_trend",
+    "weekly_lux_strength",
+    "weekly_smc_role",
+    "weekly_smc_bias",
+    "weekly_smc_context",
+    "weekly_smc_range_position_pct",
+    "weekly_date",
 ]
 
 SMC_TERMINAL_COLUMNS = [
@@ -48,6 +56,12 @@ SMC_TERMINAL_COLUMNS = [
     "market_state",
     "action_bucket",
     "consistency_score",
+    "weekly_lux_role",
+    "weekly_lux_trend",
+    "weekly_smc_role",
+    "weekly_smc_bias",
+    "weekly_smc_context",
+    "weekly_date",
 ]
 
 ACTION_BUCKET_PRIORITY = {

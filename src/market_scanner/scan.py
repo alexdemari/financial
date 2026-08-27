@@ -14,6 +14,7 @@ from market_scanner.eligibility import (
     MIN_HISTORY_ROWS,
     EligibilityResult,
     evaluate_symbol_eligibility,
+    load_symbol_csv,
 )
 from market_scanner.market_state import AVOID, UNKNOWN
 from market_scanner.models import ScannerRow
@@ -49,6 +50,8 @@ class _ScanWorkerArgs:
     csv_path: Path | None = None
     cache_dir: Path | None = None
     use_cache: bool = False
+    weekly_csv_path: Path | None = None
+    weekly_error: str | None = None
 
 
 def _scan_symbol_worker(args: _ScanWorkerArgs) -> dict:
@@ -105,6 +108,14 @@ def _scan_symbol_worker(args: _ScanWorkerArgs) -> dict:
                 cache_dir=args.cache_dir,
                 model_name="smc",
             )
+        weekly_df, weekly_error = _load_weekly_data(
+            symbol, args.weekly_csv_path, args.weekly_error
+        )
+        weekly_df = (
+            _analysis_window(weekly_df, args.analysis_bars)
+            if weekly_df is not None
+            else None
+        )
         return build_scanner_row(
             symbol=symbol,
             df_slice=analysis_df,
@@ -115,6 +126,8 @@ def _scan_symbol_worker(args: _ScanWorkerArgs) -> dict:
             avg_volume_20=eligibility.avg_volume_20,
             avg_dollar_volume_20=eligibility.avg_dollar_volume_20,
             market_cap=market_cap,
+            weekly_df=weekly_df,
+            weekly_error=weekly_error,
         )
     except Exception as exc:
         row = _build_analysis_failed_row(
@@ -140,6 +153,7 @@ def scan_universe(
     workers: int = 1,
     use_cache: bool = False,
     cache_dir: Path | None = None,
+    weekly_data_dir: str | Path | None = None,
 ) -> tuple[pd.DataFrame, Path]:
     universe = load_selected_universe(universe_file)
     rows: list[dict] = []
@@ -161,8 +175,12 @@ def scan_universe(
                 csv_path=Path(data_dir) / f"{sd.symbol}.csv",
                 cache_dir=cache_dir,
                 use_cache=use_cache,
+                weekly_csv_path=sd.weekly_csv_path,
+                weekly_error=sd.weekly_load_error,
             )
-            for sd in iter_symbol_data(universe, data_dir)
+            for sd in iter_symbol_data(
+                universe, data_dir, weekly_data_dir=weekly_data_dir
+            )
         ]
         with ProcessPoolExecutor(max_workers=workers) as pool:
             raw_rows: list[dict] = list(pool.map(_scan_symbol_worker, worker_args_list))
@@ -177,7 +195,9 @@ def scan_universe(
     else:
         analyzers = create_analyzers(StockDataAnalyzer)
 
-        for symbol_data in iter_symbol_data(universe, data_dir):
+        for symbol_data in iter_symbol_data(
+            universe, data_dir, weekly_data_dir=weekly_data_dir
+        ):
             symbol = symbol_data.symbol
             market_cap = symbol_data.market_cap
             df = symbol_data.df
@@ -231,6 +251,14 @@ def scan_universe(
 
             try:
                 csv_path = Path(data_dir) / f"{symbol}.csv"
+                weekly_df, weekly_error = _load_weekly_data(
+                    symbol, symbol_data.weekly_csv_path, symbol_data.weekly_load_error
+                )
+                weekly_df = (
+                    _analysis_window(weekly_df, analysis_bars)
+                    if weekly_df is not None
+                    else None
+                )
                 if use_cache and cache_dir is not None:
                     effective_lux = CachedAnalyzer(
                         analyzers.lux_analyzer,
@@ -258,6 +286,10 @@ def scan_universe(
                         avg_volume_20=eligibility.avg_volume_20,
                         avg_dollar_volume_20=eligibility.avg_dollar_volume_20,
                         market_cap=market_cap,
+                        weekly_df=weekly_df,
+                        weekly_error=weekly_error,
+                        weekly_lux_analyzer=analyzers.lux_analyzer,
+                        weekly_smc_analyzer=analyzers.smc_analyzer,
                     )
                 )
             except Exception as exc:
@@ -292,6 +324,17 @@ def _analysis_window(df: pd.DataFrame, analysis_bars: int | None) -> pd.DataFram
     if analysis_bars <= 0:
         raise ValueError("analysis_bars must be greater than zero")
     return df.tail(analysis_bars)
+
+
+def _load_weekly_data(
+    symbol: str, csv_path: Path | None, load_error: str | None
+) -> tuple[pd.DataFrame | None, str | None]:
+    if csv_path is None:
+        return None, load_error
+    try:
+        return load_symbol_csv(csv_path.parent, symbol), None
+    except Exception as exc:
+        return None, type(exc).__name__
 
 
 def _build_excluded_row(
@@ -425,6 +468,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--data-dir", required=True, help="Directory with local OHLC CSV files"
     )
     parser.add_argument(
+        "--weekly-data-dir",
+        default=None,
+        help="Optional directory with weekly OHLC CSV files for higher-timeframe context",
+    )
+    parser.add_argument(
         "--min-market-cap",
         type=float,
         default=1_000_000_000,
@@ -518,6 +566,7 @@ def main(argv: list[str] | None = None) -> int:
         workers=args.workers,
         use_cache=use_cache,
         cache_dir=cache_dir,
+        weekly_data_dir=args.weekly_data_dir,
     )
     return 0
 

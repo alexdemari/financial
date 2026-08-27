@@ -9,11 +9,17 @@ SCAN_PATH = PROJECT_ROOT / "reports/market_scanner/scan_daily.csv"
 
 def read_scan(limit: int = 20) -> dict:
     if not SCAN_PATH.exists():
-        return {"rows": [], "last_updated": None}
+        return {"rows": [], "last_updated": None, "timeframes": ["1D"]}
     with SCAN_PATH.open(encoding="utf-8", newline="") as source:
         rows = list(csv.DictReader(source))
     candidates = [row for row in rows if row.get("action_bucket") == "candidate"]
     candidates.sort(
         key=lambda row: float(row.get("consistency_score") or 0), reverse=True
     )
-    return {"rows": candidates[:limit], "last_updated": file_mtime(SCAN_PATH)}
+    return {
+        "rows": candidates[:limit],
+        "last_updated": file_mtime(SCAN_PATH),
+        "timeframes": ["1D", "1W"]
+        if any(row.get("weekly_date") for row in rows)
+        else ["1D"],
+    }

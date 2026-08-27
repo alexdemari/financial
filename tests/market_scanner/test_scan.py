@@ -144,6 +144,10 @@ def test_scan_universe_generates_csv_and_sorts_top_results(
     data_dir.mkdir()
     make_csv(data_dir / "AAPL.csv")
     make_csv(data_dir / "MSFT.csv")
+    weekly_data_dir = tmp_path / "weekly"
+    weekly_data_dir.mkdir()
+    make_csv(weekly_data_dir / "AAPL.csv")
+    make_csv(weekly_data_dir / "MSFT.csv")
 
     class FakeAnalyzer:
         def __init__(self, config=None, signal_model="rsi-sma"):
@@ -263,6 +267,8 @@ def test_scan_universe_generates_csv_and_sorts_top_results(
         output=output_file,
         analysis_bars=200,
         sort_by="smc-recent",
+        max_stale_days=30,
+        weekly_data_dir=weekly_data_dir,
     )
 
     eligible = result_df[result_df["eligible"]]
@@ -278,6 +284,9 @@ def test_scan_universe_generates_csv_and_sorts_top_results(
     assert aapl["action_bucket"] == "needs_review"
     assert aapl["lux_last_event"] == "BUY"
     assert aapl["smc_last_event_options_hint"] == "CALL"
+    assert pd.notna(aapl["weekly_date"])
+    assert pd.notna(aapl["weekly_lux_role"])
+    assert pd.notna(aapl["weekly_smc_role"])
     msft = result_df.loc[result_df["symbol"] == "MSFT"].iloc[0]
     assert msft["alignment"] == "bearish_trend"
     assert msft["market_state"] == "pullback"

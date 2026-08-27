@@ -21,6 +21,8 @@ class SymbolData:
     market_cap: float | None
     df: pd.DataFrame | None
     load_error: str | None
+    weekly_csv_path: Path | None = None
+    weekly_load_error: str | None = None
 
 
 def create_analyzers(
@@ -49,6 +51,7 @@ def iter_symbol_data(
     data_dir: str | Path,
     *,
     transform_df: Callable[[pd.DataFrame], pd.DataFrame] | None = None,
+    weekly_data_dir: str | Path | None = None,
 ) -> list[SymbolData]:
     rows: list[SymbolData] = []
     for entry in universe.itertuples(index=False):
@@ -65,5 +68,15 @@ def iter_symbol_data(
             rows.append(SymbolData(symbol, market_cap, None, "load_failed"))
             continue
 
-        rows.append(SymbolData(symbol, market_cap, df, None))
+        weekly_load_error = None
+        weekly_csv_path = None
+        if weekly_data_dir is not None:
+            candidate_path = Path(weekly_data_dir) / f"{symbol}.csv"
+            if candidate_path.exists():
+                weekly_csv_path = candidate_path
+            else:
+                weekly_load_error = "missing_csv"
+        rows.append(
+            SymbolData(symbol, market_cap, df, None, weekly_csv_path, weekly_load_error)
+        )
     return rows

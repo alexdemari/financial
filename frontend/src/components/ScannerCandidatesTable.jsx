@@ -33,6 +33,10 @@ function AccordionRow({ row }) {
             { label: "SMC Role",          value: row.smc_role },
             { label: "Market State",      value: row.market_state },
             { label: "Adjusted Alignment", value: row.adjusted_alignment },
+            { label: "Weekly Lux", value: `${row.weekly_lux_role ?? "—"} · ${row.weekly_lux_trend ?? "—"}` },
+            { label: "Weekly SMC", value: `${row.weekly_smc_role ?? "—"} · ${row.weekly_smc_bias ?? "—"}` },
+            { label: "Weekly Context", value: row.weekly_smc_context },
+            { label: "Weekly Date", value: row.weekly_date },
           ].map(({ label, value }) => (
             <div key={label} style={{ display: "flex", gap: "8px" }}>
               <dt style={{ color: "#64748b", fontWeight: 600, fontSize: "11px", textTransform: "uppercase", whiteSpace: "nowrap" }}>

@@ -1,3 +1,4 @@
+import logging
 from dataclasses import asdict
 
 import pandas as pd
@@ -27,6 +28,8 @@ from market_scanner.ranking import (
 )
 from stock_analyzer.analyzer import StockDataAnalyzer
 
+logger = logging.getLogger(__name__)
+
 
 def build_scanner_row(
     symbol: str,
@@ -39,6 +42,10 @@ def build_scanner_row(
     avg_volume_20: float | None = None,
     avg_dollar_volume_20: float | None = None,
     market_cap: float | None = None,
+    weekly_df: pd.DataFrame | None = None,
+    weekly_error: str | None = None,
+    weekly_lux_analyzer=None,
+    weekly_smc_analyzer=None,
 ) -> dict:
     lux_analyzer = lux_analyzer or StockDataAnalyzer(signal_model="lux")
     smc_analyzer = smc_analyzer or StockDataAnalyzer(signal_model="smc")
@@ -47,6 +54,14 @@ def build_scanner_row(
     smc_historical = smc_analyzer.generate_historical_signals(symbol, df_slice)
     lux_signal = _current_signal_from_historical(lux_analyzer, symbol, lux_historical)
     smc_signal = _current_signal_from_historical(smc_analyzer, symbol, smc_historical)
+
+    weekly_context = _build_weekly_context(
+        symbol,
+        weekly_df,
+        weekly_error,
+        lux_analyzer=weekly_lux_analyzer,
+        smc_analyzer=weekly_smc_analyzer,
+    )
 
     if lux_signal is None or smc_signal is None:
         raise ValueError(f"Signal generation failed for {symbol}")
@@ -62,6 +77,7 @@ def build_scanner_row(
         avg_volume_20=avg_volume_20,
         avg_dollar_volume_20=avg_dollar_volume_20,
         market_cap=market_cap,
+        weekly_context=weekly_context,
     )
 
 
@@ -124,6 +140,7 @@ def _assemble_scanner_row(
     market_cap: float | None,
     lux_event_state: dict[str, dict[str, str | int | None]] | None = None,
     smc_event_state: dict[str, dict[str, str | int | None]] | None = None,
+    weekly_context: dict[str, object] | None = None,
 ) -> dict:
     lux_event = (
         lux_event_state["latest"]
@@ -216,7 +233,7 @@ def _assemble_scanner_row(
         consistency_score=consistency_score,
     )
 
-    return asdict(
+    row = asdict(
         ScannerRow(
             symbol=symbol,
             close=close if close is not None else float(lux_signal.close_price),
@@ -267,6 +284,57 @@ def _assemble_scanner_row(
             excluded_reason=None,
         )
     )
+    row.update(weekly_context or {})
+    return row
+
+
+def _build_weekly_context(
+    symbol: str,
+    weekly_df: pd.DataFrame | None,
+    weekly_error: str | None,
+    *,
+    lux_analyzer=None,
+    smc_analyzer=None,
+) -> dict[str, object]:
+    """Calculate higher-timeframe context without affecting daily decisions."""
+    if weekly_df is None:
+        return {"weekly_error": weekly_error} if weekly_error else {}
+    try:
+        lux_analyzer = lux_analyzer or StockDataAnalyzer(signal_model="lux")
+        smc_analyzer = smc_analyzer or StockDataAnalyzer(signal_model="smc")
+        lux_history = lux_analyzer.generate_historical_signals(symbol, weekly_df)
+        smc_history = smc_analyzer.generate_historical_signals(symbol, weekly_df)
+        lux_signal = lux_analyzer.generate_signal_from_historical(symbol, lux_history)
+        smc_signal = smc_analyzer.generate_signal_from_historical(symbol, smc_history)
+        if lux_signal is None or smc_signal is None:
+            return {"weekly_error": "signal_generation_failed"}
+        lux_label = signal_to_label(lux_signal.combined_signal)
+        smc_label = signal_to_label(smc_signal.combined_signal)
+        return {
+            "weekly_date": str(pd.Timestamp(weekly_df.index[-1]).date()),
+            "weekly_lux_signal": lux_label,
+            "weekly_lux_role": infer_lux_role(
+                lux_signal=lux_label,
+                lux_options_hint=lux_signal.options_hint,
+                lux_trend=lux_signal.trend,
+            ),
+            "weekly_lux_trend": lux_signal.trend,
+            "weekly_lux_strength": lux_signal.strength,
+            "weekly_smc_signal": smc_label,
+            "weekly_smc_role": infer_smc_role(
+                smc_signal=smc_label,
+                smc_options_hint=smc_signal.options_hint,
+                smc_context=smc_context(smc_signal),
+                smc_bias=smc_signal.bias,
+            ),
+            "weekly_smc_bias": smc_signal.bias,
+            "weekly_smc_context": smc_context(smc_signal),
+            "weekly_smc_range_position_pct": smc_signal.range_position_pct,
+            "weekly_error": None,
+        }
+    except Exception as exc:
+        logger.warning("Weekly signal generation failed for %s: %s", symbol, exc)
+        return {"weekly_error": type(exc).__name__}
 
 
 def _selected_state_event(
