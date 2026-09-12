@@ -1,0 +1,17 @@
+# Binance Spot pairs to synchronize into the canonical crypto trade history.
+pairs:
+  - BTCUSDT
+  - ETHUSDT
+  - SOLUSDT
+  - ADAUSDT
+  - XRPUSDT
+  - AAVEUSDT
+  - LINKUSDT
+  - ENAUSDT
+  - PENDLEUSDT
+  - ETHFIUSDT
+  - BNBUSDT
+  - UNIUSDT
+  - AVAXUSDT
+  - SUIUSDT
+  - CRVUSDT

@@ -11,6 +11,7 @@ from typing import Any
 
 BASE_URL = "https://api.binance.com"
 REQUEST_TIMEOUT_SECONDS = 10
+MY_TRADES_PAGE_SIZE = 1000
 
 
 class BinanceAPIError(RuntimeError):
@@ -91,6 +92,35 @@ class BinanceReadOnlyClient:
             if symbol in requested and "price" in ticker:
                 prices[str(symbol)] = _number(ticker["price"])
         return prices
+
+    def get_my_trades(
+        self, symbol: str, from_id: int | None = None
+    ) -> list[dict[str, Any]]:
+        """Return every Spot trade for one symbol after an optional execution ID."""
+        trades: list[dict[str, Any]] = []
+        next_from_id = from_id
+        while True:
+            params: dict[str, object] = {
+                "symbol": symbol,
+                "limit": MY_TRADES_PAGE_SIZE,
+            }
+            if next_from_id is not None:
+                params["fromId"] = next_from_id
+            payload = self._signed_request("/api/v3/myTrades", params)
+            if not isinstance(payload, list) or not all(
+                isinstance(row, dict) for row in payload
+            ):
+                raise BinanceAPIError("Invalid myTrades response")
+            trades.extend(payload)
+            if len(payload) < MY_TRADES_PAGE_SIZE:
+                return trades
+            last_trade_id = payload[-1].get("id")
+            try:
+                next_from_id = int(last_trade_id) + 1
+            except (TypeError, ValueError):
+                raise BinanceAPIError(
+                    "myTrades response is missing a valid execution ID"
+                )
 
     def _request_account(self) -> dict[str, Any]:
         payload = self._signed_request("/api/v3/account", {})

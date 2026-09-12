@@ -41,3 +41,28 @@ def test_get_earn_balances_combines_flexible_and_locked_positions(monkeypatch):
         "/sapi/v1/simple-earn/flexible/position",
         "/sapi/v1/simple-earn/locked/position",
     ]
+
+
+def test_get_my_trades_paginates_after_last_execution_id(monkeypatch):
+    client = BinanceReadOnlyClient("key", "secret")
+    requests = []
+    first_page = [{"id": execution_id} for execution_id in range(1, 1001)]
+
+    def fake_signed_request(endpoint, params):
+        requests.append((endpoint, params))
+        if params.get("fromId") is None:
+            return first_page
+        return [{"id": 1001}]
+
+    monkeypatch.setattr(client, "_signed_request", fake_signed_request)
+
+    trades = client.get_my_trades("BTCUSDT")
+
+    assert len(trades) == 1001
+    assert requests == [
+        ("/api/v3/myTrades", {"symbol": "BTCUSDT", "limit": 1000}),
+        (
+            "/api/v3/myTrades",
+            {"symbol": "BTCUSDT", "limit": 1000, "fromId": 1001},
+        ),
+    ]

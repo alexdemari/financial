@@ -110,6 +110,22 @@ crypto-snapshot:
 crypto-summary:
     PYTHONPATH=src uv run python -c "from crypto_tracker.snapshot import load_last_snapshot; snapshot = load_last_snapshot(); print('Nenhum snapshot. Rode: just crypto-snapshot') if not snapshot else ([print(f'{position.asset}: {position.quantity:.6f} = USD {position.value_usdt:,.2f} / BRL {position.value_brl:,.2f}') for position in snapshot.positions], print(f'Total: USD {snapshot.total_usdt:,.2f} / BRL {snapshot.total_brl:,.2f}'), print(f'Snapshot de: {snapshot.fetched_at}'))"
 
+# Importa export CSV da Binance; idempotente por trade_id e atualiza o custo médio.
+crypto-import file="data/crypto/uploads/binance_export.csv":
+    PYTHONPATH=src uv run python -m crypto_trades.main import --file {{file}} --trades-output data/crypto/trades_history.csv --earn-output data/crypto/earn_history.csv
+    just crypto-cost-basis
+
+# Sincroniza execuções Spot novas da Binance para os pares configurados.
+crypto-sync:
+    PYTHONPATH=src uv run python -m crypto_trades.main sync --pairs-config config/crypto_pairs.yaml --trades-output data/crypto/trades_history.csv
+    just crypto-cost-basis
+
+crypto-cost-basis:
+    PYTHONPATH=src uv run python -m crypto_trades.main cost-basis --trades data/crypto/trades_history.csv --output data/crypto/cost_basis.json
+
+crypto-status:
+    PYTHONPATH=src uv run python -c "import json; from pathlib import Path; path = Path('data/crypto/cost_basis.json'); print('Nenhum cost basis. Rode: just crypto-import') if not path.exists() else [print(f'{asset}: qty={info[\"quantity\"]:.6f} preco_medio=R$ {info[\"avg_cost_brl_ptax\"]:,.2f}') for asset, info in json.loads(path.read_text())[\"assets\"].items() if info[\"quantity\"] > 0.0001]"
+
 
 # Full local quality check before committing
 check: format lint-fix type-check test
