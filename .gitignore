@@ -29,6 +29,7 @@ data/cache/
 *.sqlite
 reports
 cache
+graphify-out
 
 # Logs
 logs/
