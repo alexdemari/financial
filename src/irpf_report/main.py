@@ -87,8 +87,25 @@ def main() -> None:
         asset_type_summaries=asset_type_summaries,
         totals=totals,
     )
+    content += _include_crypto_section(args.year)
     write_report(args.output, content)
     print(f"Report written to {args.output}")
+
+
+def _include_crypto_section(
+    year: int,
+    trades_path: Path = Path("data/crypto/trades_history.csv"),
+    earn_path: Path = Path("data/crypto/earn_history.csv"),
+    cost_basis_path: Path = Path("data/crypto/cost_basis.json"),
+) -> str:
+    """Return the optional local Binance section for the consolidated report."""
+    if not trades_path.exists():
+        return "\n---\n*Seção Cripto: sem dados (rode `just crypto-import`).*\n"
+    from crypto_irpf.main import render_crypto_report
+
+    return "\n---\n" + render_crypto_report(
+        trades_path, earn_path, cost_basis_path, year
+    )
 
 
 if __name__ == "__main__":

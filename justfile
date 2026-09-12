@@ -663,6 +663,14 @@ ibkr-reconcile output-dir="reports/output" host="" port="7496":
 
 # ── IRPF ─────────────────────────────────────────────────────────────────────
 
+# Apuração IRPF de criptoativos a partir do histórico canônico Binance.
+irpf-crypto year="2026":
+    PYTHONPATH=src uv run python -m crypto_irpf.main \
+        --trades data/crypto/trades_history.csv \
+        --earn data/crypto/earn_history.csv \
+        --year {{year}} \
+        --output reports/irpf/irpf_crypto_{{year}}.md
+
 # Generate BRL IRPF report, preferring canonical history over the legacy export
 irpf year="2025":
     #!/usr/bin/env bash
