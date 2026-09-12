@@ -1,6 +1,6 @@
 # Task T19: `crypto_trades` — Histórico Canônico de Operações Binance + Sync Incremental
 
-**Status:** Planned
+**Status:** Completed
 **Skill:** add-feature
 **Scope:** `src/crypto_trades/` (new module), `justfile`
 **Effort:** M

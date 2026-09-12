@@ -1,6 +1,6 @@
 # Task T20: `crypto_irpf` — Apuração IRPF Criptoativos (integrada ao relatório consolidado)
 
-**Status:** Planned
+**Status:** Completed
 **Skill:** add-feature
 **Scope:** `src/crypto_irpf/` (new module), `src/irpf_report/main.py`, `justfile`
 **Effort:** M
