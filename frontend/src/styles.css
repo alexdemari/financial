@@ -95,6 +95,33 @@ button.active, button:hover {
 .macro strong { color: #f1f5f9; font-size: 17px; }
 
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.timeframe-table { min-width: 920px; }
+.timeframe-table th.timeframe-group {
+  color: #cbd5e1;
+  text-align: center;
+  border-left: 1px solid #2d3139;
+}
+.smc-timeframe-table th:nth-child(7),
+.smc-timeframe-table th:nth-child(10),
+.lux-timeframe-table th:nth-child(7),
+.lux-timeframe-table th:nth-child(11) {
+  border-left: 1px solid #2d3139;
+}
+.smc-timeframe-table td:nth-child(7),
+.smc-timeframe-table td:nth-child(10),
+.lux-timeframe-table td:nth-child(7),
+.lux-timeframe-table td:nth-child(11) {
+  border-left: 1px solid #1e2230;
+}
+.scanner-table-note { color: #64748b; font-size: 12px; margin: -4px 0 12px; }
+.scanner-bucket {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
 th {
   background: #1e2230;
   color: #64748b;
