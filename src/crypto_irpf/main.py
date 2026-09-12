@@ -38,7 +38,9 @@ def render_crypto_report(
 ) -> str:
     """Load local canonical data and render the reusable crypto report section."""
     return format_section(
-        apurar_ano(load_trades(trades_path), year),
+        apurar_ano(
+            load_trades(trades_path), year, load_cost_basis_history(cost_basis_path)
+        ),
         summarize_earn(load_earn_records(earn_path, year)),
         year,
         load_holdings(cost_basis_path),
@@ -58,6 +60,27 @@ def load_holdings(path: Path) -> dict[str, dict[str, float]]:
             * float(item.get("avg_cost_brl_ptax", 0)),
         }
         for asset, item in assets.items()
+    }
+
+
+def load_cost_basis_history(path: Path) -> dict[str, dict[str, dict[str, object]]]:
+    """Load T25's per-trade pre-execution CMM snapshots once for the report."""
+    if not path.exists():
+        raise ValueError(
+            "Cost-basis history is missing; run 'just crypto-cost-basis' before IRPF reporting"
+        )
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    history = payload.get("history")
+    if not isinstance(history, list):
+        raise ValueError(
+            "Cost-basis history is unavailable; run 'just crypto-cost-basis' to refresh it"
+        )
+    return {
+        str(snapshot["trade_id"]): snapshot["assets"]
+        for snapshot in history
+        if isinstance(snapshot, dict)
+        and isinstance(snapshot.get("trade_id"), str)
+        and isinstance(snapshot.get("assets"), dict)
     }
 
 

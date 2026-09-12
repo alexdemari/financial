@@ -9,8 +9,24 @@ from crypto_trades.models import AssetCostBasis, CryptoTrade
 
 def compute_cost_basis(trades: list[CryptoTrade]) -> dict[str, AssetCostBasis]:
     """Calculate moving weighted-average PTAX cost per asset."""
+    basis, _ = compute_cost_basis_with_history(trades)
+    return basis
+
+
+def compute_cost_basis_with_history(
+    trades: list[CryptoTrade],
+) -> tuple[dict[str, AssetCostBasis], list[dict[str, object]]]:
+    """Calculate CMM and preserve the authoritative basis before every trade."""
     basis: dict[str, AssetCostBasis] = {}
+    history: list[dict[str, object]] = []
     for trade in sorted(trades, key=lambda item: item.datetime):
+        history.append(
+            {
+                "trade_id": trade.trade_id,
+                "datetime": trade.datetime,
+                "assets": {asset: vars(item).copy() for asset, item in basis.items()},
+            }
+        )
         asset_basis = basis.setdefault(trade.asset, AssetCostBasis(asset=trade.asset))
         if trade.trade_type in {"BUY", "SWAP_BUY"}:
             total_quantity = asset_basis.quantity + trade.quantity
@@ -33,10 +49,14 @@ def compute_cost_basis(trades: list[CryptoTrade]) -> dict[str, AssetCostBasis]:
         elif trade.trade_type in {"SELL", "SWAP_SELL"}:
             asset_basis.quantity = max(0.0, asset_basis.quantity - trade.quantity)
             asset_basis.trades_count += 1
-    return basis
+    return basis, history
 
 
-def save_cost_basis(path: Path, basis: dict[str, AssetCostBasis]) -> None:
+def save_cost_basis(
+    path: Path,
+    basis: dict[str, AssetCostBasis],
+    history: list[dict[str, object]] | None = None,
+) -> None:
     """Save a JSON cost-basis snapshot for reporting and IRPF."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -44,6 +64,7 @@ def save_cost_basis(path: Path, basis: dict[str, AssetCostBasis]) -> None:
             {
                 "updated_at": datetime.now().isoformat(timespec="seconds"),
                 "assets": {asset: vars(item) for asset, item in basis.items()},
+                "history": history or [],
             },
             indent=2,
         ),

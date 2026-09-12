@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from crypto_trades.classifier import classify, get_asset
-from crypto_trades.cost_basis import compute_cost_basis
+from crypto_trades.cost_basis import compute_cost_basis, compute_cost_basis_with_history
 from crypto_trades.models import CryptoTrade, EarnRecord
 from crypto_trades.parser import parse_export_csv
 from crypto_trades.ptax_enricher import enrich_earnings, enrich_trades
@@ -176,6 +176,18 @@ def test_cost_basis_is_unchanged_after_sell():
     )
     assert basis["ETH"].quantity == 1
     assert basis["ETH"].avg_cost_brl_ptax == 10_000
+
+
+def test_cost_basis_history_captures_basis_before_each_trade():
+    trades = [
+        _trade("BUY", 2, 20_000, asset="ETH"),
+        _trade("SELL", 1, 10_000, asset="ETH", date="2025-01-02"),
+    ]
+    _, history = compute_cost_basis_with_history(trades)
+
+    assert history[1]["trade_id"] == trades[1].trade_id
+    assert history[1]["assets"]["ETH"]["quantity"] == 2
+    assert history[1]["assets"]["ETH"]["avg_cost_brl_ptax"] == 10_000
 
 
 def test_ptax_enricher_populates_official_brl_value():

@@ -7,7 +7,7 @@ from pathlib import Path
 import yaml
 
 from crypto_tracker.binance_client import BinanceReadOnlyClient
-from crypto_trades.cost_basis import compute_cost_basis, save_cost_basis
+from crypto_trades.cost_basis import compute_cost_basis_with_history, save_cost_basis
 from crypto_trades.parser import parse_export_csv
 from crypto_trades.ptax_enricher import enrich_earnings, enrich_trades
 from crypto_trades.store import (
@@ -31,9 +31,8 @@ def main() -> None:
             f"Imported {append_deduplicated(arguments.trades_output, trades, TRADE_FIELDS)} trades and {append_deduplicated(arguments.earn_output, earnings, EARN_FIELDS)} earn records"
         )
     elif arguments.command == "cost-basis":
-        save_cost_basis(
-            arguments.output, compute_cost_basis(load_trades(arguments.trades))
-        )
+        basis, history = compute_cost_basis_with_history(load_trades(arguments.trades))
+        save_cost_basis(arguments.output, basis, history)
     else:
         config = (
             yaml.safe_load(arguments.pairs_config.read_text(encoding="utf-8")) or {}

@@ -41,47 +41,51 @@ class ApuracaoMensal:
     trades: list[SaleDetail]
 
 
-@dataclass
-class RunningBasis:
-    quantity: float = 0.0
-    average_cost_brl: float = 0.0
-
-
-def apurar_ano(trades: list[CryptoTrade], year: int) -> list[ApuracaoMensal]:
-    """Calculate monthly capital gains with the CMM in force at each sale."""
-    basis_by_asset: dict[str, RunningBasis] = {}
+def apurar_ano(
+    trades: list[CryptoTrade],
+    year: int,
+    cost_basis_history: dict[str, dict[str, dict[str, object]]],
+) -> list[ApuracaoMensal]:
+    """Calculate gains from T25's persisted CMM snapshot before each sale."""
     sales_by_month: dict[str, list[SaleDetail]] = defaultdict(list)
     for trade in sorted(trades, key=lambda item: item.datetime):
         if int(trade.date[:4]) > year:
             break
-        basis = basis_by_asset.setdefault(trade.asset, RunningBasis())
-        if trade.trade_type in {"BUY", "SWAP_BUY"}:
-            _apply_buy(basis, trade)
-        elif trade.trade_type in {"SELL", "SWAP_SELL"}:
+        if trade.trade_type in {"SELL", "SWAP_SELL"}:
             if int(trade.date[:4]) == year:
-                sales_by_month[trade.date[:7]].append(_sale_detail(trade, basis))
-            basis.quantity = max(0.0, basis.quantity - trade.quantity)
+                sales_by_month[trade.date[:7]].append(
+                    _sale_detail(trade, cost_basis_history)
+                )
     return [
         _apurar_mes(month, sales) for month, sales in sorted(sales_by_month.items())
     ]
 
 
-def _apply_buy(basis: RunningBasis, trade: CryptoTrade) -> None:
-    total_quantity = basis.quantity + trade.quantity
-    total_cost = basis.quantity * basis.average_cost_brl + trade.value_brl_ptax
-    basis.average_cost_brl = total_cost / total_quantity if total_quantity else 0.0
-    basis.quantity = total_quantity
-
-
-def _sale_detail(trade: CryptoTrade, basis: RunningBasis) -> SaleDetail:
+def _sale_detail(
+    trade: CryptoTrade, cost_basis_history: dict[str, dict[str, dict[str, object]]]
+) -> SaleDetail:
+    snapshot = cost_basis_history.get(trade.trade_id, {})
+    asset_basis = snapshot.get(trade.asset)
+    if asset_basis is None:
+        raise ValueError(
+            f"Missing cost-basis snapshot for {trade.asset} before trade {trade.trade_id}; "
+            "run 'just crypto-cost-basis' to refresh data/crypto/cost_basis.json"
+        )
+    available_quantity = float(asset_basis["quantity"])
+    if trade.quantity > available_quantity:
+        raise ValueError(
+            f"Oversell detected for {trade.asset} on {trade.date}: "
+            f"selling {trade.quantity:g} with only {available_quantity:g} available"
+        )
     proceeds_brl = trade.value_brl_ptax
-    cost_brl = basis.average_cost_brl * trade.quantity
+    average_cost_brl = float(asset_basis["avg_cost_brl_ptax"])
+    cost_brl = average_cost_brl * trade.quantity
     return SaleDetail(
         date=trade.date,
         asset=trade.asset,
         quantity=trade.quantity,
         proceeds_brl=proceeds_brl,
-        average_cost_brl=basis.average_cost_brl,
+        average_cost_brl=average_cost_brl,
         cost_brl=cost_brl,
         gain_loss_brl=proceeds_brl - cost_brl,
     )
