@@ -3,6 +3,7 @@
 import argparse
 import os
 from pathlib import Path
+from typing import Callable
 
 import yaml
 
@@ -18,6 +19,8 @@ from crypto_trades.store import (
 )
 from crypto_trades.sync import build_known_execution_ids_by_symbol, fetch_new_trades
 
+PERSIST_EVERY = 25
+
 
 def main() -> None:
     """Run the requested crypto-history operation."""
@@ -25,11 +28,22 @@ def main() -> None:
     arguments = parser.parse_args()
     if arguments.command == "import":
         trades, earnings = parse_export_csv(arguments.file)
-        enrich_trades(trades)
-        enrich_earnings(earnings)
-        print(
-            f"Imported {append_deduplicated(arguments.trades_output, trades, TRADE_FIELDS)} trades and {append_deduplicated(arguments.earn_output, earnings, EARN_FIELDS)} earn records"
+        print(f"Arquivo lido: {len(trades)} trades e {len(earnings)} registros Earn")
+        imported_trades = _enrich_and_persist_incrementally(
+            trades,
+            arguments.trades_output,
+            TRADE_FIELDS,
+            enrich_trades,
+            "Trades",
         )
+        imported_earnings = _enrich_and_persist_incrementally(
+            earnings,
+            arguments.earn_output,
+            EARN_FIELDS,
+            enrich_earnings,
+            "Earn",
+        )
+        print(f"Imported {imported_trades} trades and {imported_earnings} earn records")
     elif arguments.command == "cost-basis":
         basis, history = compute_cost_basis_with_history(load_trades(arguments.trades))
         save_cost_basis(arguments.output, basis, history)
@@ -52,6 +66,37 @@ def main() -> None:
         print(
             f"Synced {append_deduplicated(arguments.trades_output, trades, TRADE_FIELDS)} trades"
         )
+
+
+def _enrich_and_persist_incrementally(
+    records: list[object],
+    output_path: Path,
+    fieldnames: list[str],
+    enrich: Callable[..., object],
+    label: str,
+) -> int:
+    """Enrich records with PTAX and persist completed batches for safe resumption."""
+    persisted = 0
+    added = 0
+
+    def report_progress(completed: int, total: int) -> None:
+        nonlocal added, persisted
+        print(f"{label} PTAX: {completed}/{total}", flush=True)
+        if completed - persisted >= PERSIST_EVERY:
+            added += append_deduplicated(
+                output_path, records[persisted:completed], fieldnames
+            )
+            persisted = completed
+            print(f"{label}: lote persistido até {persisted}/{total}", flush=True)
+
+    enrich(records, on_progress=report_progress)
+    if persisted < len(records):
+        added += append_deduplicated(output_path, records[persisted:], fieldnames)
+        print(
+            f"{label}: lote final persistido ({len(records)}/{len(records)})",
+            flush=True,
+        )
+    return added
 
 
 def _parser() -> argparse.ArgumentParser:

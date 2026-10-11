@@ -123,6 +123,18 @@ The snapshot is saved to `data/crypto/snapshot.json` and is read locally by the
 dashboard. It combines Spot and Simple Earn balances per asset, prices them in
 USDT, and converts the total to BRL using PTAX.
 
+### Binance trade-history import
+
+Export **Transaction History** as CSV from Binance and import it with:
+
+```bash
+just crypto-import file=data/crypto/uploads/binance_2025.csv
+```
+
+The import shows its PTAX progress for trades and Earn records. It saves each
+completed batch of 25 records, so a later rerun after `Ctrl+C` safely resumes
+through the existing idempotent history files.
+
 ---
 
 ## Daily workflow

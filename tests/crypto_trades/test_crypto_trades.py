@@ -5,6 +5,7 @@ import pytest
 
 from crypto_trades.classifier import classify, get_asset
 from crypto_trades.cost_basis import compute_cost_basis, compute_cost_basis_with_history
+from crypto_trades.main import _enrich_and_persist_incrementally
 from crypto_trades.models import CryptoTrade, EarnRecord
 from crypto_trades.parser import parse_export_csv
 from crypto_trades.ptax_enricher import enrich_earnings, enrich_trades
@@ -159,6 +160,28 @@ def test_store_deduplicates_by_trade_id(tmp_path: Path):
     assert len(path.read_text().splitlines()) == 2
 
 
+def test_import_persists_each_completed_batch_before_enrichment_finishes(
+    tmp_path: Path,
+):
+    records = [_trade("BUY", 1, 100, date=f"2025-01-{day:02d}") for day in range(1, 51)]
+    for index, record in enumerate(records):
+        record.trade_id = f"trade-{index}"
+    output_path = tmp_path / "trades.csv"
+
+    def enrich(records: list[CryptoTrade], *, on_progress):
+        for completed in range(1, len(records) + 1):
+            on_progress(completed, len(records))
+            if completed == 25:
+                assert len(output_path.read_text().splitlines()) == 26
+
+    added = _enrich_and_persist_incrementally(
+        records, output_path, TRADE_FIELDS, enrich, "Trades"
+    )
+
+    assert added == 50
+    assert len(output_path.read_text().splitlines()) == 51
+
+
 def test_cost_basis_cmm_after_two_buys():
     basis = compute_cost_basis(
         [_trade("BUY", 1, 300_000), _trade("BUY", 0.5, 165_000, date="2025-01-02")]
@@ -196,6 +219,19 @@ def test_ptax_enricher_populates_official_brl_value():
     enrich_trades([trade], lookup=lambda _: 5.89)
     assert trade.ptax_bcb == 5.89
     assert trade.value_brl_ptax == pytest.approx(589)
+
+
+def test_ptax_enricher_reports_progress_after_each_trade():
+    trades = [_trade("BUY", 1, 0), _trade("BUY", 1, 0, date="2025-01-02")]
+    progress: list[tuple[int, int]] = []
+
+    enrich_trades(
+        trades,
+        lookup=lambda _: 5.89,
+        on_progress=lambda completed, total: progress.append((completed, total)),
+    )
+
+    assert progress == [(1, 2), (2, 2)]
 
 
 def test_ptax_enricher_values_usdt_earnings_at_ptax():
