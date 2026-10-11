@@ -270,6 +270,75 @@ def test_tracker_builder_deduplicates_api_and_flex_open_rows(tmp_path: Path):
     assert result["premium_received"].tolist() == [150.0]
 
 
+def test_tracker_builder_keeps_distinct_same_day_same_price_fills(tmp_path: Path):
+    """Two separate flex fills can share date/qty/price (split order fills).
+
+    Regression for EWZ CALL 35 2026-10-16: open qty 2, then two distinct -1
+    closing fills same day/price/trade_id-different — net should be 0, not 1.
+    """
+    history = tmp_path / "trades_history.csv"
+    tracker = tmp_path / "options_tracker.csv"
+    _write_history(
+        history,
+        [
+            _base_row(
+                trade_id="OPEN",
+                date="2026-08-28",
+                datetime="2026-08-28T15:58:28",
+                symbol="EWZ   261016C00035000",
+                underlying="EWZ",
+                option_type="CALL",
+                strike=35.0,
+                expiration="2099-10-16",
+                quantity=2.0,
+                price=2.27,
+                proceeds=-454.0,
+                open_close="O",
+                source="flex",
+                strategy="long_call",
+            ),
+            _base_row(
+                trade_id="CLOSE-1",
+                date="2026-09-25",
+                datetime="2026-09-25T09:36:33",
+                symbol="EWZ   261016C00035000",
+                underlying="EWZ",
+                option_type="CALL",
+                strike=35.0,
+                expiration="2099-10-16",
+                quantity=-1.0,
+                price=2.59,
+                proceeds=259.0,
+                open_close="C",
+                source="flex",
+                strategy="long_call",
+            ),
+            _base_row(
+                trade_id="CLOSE-2",
+                date="2026-09-25",
+                datetime="2026-09-25T09:36:33",
+                symbol="EWZ   261016C00035000",
+                underlying="EWZ",
+                option_type="CALL",
+                strike=35.0,
+                expiration="2099-10-16",
+                quantity=-1.0,
+                price=2.59,
+                proceeds=259.0,
+                open_close="C",
+                source="flex",
+                strategy="long_call",
+            ),
+        ],
+    )
+
+    count = build_options_tracker(history, tracker)
+
+    assert count == 0
+    result = pd.read_csv(tracker, sep=";")
+    assert result.empty
+
+
 def test_tracker_builder_excludes_expired_contracts(tmp_path: Path):
     history = tmp_path / "trades_history.csv"
     tracker = tmp_path / "options_tracker.csv"

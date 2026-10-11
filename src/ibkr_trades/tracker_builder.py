@@ -85,9 +85,22 @@ def _prepare_options_history(df: pd.DataFrame) -> pd.DataFrame:
 
     # Daily Flex plus API sync can record the same execution with different
     # trade IDs. Prefer Flex because it has open_close, commission, and P&L.
+    #
+    # Two distinct real fills can legitimately share date/qty/price (e.g. a
+    # multi-lot close split into same-priced legs), so dedup must pair same
+    # occurrence-within-source across sources rather than collapsing every
+    # row sharing the execution key. `_occurrence` numbers each row within
+    # its own (execution key, source) group; dropping duplicates on
+    # (execution key, _occurrence) only removes a genuine flex/api overlap
+    # of the same fill, never a second distinct same-day fill.
     opts = opts.sort_values(["_source_priority", "datetime"], ascending=[False, True])
-    opts = opts.drop_duplicates(_EQUIVALENT_EXECUTION_KEY, keep="first")
-    return opts.drop(columns=["_source_priority"])
+    opts["_occurrence"] = opts.groupby(
+        _EQUIVALENT_EXECUTION_KEY + ["source"]
+    ).cumcount()
+    opts = opts.drop_duplicates(
+        _EQUIVALENT_EXECUTION_KEY + ["_occurrence"], keep="first"
+    )
+    return opts.drop(columns=["_source_priority", "_occurrence"])
 
 
 def build_options_tracker(
