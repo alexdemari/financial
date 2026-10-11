@@ -1,6 +1,6 @@
 # Task T27: Importação canônica de movimentações B3
 
-**Status:** Planned
+**Status:** Completed
 **Scope:** novo `src/b3_importer/`, `justfile`, `README.md`, `tests/b3_importer/`
 **Effort:** M
 **Depends on:** none
@@ -31,7 +31,7 @@ importações mensais sobrepostas.
 
 ## Outcome spec
 
-1. `just b3-import file=data/b3/uploads/movimentacao.xlsx` lê a aba
+1. `just b3-import data/b3/uploads/movimentacao.xlsx` lê a aba
    `Movimentação` e produz/atualiza `data/b3/movements_history.csv`.
 2. A primeira carga de 12 meses e cargas mensais posteriores são idempotentes.
 3. A importação nunca reescreve registros históricos; somente acrescenta
@@ -78,13 +78,11 @@ src/b3_importer/
     __init__.py
     models.py       # B3Movement e ImportSummary
     parser.py       # leitura XLSX tolerante à dimensão incorreta
-    normalize.py    # datas, números BRL e textos
     store.py        # append-only, dedup e relatório de colisões
     main.py         # CLI import
 tests/b3_importer/
     test_parser.py
     test_store.py
-    test_main.py
 ```
 
 ## Constraints

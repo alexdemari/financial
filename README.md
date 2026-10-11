@@ -46,6 +46,17 @@ writes canonical positions/trades CSVs to `data/btg/`, which the Trades tab
 reads via the same API as IBKR. Re-running is idempotent — each run overwrites
 the previous output.
 
+To import B3 movement history, place an Área do Investidor XLSX export in
+`data/b3/uploads/` and run:
+
+```bash
+just b3-import data/b3/uploads/movimentacao_2026_10.xlsx
+```
+
+The first import can cover 12 months; subsequent monthly imports may overlap.
+The canonical history at `data/b3/movements_history.csv` is append-only and
+idempotent. This movement export is not a current-position snapshot.
+
 ---
 
 ## Architecture

@@ -72,6 +72,12 @@ btg-parse input-dir="data/btg/uploads":
     echo "BTG data written to data/btg/"
     echo "Run 'just web' to see BTG trades and positions in the dashboard."
 
+# Import one B3 Área do Investidor movement export into append-only local history.
+b3-import file="data/b3/uploads/movimentacao.xlsx":
+    PYTHONPATH=src uv run python -m b3_importer.main \
+        --file "{{file}}" \
+        --output data/b3/movements_history.csv
+
 
 # ── Local web dashboard ──────────────────────────────────────────────────────
 
