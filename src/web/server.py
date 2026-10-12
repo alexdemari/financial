@@ -18,6 +18,7 @@ from web.routers import (
     macro,
     patrimonio,
     scanner,
+    sources,
     trades,
 )
 
@@ -40,6 +41,7 @@ for api_router in (
     trades,
     patrimonio,
     cash_flow,
+    sources,
 ):
     app.include_router(api_router.router)
 

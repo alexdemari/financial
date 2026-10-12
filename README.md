@@ -35,7 +35,11 @@ Install frontend dependencies once with `cd frontend && npm install`. Then run
 
 Dashboard reads existing report files only. It does not run portfolio or scanner
 jobs and shows source timestamps or setup commands when data is missing. The
-default tab is Patrimônio — consolidated IBKR + BTG wealth in BRL, converted via
+default **Visão geral** tab shows patrimônio, allocation, alerts, and the state
+of every local source. **Investimentos** lazily loads positions, operations, and
+cash flow; **Análise** lazily loads scanner, dividends, and macro. The dashboard
+never runs commands or external integrations. Patrimônio is consolidated in BRL,
+converted via
 the cached BCB PTAX rate, with allocation vs. targets from
 `config/patrimonio_targets.yaml`. The Trades tab merges realized IBKR and BTG
 operations without converting currencies; filters run locally in the browser.

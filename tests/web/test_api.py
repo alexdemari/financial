@@ -4,7 +4,7 @@ from web import server
 from web.readers import history_jsonl
 from web.readers.history_jsonl import AccountSnapshot
 from web.readers.ibkr_csv import Position
-from web.routers import account, cash_flow, history, patrimonio, trades
+from web.routers import account, cash_flow, history, patrimonio, sources, trades
 
 
 def test_cash_flow_endpoint_returns_empty_sources_without_data(tmp_path, monkeypatch):
@@ -85,6 +85,16 @@ def test_patrimonio_endpoint_returns_consolidated_data(monkeypatch):
 
     assert response.status_code == 200
     assert response.json() == expected
+
+
+def test_sources_endpoint_returns_local_metadata(monkeypatch):
+    expected = [{"name": "B3", "status": "stale", "as_of": "2026-10-01"}]
+    monkeypatch.setattr(sources, "read_sources", lambda: expected)
+
+    response = TestClient(server.app).get("/api/sources")
+
+    assert response.status_code == 200
+    assert response.json() == {"sources": expected}
 
 
 def test_risk_reports_concentration_and_cash_shortfall(monkeypatch):
