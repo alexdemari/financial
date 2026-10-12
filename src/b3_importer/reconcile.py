@@ -5,10 +5,14 @@ from __future__ import annotations
 import argparse
 import csv
 import re
+import sys
 import unicodedata
+from datetime import datetime
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
+
+from b3_importer.positions_store import latest_snapshot
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,7 +44,13 @@ def reconcile(snapshot: Path, btg_paths: list[Path]) -> list[ReconciliationRow]:
     ]
 
 
-def write_report(rows: list[ReconciliationRow], output_dir: Path) -> Path:
+def _format_quantity(value: float) -> str:
+    return f"{value:.8f}".rstrip("0").rstrip(".") or "0"
+
+
+def write_report(
+    rows: list[ReconciliationRow], output_dir: Path, snapshot: Path | None = None
+) -> Path:
     """Write an auditable local report and return its path."""
     output_dir.mkdir(parents=True, exist_ok=True)
     report = output_dir / "b3_reconciliation_latest.md"
@@ -53,6 +63,15 @@ def write_report(rows: list[ReconciliationRow], output_dir: Path) -> Path:
         "",
         "Read-only audit. No source positions, cash, or totals were modified.",
         "",
+        *(
+            [
+                f"Snapshot: `{snapshot.name}`",
+                f"Generated: {datetime.now().isoformat(timespec='seconds')}",
+                "",
+            ]
+            if snapshot
+            else []
+        ),
         "| Status | Count |",
         "| --- | ---: |",
         *[f"| {status} | {count} |" for status, count in counts.items()],
@@ -60,7 +79,7 @@ def write_report(rows: list[ReconciliationRow], output_dir: Path) -> Path:
         "| Institution | Product | B3 quantity | BTG quantity | Status |",
         "| --- | --- | ---: | ---: | --- |",
         *[
-            f"| {row.institution} | {row.product} | {row.b3_quantity:g} | {row.btg_quantity:g} | {row.status} |"
+            f"| {row.institution} | {row.product} | {_format_quantity(row.b3_quantity)} | {_format_quantity(row.btg_quantity)} | {row.status} |"
             for row in rows
             if row.status != "in_sync"
         ],
@@ -114,7 +133,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Reconcile B3 custody snapshot against BTG positions"
     )
-    parser.add_argument("--snapshot", type=Path, required=True)
+    parser.add_argument(
+        "--snapshot",
+        type=Path,
+        default=None,
+        help="Defaults to the newest snapshot in data/b3/positions",
+    )
     parser.add_argument(
         "--btg-opcoes", type=Path, default=Path("data/btg/btg_opcoes_positions.csv")
     )
@@ -123,9 +147,13 @@ def main() -> None:
     )
     parser.add_argument("--output-dir", type=Path, default=Path("reports"))
     arguments = parser.parse_args()
+    snapshot = arguments.snapshot or latest_snapshot(Path("data/b3/positions"))
+    if snapshot is None:
+        sys.exit("No B3 position snapshot. Run: just b3-positions-import")
     report = write_report(
-        reconcile(arguments.snapshot, [arguments.btg_opcoes, arguments.btg_geral]),
+        reconcile(snapshot, [arguments.btg_opcoes, arguments.btg_geral]),
         arguments.output_dir,
+        snapshot,
     )
     print(f"B3 reconciliation report saved: {report}")
 

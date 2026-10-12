@@ -381,3 +381,31 @@ items:
     assert result["credito_privado"]["has_vencido_pending_cleanup"] is True
     assert result["total_brl"] == 12000
     assert result["allocation"]["renda_fixa_br"]["value_brl"] == 12000
+
+
+def test_latest_snapshot_prefers_as_of_over_hash_and_flags_outdated_report(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(b3_positions_reader, "B3_POSITIONS_DIR", tmp_path / "b3")
+    monkeypatch.setattr(
+        b3_positions_reader, "B3_RECONCILIATION_REPORT", tmp_path / "report.md"
+    )
+    b3_positions_reader.B3_POSITIONS_DIR.mkdir()
+    header = "as_of,source_sheet,asset_class,product,institution,trading_code,quantity,value_brl,included_in_total,source_file_hash\n"
+    (b3_positions_reader.B3_POSITIONS_DIR / "positions_2026-08-11_fff.csv").write_text(
+        header + "2026-08-11,Acoes,acoes_br,T,BTG,TEST3,1,100,True,h\n",
+        encoding="utf-8",
+    )
+    (b3_positions_reader.B3_POSITIONS_DIR / "positions_2026-08-12_aaa.csv").write_text(
+        header + "2026-08-12,Acoes,acoes_br,T,BTG,TEST3,1,200,True,h\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "report.md").write_text(
+        "Snapshot: `positions_2026-08-11_fff.csv`\n| missing_btg | 0 |\n",
+        encoding="utf-8",
+    )
+
+    result = b3_positions_reader.read_b3_positions(date(2026, 8, 12))
+
+    assert result["as_of"] == "2026-08-12"
+    assert result["reconciliation"]["status"] == "outdated"

@@ -8,6 +8,7 @@ from typing import Any
 
 import pandas as pd
 
+from b3_importer.positions_store import latest_snapshot
 from web.readers.common import PROJECT_ROOT
 
 B3_POSITIONS_DIR = PROJECT_ROOT / "data/b3/positions"
@@ -17,10 +18,9 @@ STALE_AFTER_DAYS = 7
 
 def read_b3_positions(reference_date: date) -> dict[str, Any]:
     """Return latest B3 snapshot, freshness, and reconciliation metadata."""
-    snapshots = sorted(B3_POSITIONS_DIR.glob("positions_*.csv"))
-    if not snapshots:
+    snapshot = latest_snapshot(B3_POSITIONS_DIR)
+    if snapshot is None:
         return _empty_result("no_data", "Run: just b3-positions-import")
-    snapshot = snapshots[-1]
     try:
         frame = pd.read_csv(snapshot)
     except pd.errors.EmptyDataError:
@@ -47,7 +47,7 @@ def read_b3_positions(reference_date: date) -> dict[str, Any]:
         "as_of": as_of,
         "stale": stale,
         "snapshot_path": _relative(snapshot),
-        "reconciliation": _reconciliation_status(),
+        "reconciliation": _reconciliation_status(snapshot),
     }
 
 
@@ -63,10 +63,15 @@ def _empty_result(status: str, hint: str) -> dict[str, Any]:
     }
 
 
-def _reconciliation_status() -> dict[str, Any]:
+def _reconciliation_status(snapshot: Path | None = None) -> dict[str, Any]:
     if not B3_RECONCILIATION_REPORT.exists():
         return {"status": "not_run", "report_path": None}
     content = B3_RECONCILIATION_REPORT.read_text(encoding="utf-8")
+    if snapshot is not None and f"Snapshot: `{snapshot.name}`" not in content:
+        return {
+            "status": "outdated",
+            "report_path": _relative(B3_RECONCILIATION_REPORT),
+        }
     statuses = ("missing_btg", "excess_btg", "quantity_mismatch")
     issues = any(f"| {status} | 0 |" not in content for status in statuses)
     return {

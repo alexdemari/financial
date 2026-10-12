@@ -12,6 +12,16 @@ from b3_importer.models import B3Position
 FIELDS = list(B3Position.__dataclass_fields__)
 
 
+def latest_snapshot(directory: Path) -> Path | None:
+    """Newest snapshot by as_of date, then by import time (not by content hash)."""
+    snapshots = list(directory.glob("positions_*.csv"))
+    if not snapshots:
+        return None
+    return max(
+        snapshots, key=lambda path: (path.name.split("_")[1], path.stat().st_mtime_ns)
+    )
+
+
 def write_snapshot(output_dir: Path, positions: list[B3Position]) -> Path:
     """Persist a dated immutable snapshot, reusing an identical prior import."""
     if not positions:

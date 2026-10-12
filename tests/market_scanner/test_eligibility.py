@@ -8,9 +8,10 @@ from market_scanner.eligibility import (
 
 
 def make_df(rows: int = 30, volume: int = 1_500_000) -> pd.DataFrame:
+    end_date = pd.Timestamp.now().normalize()
     return pd.DataFrame(
         {
-            "Date": pd.date_range("2026-01-01", periods=rows, freq="D"),
+            "Date": pd.date_range(end=end_date, periods=rows, freq="D"),
             "Open": [10.0] * rows,
             "High": [11.0] * rows,
             "Low": [9.0] * rows,

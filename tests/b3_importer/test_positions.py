@@ -3,9 +3,11 @@ from pathlib import Path
 
 import openpyxl
 
-from b3_importer.positions import POSITION_SHEETS, parse_positions_xlsx
+import pytest
+
+from b3_importer.positions import POSITION_SHEETS, _number, parse_positions_xlsx
 from b3_importer.positions_store import write_snapshot
-from b3_importer.reconcile import reconcile
+from b3_importer.reconcile import ReconciliationRow, reconcile, write_report
 
 
 def _workbook(path: Path) -> Path:
@@ -75,7 +77,7 @@ def test_snapshot_is_immutable_and_idempotent(tmp_path: Path):
 
 
 def test_reconciliation_reports_quantity_mismatch_without_writing_sources(
-    tmp_path: Path
+    tmp_path: Path,
 ):
     snapshot = tmp_path / "snapshot.csv"
     snapshot.write_text(
@@ -93,3 +95,38 @@ def test_reconciliation_reports_quantity_mismatch_without_writing_sources(
         ("TEST3", "quantity_mismatch")
     ]
     assert btg.read_text(encoding="utf-8") == original
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [("10.5", 10.5), ("1.234,56", 1234.56), ("1.234", 1234.0), ("R$ 2,5", 2.5)],
+)
+def test_number_parses_text_formats(text: str, expected: float):
+    assert _number(text) == expected
+
+
+def test_parser_rejects_duplicate_headers_and_empty_sheet(tmp_path: Path):
+    path = _workbook(tmp_path / "posicao-2026-10-12.xlsx")
+    workbook = openpyxl.load_workbook(path)
+    workbook["Acoes"]["F1"] = "Quantidade"
+    workbook.save(path)
+    with pytest.raises(ValueError, match="duplicate"):
+        parse_positions_xlsx(path, date(2026, 10, 12))
+
+    path = _workbook(tmp_path / "posicao-2026-10-13.xlsx")
+    workbook = openpyxl.load_workbook(path)
+    workbook["BDR"].delete_rows(1, 2)
+    workbook.save(path)
+    with pytest.raises(ValueError, match="missing required columns"):
+        parse_positions_xlsx(path, date(2026, 10, 13))
+
+
+def test_report_names_snapshot_and_keeps_large_quantities(tmp_path: Path):
+    snapshot = tmp_path / "positions_2026-10-12_abc.csv"
+    report = write_report(
+        [ReconciliationRow("BTG", "TEST3", 1234567, 1234568)], tmp_path, snapshot
+    )
+    content = report.read_text(encoding="utf-8")
+
+    assert "Snapshot: `positions_2026-10-12_abc.csv`" in content
+    assert "| 1234567 | 1234568 |" in content

@@ -16,7 +16,9 @@ from stock_analyzer.signals.smc import SMCSignalGenerator
 def make_csv(path, rows: int = 220, volume: int = 2_000_000):
     pd.DataFrame(
         {
-            "Date": pd.date_range("2026-01-01", periods=rows, freq="D"),
+            "Date": pd.date_range(
+                end=pd.Timestamp.now().normalize(), periods=rows, freq="D"
+            ),
             "Open": [10.0] * rows,
             "High": [11.0] * rows,
             "Low": [9.0] * rows,

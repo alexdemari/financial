@@ -165,10 +165,14 @@ def read_patrimonio(reference_date: date | None = None) -> dict[str, Any]:
             ),
         },
         "complete": not (
-            ibkr["status"] == "ptax_unavailable"
-            or ibkr["status"] == "no_data"
-            or btg_opcoes["status"] == "no_data"
-            or btg_geral["status"] == "no_data"
+            ibkr["status"] in {"ptax_unavailable", "no_data"}
+            or (
+                not b3_is_primary
+                and (
+                    btg_opcoes["status"] == "no_data"
+                    or btg_geral["status"] == "no_data"
+                )
+            )
         ),
         "ptax": ptax_rate,
         "ptax_date": ptax_date,

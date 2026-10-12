@@ -81,9 +81,9 @@ export default function PatrimonioView({ data }) {
       <div className="card"><span>IBKR</span><strong>{usd.format(data.accounts.ibkr.nlv_usd)}</strong>
         <small>{money.format(data.accounts.ibkr.nlv_brl)}</small></div>
       <div className="card"><span>BTG-Opções</span><strong>{money.format(data.accounts.btg_opcoes.total_brl)}</strong>
-        <small>{data.accounts.btg_opcoes.status === "no_data" ? data.accounts.btg_opcoes.hint : "BRL"}</small></div>
+        <small>{data.accounts.btg_opcoes.status === "no_data" ? data.accounts.btg_opcoes.hint : data.b3_is_primary ? "Operacional · excluído do total" : "BRL"}</small></div>
       <div className="card"><span>BTG-Geral</span><strong>{money.format(data.accounts.btg_geral.total_brl)}</strong>
-        <small>{data.accounts.btg_geral.status === "no_data" ? data.accounts.btg_geral.hint : "BRL"}</small></div>
+        <small>{data.accounts.btg_geral.status === "no_data" ? data.accounts.btg_geral.hint : data.b3_is_primary ? "Operacional · excluído do total" : "BRL"}</small></div>
       <div className="card"><span>B3 · posições BR</span><strong>{money.format(b3.total_brl || 0)}</strong>
         <small className={b3.stale ? "cash-warning" : ""}>
           {b3.status === "no_data" ? b3.hint : `${data.b3_is_primary ? "fonte principal" : "auditoria"} · ${b3.as_of || "—"}${b3.stale ? " · desatualizada" : ""}`}
@@ -102,7 +102,7 @@ export default function PatrimonioView({ data }) {
 
     {b3.status === "ok" && <Panel title="Custódia B3">
       <p className={b3.reconciliation?.status === "issues" ? "data-warning" : ""}>
-        Reconciliação BTG: {b3.reconciliation?.status === "in_sync" ? "sem divergências" : b3.reconciliation?.status === "issues" ? "divergências encontradas" : "ainda não executada"}
+        Reconciliação BTG: {b3.reconciliation?.status === "in_sync" ? "sem divergências" : b3.reconciliation?.status === "issues" ? "divergências encontradas" : b3.reconciliation?.status === "outdated" ? "relatório desatualizado, rode just b3-reconcile" : "ainda não executada"}
         {b3.reconciliation?.report_path && <> · relatório local: <code>{b3.reconciliation.report_path}</code></>}
       </p>
       <PositionTable rows={b3.positions} columns={[

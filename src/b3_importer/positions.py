@@ -82,13 +82,16 @@ def _parse_sheet(
     spec: tuple[str, str | None, str | None, str, bool],
 ) -> list[B3Position]:
     asset_class, code_header, _price_header, value_header, included_in_total = spec
-    headers = {
-        _key(value): index
-        for index, value in enumerate(
-            next(worksheet.iter_rows(min_row=1, max_row=1, values_only=True))
-        )
-        if value is not None
-    }
+    header_row = next(worksheet.iter_rows(min_row=1, max_row=1, values_only=True), ())
+    headers: dict[str, int] = {}
+    for index, value in enumerate(header_row):
+        if value is None:
+            continue
+        if _key(value) in headers:
+            raise ValueError(
+                f"B3 position sheet '{worksheet.title}' has duplicate columns"
+            )
+        headers[_key(value)] = index
     required = ["Produto", "Instituição", "Quantidade", value_header]
     if code_header:
         required.append(code_header)
@@ -139,7 +142,7 @@ def _number(value: object) -> float:
     if isinstance(value, int | float):
         result = float(value)
     else:
-        text = _text(value).replace("R$", "").replace(".", "").replace(",", ".")
+        text = _normalize_number_text(_text(value).replace("R$", "").strip())
         try:
             result = float(text)
         except ValueError as error:
@@ -147,6 +150,15 @@ def _number(value: object) -> float:
     if not math.isfinite(result):
         raise ValueError("invalid numeric value in B3 position workbook")
     return result
+
+
+def _normalize_number_text(text: str) -> str:
+    """Convert pt-BR ('1.234,56'), thousands-only ('1.234') or plain ('10.5') text."""
+    if "," in text:
+        return text.replace(".", "").replace(",", ".")
+    if re.fullmatch(r"-?\d{1,3}(\.\d{3})+", text):
+        return text.replace(".", "")
+    return text
 
 
 def _text(value: object) -> str:
