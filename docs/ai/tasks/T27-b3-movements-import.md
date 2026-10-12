@@ -37,8 +37,8 @@ importações mensais sobrepostas.
 3. A importação nunca reescreve registros históricos; somente acrescenta
    eventos novos e registra a origem da carga.
 4. O comando mostra total lido, total novo, duplicados e linhas ambíguas.
-5. Linhas inválidas não encerram a carga inteira: entram no relatório de erros
-   com número da linha e motivo, sem valores financeiros expostos no terminal.
+5. Uma linha inválida aborta a carga antes de qualquer escrita e informa seu
+   número e motivo, sem valores financeiros expostos no terminal.
 6. O XLSX com dimensão incorreta é lido integralmente.
 7. `data/b3/` fica no `.gitignore`.
 8. `uv run pytest tests/b3_importer -x -q` passa.
@@ -99,4 +99,5 @@ tests/b3_importer/
   eventos na segunda execução.
 - Uma carga mensal sobreposta acrescenta somente eventos comprovadamente novos.
 - O resumo destaca colisões que exigem revisão humana.
+- Uma carga com linha inválida não altera o histórico existente.
 - Documentação descreve a rotina inicial e mensal.

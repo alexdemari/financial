@@ -42,5 +42,25 @@ def test_store_preserves_same_fingerprint_multiplicity_and_reports_collision(
     summary = append_movements(output, parsed)
 
     assert summary.added_count == 2
-    assert summary.ambiguous_collision_count == 1
+    assert summary.ambiguous_collision_count == 2
     assert len(output.read_text().splitlines()) == 3
+
+
+def test_store_reports_ambiguous_rows_only_for_added_events(tmp_path: Path):
+    output = tmp_path / "movements.csv"
+    parsed = ParsedMovements([_movement("event:1"), _movement("event:2")], [])
+
+    first = append_movements(output, parsed)
+    second = append_movements(output, parsed)
+
+    assert first.ambiguous_source_rows == [2, 2]
+    assert second.added_count == 0
+    assert second.ambiguous_source_rows == []
+
+
+def test_store_leaves_no_temp_files(tmp_path: Path):
+    append_movements(
+        tmp_path / "movements.csv", ParsedMovements([_movement("a:1")], [])
+    )
+
+    assert not list(tmp_path.glob("*.tmp"))

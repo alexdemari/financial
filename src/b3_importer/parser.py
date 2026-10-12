@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import io
+import math
 import re
 import unicodedata
 import warnings
@@ -23,6 +25,8 @@ REQUIRED_HEADERS = (
     "Preço unitário",
     "Valor da Operação",
 )
+VALID_DIRECTIONS = frozenset({"entrada", "saida"})
+_BRAZILIAN_THOUSANDS = re.compile(r"-?\d{1,3}(\.\d{3})+")
 
 
 def parse_movements_xlsx(path: Path) -> ParsedMovements:
@@ -31,13 +35,26 @@ def parse_movements_xlsx(path: Path) -> ParsedMovements:
     B3 exports may declare the incorrect worksheet dimension (``A1``). Loading
     the workbook in normal mode makes openpyxl traverse the actual cells.
     """
+    file_bytes = path.read_bytes()
+    source_file_hash = hashlib.sha256(file_bytes).hexdigest()
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore",
             message="Workbook contains no default style.*",
             category=UserWarning,
         )
-        workbook = openpyxl.load_workbook(path, read_only=False, data_only=True)
+        workbook = openpyxl.load_workbook(
+            io.BytesIO(file_bytes), read_only=False, data_only=True
+        )
+    try:
+        return _parse_worksheet(workbook, source_file_hash)
+    finally:
+        workbook.close()
+
+
+def _parse_worksheet(
+    workbook: openpyxl.Workbook, source_file_hash: str
+) -> ParsedMovements:
     if "Movimentação" not in workbook.sheetnames:
         raise ValueError("B3 workbook is missing the 'Movimentação' sheet")
     worksheet = workbook["Movimentação"]
@@ -48,7 +65,6 @@ def parse_movements_xlsx(path: Path) -> ParsedMovements:
             f"B3 workbook is missing required columns: {', '.join(missing)}"
         )
 
-    source_file_hash = _file_hash(path)
     imported_at = datetime.now(UTC).isoformat()
     movements: list[B3Movement] = []
     rejected_rows: list[RejectedRow] = []
@@ -103,7 +119,9 @@ def _movement_from_values(
     imported_at: str,
 ) -> B3Movement:
     event_date = _date(values[_key("Data")])
-    direction = _text(values[_key("Entrada/Saída")]).lower()
+    direction = _key(values[_key("Entrada/Saída")])
+    if direction and direction not in VALID_DIRECTIONS:
+        raise ValueError("invalid direction")
     movement_type = _text(values[_key("Movimentação")])
     product = _text(values[_key("Produto")])
     institution = _text(values[_key("Instituição")])
@@ -143,10 +161,6 @@ def _fingerprint(*values: object) -> str:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
-def _file_hash(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
 def _date(value: object) -> str:
     if isinstance(value, datetime):
         return value.date().isoformat()
@@ -165,8 +179,19 @@ def _number(value: object) -> float | None:
     if value is None or str(value).strip() in {"", "-"}:
         return None
     if isinstance(value, int | float):
-        return float(value)
-    text = _text(value).replace("R$", "").replace(".", "").replace(",", ".")
+        number = float(value)
+    else:
+        number = _parse_number_text(_text(value).replace("R$", "").strip())
+    if not math.isfinite(number):
+        raise ValueError("invalid numeric value")
+    return number
+
+
+def _parse_number_text(text: str) -> float:
+    if "," in text:
+        text = text.replace(".", "").replace(",", ".")
+    elif _BRAZILIAN_THOUSANDS.fullmatch(text):
+        raise ValueError("ambiguous numeric format")
     try:
         return float(text)
     except ValueError as error:

@@ -48,5 +48,10 @@ class ImportSummary:
     read_count: int
     added_count: int
     duplicate_count: int
-    ambiguous_collision_count: int
+    ambiguous_source_rows: list[int]
     rejected_rows: list[RejectedRow]
+
+    @property
+    def ambiguous_collision_count(self) -> int:
+        """Number of added rows whose fingerprint is shared with other events."""
+        return len(self.ambiguous_source_rows)
