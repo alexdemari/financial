@@ -57,6 +57,19 @@ The first import can cover 12 months; subsequent monthly imports may overlap.
 The canonical history at `data/b3/movements_history.csv` is append-only and
 idempotent. This movement export is not a current-position snapshot.
 
+For a B3 custody-position export, import its immutable dated snapshot and run
+the read-only BTG audit:
+
+```bash
+just b3-positions-import data/b3/uploads/posicao-2026-10-12.xlsx
+just b3-reconcile
+```
+
+Snapshots are stored under `data/b3/positions/`. B3 is the primary source for
+Brazilian positions in Patrimônio, while BTG remains the cash and operational
+source; the dashboard never adds both sources for the same Brazilian position.
+The local reconciliation report is written to `reports/b3_reconciliation_latest.md`.
+
 ---
 
 ## Architecture

@@ -24,6 +24,7 @@ from web.readers.credito_privado_reader import (
 from web.readers.crypto_reader import read_crypto_snapshot
 from web.readers.history_jsonl import read_account_snapshot
 from web.readers.ibkr_csv import read_positions
+from web.readers.b3_positions_reader import read_b3_positions
 
 BTG_OPCOES_POS = PROJECT_ROOT / "data/btg/btg_opcoes_positions.csv"
 BTG_GERAL_POS = PROJECT_ROOT / "data/btg/btg_geral_positions.csv"
@@ -67,23 +68,29 @@ def read_patrimonio(reference_date: date | None = None) -> dict[str, Any]:
     btg_geral = _read_btg_account(BTG_GERAL_POS, "BTG-Geral")
     fixed_income = _read_fixed_income()
     proventos = _read_proventos()
+    b3 = read_b3_positions(today)
+    b3_is_primary = b3["status"] == "ok"
 
-    for account, account_name in (
-        (btg_opcoes, "BTG-Opções"),
-        (btg_geral, "BTG-Geral"),
-    ):
-        account["renda_fixa_brl"] = fixed_income["totals_by_account"].get(
-            account_name, 0.0
-        )
-        account["total_brl"] += account["renda_fixa_brl"]
-        if account["status"] == "no_data" and account["renda_fixa_brl"]:
-            account["status"] = "ok"
-            account["hint"] = None
+    if not b3_is_primary:
+        for account, account_name in (
+            (btg_opcoes, "BTG-Opções"),
+            (btg_geral, "BTG-Geral"),
+        ):
+            account["renda_fixa_brl"] = fixed_income["totals_by_account"].get(
+                account_name, 0.0
+            )
+            account["total_brl"] += account["renda_fixa_brl"]
+            if account["status"] == "no_data" and account["renda_fixa_brl"]:
+                account["status"] = "ok"
+                account["hint"] = None
 
     total_brl = (
         ibkr["nlv_brl"]
-        + btg_opcoes["total_brl"]
-        + btg_geral["total_brl"]
+        + (
+            b3["total_brl"]
+            if b3_is_primary
+            else btg_opcoes["total_brl"] + btg_geral["total_brl"]
+        )
         + cash_total_brl
         + credito_privado_total_brl
         + crypto_total_brl
@@ -97,6 +104,8 @@ def read_patrimonio(reference_date: date | None = None) -> dict[str, Any]:
         credito_privado_total_brl,
         crypto_total_brl,
         ptax_rate,
+        b3,
+        b3_is_primary,
     )
     allocation = _compare_to_targets(allocation_values, total_brl, targets)
     cash_summary_target = targets["cash_total"]
@@ -106,7 +115,12 @@ def read_patrimonio(reference_date: date | None = None) -> dict[str, Any]:
     cash_summary_pct = cash_summary_brl / total_brl * 100 if total_brl else 0.0
     currency_mix = _currency_mix(
         ibkr["nlv_brl"] + crypto_total_brl,
-        btg_opcoes["total_brl"] + btg_geral["total_brl"] + cash_total_brl,
+        (
+            b3["total_brl"]
+            if b3_is_primary
+            else btg_opcoes["total_brl"] + btg_geral["total_brl"]
+        )
+        + cash_total_brl,
         total_brl,
         targets,
     )
@@ -163,6 +177,8 @@ def read_patrimonio(reference_date: date | None = None) -> dict[str, Any]:
             "btg_opcoes": btg_opcoes,
             "btg_geral": btg_geral,
         },
+        "b3": b3,
+        "b3_is_primary": b3_is_primary,
         "renda_fixa": fixed_income,
         "allocation": allocation,
         "allocation_vs_targets": allocation,
@@ -269,6 +285,8 @@ def _allocation_values(
     credito_privado_total_brl: float,
     crypto_total_brl: float,
     ptax_rate: float | None,
+    b3: dict[str, Any],
+    b3_is_primary: bool,
 ) -> dict[str, float]:
     values = dict.fromkeys(ASSET_CLASS_ORDER, 0.0)
     conversion_rate = ptax_rate or 0.0
@@ -290,12 +308,21 @@ def _allocation_values(
         "BDR": "bdr",
         "OPT": "opcoes_br",
     }
-    for account in (btg_opcoes, btg_geral):
-        for position in account["positions"]:
-            asset_class = btg_mapping.get(_text(position.get("asset_type")).upper())
-            if asset_class:
-                values[asset_class] += _number(position.get("saldo_bruto"))
-    values["renda_fixa_br"] = fixed_income["total_brl"] + credito_privado_total_brl
+    if b3_is_primary:
+        for position in b3["positions"]:
+            if str(position.get("included_in_total", "")).lower() != "true":
+                continue
+            asset_class = _text(position.get("asset_class"))
+            if asset_class in values:
+                values[asset_class] += _number(position.get("value_brl"))
+        values["renda_fixa_br"] += credito_privado_total_brl
+    else:
+        for account in (btg_opcoes, btg_geral):
+            for position in account["positions"]:
+                asset_class = btg_mapping.get(_text(position.get("asset_type")).upper())
+                if asset_class:
+                    values[asset_class] += _number(position.get("saldo_bruto"))
+        values["renda_fixa_br"] = fixed_income["total_brl"] + credito_privado_total_brl
     values["cripto"] = crypto_total_brl
     return values
 

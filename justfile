@@ -78,6 +78,18 @@ b3-import file="data/b3/uploads/movimentacao.xlsx":
         --file "{{file}}" \
         --output data/b3/movements_history.csv
 
+# Import a dated, immutable B3 custody-position snapshot.
+b3-positions-import file:
+    PYTHONPATH=src uv run python -m b3_importer.positions_main --file "{{file}}" --output-dir data/b3/positions
+
+# Audit the newest B3 snapshot against canonical BTG positions; source data is never changed.
+b3-reconcile:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    snapshot=$$(find data/b3/positions -maxdepth 1 -name 'positions_*.csv' -type f | sort | tail -n 1)
+    test -n "$$snapshot" || { echo "No B3 position snapshot. Run: just b3-positions-import"; exit 1; }
+    PYTHONPATH=src uv run python -m b3_importer.reconcile --snapshot "$$snapshot" --output-dir reports
+
 
 # ── Local web dashboard ──────────────────────────────────────────────────────
 

@@ -55,3 +55,23 @@ class ImportSummary:
     def ambiguous_collision_count(self) -> int:
         """Number of added rows whose fingerprint is shared with other events."""
         return len(self.ambiguous_source_rows)
+
+
+@dataclass(frozen=True, slots=True)
+class B3Position:
+    """One normalized position from a dated B3 custody statement."""
+
+    as_of: str
+    source_sheet: str
+    asset_class: str
+    product: str
+    institution: str
+    trading_code: str | None
+    quantity: float
+    value_brl: float | None
+    included_in_total: bool
+    source_file_hash: str
+
+    def to_dict(self) -> dict[str, object]:
+        """Return the stable snapshot CSV representation."""
+        return asdict(self)

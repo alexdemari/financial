@@ -7,6 +7,7 @@ import pytest
 from web.readers import cash_reader
 from web.readers import credito_privado_reader
 from web.readers import patrimonio_reader
+from web.readers import b3_positions_reader
 from web.readers.history_jsonl import AccountSnapshot
 from web.readers.ibkr_csv import Position
 from crypto_tracker.snapshot import CryptoPosition, CryptoSnapshot
@@ -24,6 +25,10 @@ def _configure_paths(monkeypatch, tmp_path):
     monkeypatch.setattr(patrimonio_reader, "get_ptax", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(cash_reader, "CONFIG_PATH", tmp_path / "cash_accounts.yaml")
     monkeypatch.setattr(patrimonio_reader, "read_crypto_snapshot", lambda: None)
+    monkeypatch.setattr(b3_positions_reader, "B3_POSITIONS_DIR", tmp_path / "b3")
+    monkeypatch.setattr(
+        b3_positions_reader, "B3_RECONCILIATION_REPORT", tmp_path / "reconciliation.md"
+    )
     monkeypatch.setattr(
         credito_privado_reader, "CONFIG_PATH", tmp_path / "credito.yaml"
     )
@@ -203,6 +208,47 @@ def test_btg_aluguel_is_not_double_counted(monkeypatch, tmp_path):
     result = patrimonio_reader.read_patrimonio()
 
     assert result["accounts"]["btg_geral"]["total_brl"] == 100
+
+
+def test_b3_is_primary_and_prevents_btg_double_counting(monkeypatch, tmp_path):
+    _configure_paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(patrimonio_reader, "read_account_snapshot", lambda: None)
+    monkeypatch.setattr(patrimonio_reader, "read_positions", lambda: [])
+    b3_positions_reader.B3_POSITIONS_DIR.mkdir()
+    (b3_positions_reader.B3_POSITIONS_DIR / "positions_2026-08-11_test.csv").write_text(
+        "as_of,source_sheet,asset_class,product,institution,trading_code,quantity,value_brl,included_in_total,source_file_hash\n"
+        "2026-08-11,Acoes,acoes_br,Teste,BTG,TEST3,10,1000,True,hash\n",
+        encoding="utf-8",
+    )
+    pd.DataFrame([{"asset_type": "ACAO", "saldo_bruto": 1000}]).to_csv(
+        patrimonio_reader.BTG_OPCOES_POS, index=False
+    )
+
+    result = patrimonio_reader.read_patrimonio(date(2026, 8, 11))
+
+    assert result["b3_is_primary"] is True
+    assert result["total_brl"] == 1000
+    assert result["allocation"]["acoes_br"]["value_brl"] == 1000
+
+
+def test_b3_snapshot_reports_staleness_and_missing_reconciliation(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(b3_positions_reader, "B3_POSITIONS_DIR", tmp_path / "b3")
+    monkeypatch.setattr(
+        b3_positions_reader, "B3_RECONCILIATION_REPORT", tmp_path / "report.md"
+    )
+    b3_positions_reader.B3_POSITIONS_DIR.mkdir()
+    (b3_positions_reader.B3_POSITIONS_DIR / "positions_2026-08-01_test.csv").write_text(
+        "as_of,source_sheet,asset_class,product,institution,trading_code,quantity,value_brl,included_in_total,source_file_hash\n"
+        "2026-08-01,Acoes,acoes_br,Teste,BTG,TEST3,1,100,True,hash\n",
+        encoding="utf-8",
+    )
+
+    result = b3_positions_reader.read_b3_positions(date(2026, 8, 11))
+
+    assert result["stale"] is True
+    assert result["reconciliation"]["status"] == "not_run"
 
 
 def test_empty_btg_output_does_not_crash(monkeypatch, tmp_path):

@@ -37,6 +37,7 @@ export default function PatrimonioView({ data }) {
   const cashSummary = data.cash_summary || {};
   const creditoPrivado = data.credito_privado || { items: [], total_brl: 0, has_vencido_pending_cleanup: false };
   const crypto = data.crypto || { positions: [], total_brl: 0, stale: true };
+  const b3 = data.b3 || { status: "no_data", total_brl: 0, stale: true, reconciliation: {} };
   const chartData = allocation.filter((item) => item.value_brl > 0);
   const cashLatestAsOf = cashAccounts.reduce((latest, account) => {
     if (!account.as_of) return latest;
@@ -83,6 +84,10 @@ export default function PatrimonioView({ data }) {
         <small>{data.accounts.btg_opcoes.status === "no_data" ? data.accounts.btg_opcoes.hint : "BRL"}</small></div>
       <div className="card"><span>BTG-Geral</span><strong>{money.format(data.accounts.btg_geral.total_brl)}</strong>
         <small>{data.accounts.btg_geral.status === "no_data" ? data.accounts.btg_geral.hint : "BRL"}</small></div>
+      <div className="card"><span>B3 · posições BR</span><strong>{money.format(b3.total_brl || 0)}</strong>
+        <small className={b3.stale ? "cash-warning" : ""}>
+          {b3.status === "no_data" ? b3.hint : `${data.b3_is_primary ? "fonte principal" : "auditoria"} · ${b3.as_of || "—"}${b3.stale ? " · desatualizada" : ""}`}
+        </small></div>
       <div className="card"><span>Caixa BRL</span><strong>{money.format(cashTotalBrl)}</strong>
         <small className={data.cash_stale ? "cash-warning" : ""}>
           {data.cash_stale
@@ -94,6 +99,21 @@ export default function PatrimonioView({ data }) {
           {crypto.stale ? "⚠ Cripto desatualizado — rode: just crypto-snapshot" : `Atualizado em ${crypto.fetched_at || "—"}`}
         </small></div>
     </div>
+
+    {b3.status === "ok" && <Panel title="Custódia B3">
+      <p className={b3.reconciliation?.status === "issues" ? "data-warning" : ""}>
+        Reconciliação BTG: {b3.reconciliation?.status === "in_sync" ? "sem divergências" : b3.reconciliation?.status === "issues" ? "divergências encontradas" : "ainda não executada"}
+        {b3.reconciliation?.report_path && <> · relatório local: <code>{b3.reconciliation.report_path}</code></>}
+      </p>
+      <PositionTable rows={b3.positions} columns={[
+        { key: "source_sheet", label: "Classe" },
+        { key: "trading_code", label: "Ativo" },
+        { key: "product", label: "Produto" },
+        { key: "institution", label: "Instituição" },
+        { key: "quantity", label: "Qtd." },
+        { key: "value_brl", label: "Valor atualizado", format: (value) => money.format(value || 0) },
+      ]} />
+    </Panel>}
 
     <div className="patrimonio-allocation">
       <Panel title="Alocação por classe">
