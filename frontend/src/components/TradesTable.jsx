@@ -8,7 +8,6 @@ const PERIOD_OPTIONS = [
   { label: "1y", days: 365 },
   { label: "All", days: null },
 ];
-const BROKERS = ["all", "IBKR", "BTG-Opções", "BTG-Geral"];
 const ASSET_TYPES = ["all", "STK", "OPT", "ETF"];
 
 function filterTrades(trades, { period, broker, assetType }) {
@@ -50,6 +49,11 @@ export default function TradesTable({ data }) {
     [data, period, broker, assetType],
   );
 
+  const brokers = useMemo(
+    () => ["all", ...new Set((data?.trades || []).map((trade) => trade.broker))],
+    [data],
+  );
+
   if (!data) return <Panel title="Realized Trades"><div className="empty">Loading trades…</div></Panel>;
 
   return <>
@@ -72,7 +76,7 @@ export default function TradesTable({ data }) {
           {PERIOD_OPTIONS.map((option) => <option value={option.days ?? "all"} key={option.label}>{option.label}</option>)}
         </select></label>
         <label>Broker<select value={broker} onChange={(event) => setBroker(event.target.value)}>
-          {BROKERS.map((value) => <option value={value} key={value}>{value === "all" ? "All" : value}</option>)}
+          {brokers.map((value) => <option value={value} key={value}>{value === "all" ? "All" : value}</option>)}
         </select></label>
         <label>Type<select value={assetType} onChange={(event) => setAssetType(event.target.value)}>
           {ASSET_TYPES.map((value) => <option value={value} key={value}>{value === "all" ? "All" : value}</option>)}

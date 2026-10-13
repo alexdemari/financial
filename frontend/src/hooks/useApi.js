@@ -1,15 +1,10 @@
 import { useEffect, useState } from "react";
 
-export function useApi(url, refreshMs = 60_000, enabled = true) {
+export function useApi(url, refreshMs = 60_000) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [refreshToken, setRefreshToken] = useState(0);
   useEffect(() => {
-    if (!enabled) {
-      setLoading(false);
-      return undefined;
-    }
     let active = true;
     const load = async () => {
       try {
@@ -26,6 +21,6 @@ export function useApi(url, refreshMs = 60_000, enabled = true) {
     load();
     const interval = window.setInterval(load, refreshMs);
     return () => { active = false; window.clearInterval(interval); };
-  }, [url, refreshMs, enabled, refreshToken]);
-  return { data, loading, error, refetch: () => setRefreshToken((token) => token + 1) };
+  }, [url, refreshMs]);
+  return { data, loading, error };
 }

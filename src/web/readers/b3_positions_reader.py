@@ -51,6 +51,25 @@ def read_b3_positions(reference_date: date) -> dict[str, Any]:
     }
 
 
+def read_b3_summary(reference_date: date) -> dict[str, Any]:
+    """Return snapshot freshness and reconciliation state without reading rows."""
+    snapshot = latest_snapshot(B3_POSITIONS_DIR)
+    if snapshot is None:
+        return {"status": "no_data", "as_of": None, "stale": True, "snapshot": None}
+    as_of = snapshot.name.split("_")[1]
+    try:
+        stale = (reference_date - date.fromisoformat(as_of)).days > STALE_AFTER_DAYS
+    except ValueError:
+        stale = True
+    return {
+        "status": "ok",
+        "as_of": as_of,
+        "stale": stale,
+        "snapshot": snapshot,
+        "reconciliation": _reconciliation_status(snapshot),
+    }
+
+
 def _empty_result(status: str, hint: str) -> dict[str, Any]:
     return {
         "status": status,

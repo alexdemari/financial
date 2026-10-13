@@ -90,11 +90,12 @@ def test_patrimonio_endpoint_returns_consolidated_data(monkeypatch):
 def test_sources_endpoint_returns_local_metadata(monkeypatch):
     expected = [{"name": "B3", "status": "stale", "as_of": "2026-10-01"}]
     monkeypatch.setattr(sources, "read_sources", lambda: expected)
+    monkeypatch.setattr(sources, "read_alerts", lambda: {"exit_options": 2})
 
     response = TestClient(server.app).get("/api/sources")
 
     assert response.status_code == 200
-    assert response.json() == {"sources": expected}
+    assert response.json() == {"sources": expected, "alerts": {"exit_options": 2}}
 
 
 def test_risk_reports_concentration_and_cash_shortfall(monkeypatch):

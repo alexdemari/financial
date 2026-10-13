@@ -1,6 +1,6 @@
 # Task T29: Simplificação do dashboard local
 
-**Status:** Planned
+**Status:** Implemented
 **Scope:** `frontend/src/`, `src/web/`, `tests/web/`, `README.md`
 **Effort:** M
 **Depends on:** none; deve acomodar T27/T28 quando disponíveis
